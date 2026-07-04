@@ -1,59 +1,16 @@
 """
 AI image generation for WishNest articles.
 
-IMPORTANT: this OpenAI account/API key does not have access to the legacy
-"dall-e-3" model (confirmed via a live API call — OpenAI returns
-"The model 'dall-e-3' does not exist" for this key). The key DOES have
-access to the newer "gpt-image-1" family, so that is what we use.
+Uses the free Pollinations.ai API — no API key required, zero cost.
+Images are served directly as URLs in the format:
+  https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=576&nologo=true&private=true
 
-Unlike DALL-E 3, gpt-image-1 does not return a hosted URL — it returns the
-image as base64 (b64_json). We decode it and save it to a local static
-directory served by the FastAPI app at /api/static/images/<filename>.png,
-then store that URL in the DB. This also means images no longer expire
-after ~1 hour like DALL-E 3's hosted URLs did.
-
-Generates per article:
-  - one hero image  (1536x1024 landscape — ideal cover/hero)
-  - up to 2 section images (1024x1024 square)
-
-Image generation is wrapped in try/except so a failure never crashes the
-pipeline, but every failure is logged AND printed to the terminal with the
-exact exception so it's immediately visible in the backend console.
+No local file storage, no base64 decoding, no OpenAI billing.
 """
-import base64
 import logging
-import uuid
-from pathlib import Path
-
-from openai import OpenAI
-
-from app.config import get_settings
+import urllib.parse
 
 logger = logging.getLogger("wishnest.image_service")
-
-IMAGE_MODEL = "gpt-image-1"
-HERO_SIZE = "1536x1024"    # landscape, best for hero/cover
-SECTION_SIZE = "1024x1024"  # square, best for in-article sections
-IMAGE_QUALITY = "high"     # gpt-image-1: "low" | "medium" | "high" | "auto"
-
-STATIC_IMAGES_DIR = Path(__file__).resolve().parent.parent / "static" / "images"
-STATIC_IMAGES_URL_PREFIX = "/api/static/images"
-
-
-def _log_failure(stage: str, headline: str, exc: Exception) -> None:
-    """Log AND print the exact exception so it's impossible to miss in the terminal."""
-    message = f"[image_service] {stage} FAILED for {headline[:60]!r}: {type(exc).__name__}: {exc}"
-    logger.error(message, exc_info=True)
-    print(message, flush=True)
-
-
-def _save_base64_image(b64_json: str) -> str:
-    """Decode base64 PNG data, save it to the static images dir, return its served URL."""
-    STATIC_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
-    filename = f"{uuid.uuid4().hex}.png"
-    file_path = STATIC_IMAGES_DIR / filename
-    file_path.write_bytes(base64.b64decode(b64_json))
-    return f"{STATIC_IMAGES_URL_PREFIX}/{filename}"
 
 
 def _build_prompt(
@@ -64,7 +21,7 @@ def _build_prompt(
     angle: str,
 ) -> str:
     """
-    Construct a strict, luxury/architectural editorial photography prompt.
+    Construct a luxury/architectural editorial photography prompt.
     Uses focus_keyword > location > headline for subject grounding.
     """
     subject_parts: list[str] = []
@@ -97,6 +54,15 @@ def _build_prompt(
     )
 
 
+def _pollinations_url(prompt: str, width: int = 1024, height: int = 576) -> str:
+    """Build a Pollinations.ai image URL from a prompt string."""
+    safe_prompt = urllib.parse.quote(prompt)
+    return (
+        f"https://image.pollinations.ai/prompt/{safe_prompt}"
+        f"?width={width}&height={height}&nologo=true&private=true"
+    )
+
+
 def generate_article_images(
     headline: str,
     focus_keyword: str | None = None,
@@ -106,47 +72,24 @@ def generate_article_images(
     """
     Returns (hero_image_url, section_image_urls).
 
-    Uses gpt-image-1 (this account has no dall-e-3 access). Images are decoded
-    from base64 and saved locally, served at /api/static/images/<file>.png.
-    Never raises — failures are logged/printed and that slot returns
-    None/skipped so the pipeline always persists the article even without images.
+    Generates Pollinations.ai URLs — free, no API key, instant (no network call
+    at generation time; the browser fetches the image directly when rendered).
+    Never raises.
     """
-    settings = get_settings()
-    if not settings.openai_api_key:
-        message = "[image_service] OPENAI_API_KEY / CHATGPT_API_KEY not configured; skipping image generation."
-        logger.error(message)
-        print(message, flush=True)
-        return None, []
-
-    client = OpenAI(api_key=settings.openai_api_key)
-
-    # ── Hero image (landscape) ────────────────────────────────────────────────
-    hero_url: str | None = None
-    hero_prompt = _build_prompt(
-        headline, focus_keyword, location, article_type,
-        angle=(
-            "Wide establishing shot capturing the full property or destination as a cinematic "
-            "hero cover image — grand scale, strong horizon line, immersive sense of place."
-        ),
-    )
     try:
-        hero_result = client.images.generate(
-            model=IMAGE_MODEL,
-            prompt=hero_prompt,
-            size=HERO_SIZE,
-            quality=IMAGE_QUALITY,
-            n=1,
+        hero_prompt = _build_prompt(
+            headline, focus_keyword, location, article_type,
+            angle=(
+                "Wide establishing shot capturing the full property or destination as a cinematic "
+                "hero cover image — grand scale, strong horizon line, immersive sense of place."
+            ),
         )
-        b64 = hero_result.data[0].b64_json
-        if b64:
-            hero_url = _save_base64_image(b64)
-            logger.info("Hero image generated for %r -> %s", headline[:50], hero_url)
-        else:
-            print(f"[image_service] Hero image: no b64_json returned for {headline[:50]!r}", flush=True)
+        hero_url = _pollinations_url(hero_prompt, width=1280, height=720)
+        logger.info("Hero image URL built for %r", headline[:50])
     except Exception as exc:  # noqa: BLE001
-        _log_failure("Hero image generation", headline, exc)
+        logger.error("Hero image URL build failed for %r: %s", headline[:50], exc)
+        hero_url = None
 
-    # ── Section images (square) ───────────────────────────────────────────────
     section_urls: list[str] = []
     section_angles = [
         (
@@ -161,21 +104,11 @@ def generate_article_images(
         ),
     ]
     for angle in section_angles:
-        prompt = _build_prompt(headline, focus_keyword, location, article_type, angle)
         try:
-            result = client.images.generate(
-                model=IMAGE_MODEL,
-                prompt=prompt,
-                size=SECTION_SIZE,
-                quality=IMAGE_QUALITY,
-                n=1,
-            )
-            b64 = result.data[0].b64_json
-            if b64:
-                section_urls.append(_save_base64_image(b64))
-            else:
-                print(f"[image_service] Section image: no b64_json returned for {headline[:50]!r}", flush=True)
+            prompt = _build_prompt(headline, focus_keyword, location, article_type, angle)
+            url = _pollinations_url(prompt, width=1024, height=576)
+            section_urls.append(url)
         except Exception as exc:  # noqa: BLE001
-            _log_failure("Section image generation", headline, exc)
+            logger.error("Section image URL build failed for %r: %s", headline[:50], exc)
 
     return hero_url, section_urls

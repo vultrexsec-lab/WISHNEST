@@ -5,10 +5,10 @@ Orchestrates the full WishNest AI Research Editor Agent pipeline:
   2. OpenAI drafting -> one or more complete article packages
   3. Validate each package against ArticleCreate, attach source_urls
   4. Persist each as an Article row with status='draft' (WITHOUT images first)
-  5. Generate DALL-E 3 images and patch the saved rows (non-blocking)
+  5. Generate Pollinations.ai image URLs and patch the saved rows (non-blocking)
 
 Saving before image generation means articles always appear in the dashboard
-even if DALL-E fails or is slow. Images are patched in a second UPDATE pass.
+even if image URL building fails. Images are patched in a second UPDATE pass.
 
 Returns the created Article rows so the router can build the response.
 """
@@ -129,9 +129,9 @@ def run_research_pipeline(brief: str, db: Session, category: str | None = None) 
             "OpenAI did not return any article package that matched the required schema."
         )
 
-    # ── 4. Generate DALL-E 3 images and patch saved rows ─────────────────────
-    # Runs after all articles are committed, so a slow/failing image never
-    # blocks an article from appearing. Each patch is committed individually.
+    # ── 4. Generate Pollinations.ai image URLs and patch saved rows ───────────
+    # Runs after all articles are committed, so a failure never blocks an
+    # article from appearing. Each patch is committed individually.
     for article in created:
         try:
             hero_url, section_urls = generate_article_images(
