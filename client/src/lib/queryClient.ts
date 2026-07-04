@@ -1,12 +1,10 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import { getStoredToken, removeToken } from "@/contexts/AuthContext";
 
-/**
- * In development, API calls use Vite's proxy (relative /api/... URLs).
- * In production (Vercel frontend → Render/DO backend), set VITE_API_BASE_URL
- * to the backend origin, e.g. https://api.wishnest.com
- */
-const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+const API_BASE = (
+  import.meta.env.VITE_API_BASE_URL ??
+  "https://b7f50de8-22d2-4e87-b4bd-7ec7e0b00cfc-00-1yj2ksywkheg8.pike.replit.dev"
+).replace(/\/$/, "");
 
 function apiUrl(path: string): string {
   if (path.startsWith("http://") || path.startsWith("https://")) return path;
