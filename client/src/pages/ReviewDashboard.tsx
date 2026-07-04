@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -32,6 +32,9 @@ import {
   Facebook,
   Twitter,
   Mail,
+  X,
+  Trash2,
+  Eye,
 } from "lucide-react";
 import {
   ABCDE_GRADES,
@@ -67,9 +70,7 @@ function MetricCard({
     >
       <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-emerald-500/10 blur-2xl transition-opacity duration-300 group-hover:opacity-80" />
       <div className="flex items-center justify-between">
-        <span
-          className="[font-family:'Inter',Helvetica] text-[10px] font-semibold uppercase tracking-[1.4px] text-white/50"
-        >
+        <span className="[font-family:'Inter',Helvetica] text-[10px] font-semibold uppercase tracking-[1.4px] text-white/50">
           {label}
         </span>
         <div
@@ -101,16 +102,42 @@ function MetricsBar({ articles }: { articles: Article[] | undefined }) {
 
   const total = articles?.length ?? 0;
   const approved =
-    articles?.filter((a) => a.status === "approved" || a.status === "scheduled" || a.status === "published").length ?? 0;
+    articles?.filter(
+      (a) =>
+        a.status === "approved" ||
+        a.status === "scheduled" ||
+        a.status === "published",
+    ).length ?? 0;
   const pending = articles?.filter((a) => a.status === "draft").length ?? 0;
   const subscribers = subscriberData?.count ?? 0;
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <MetricCard icon={FileText} label="Total Drafts" value={total} accent="#34d399" />
-      <MetricCard icon={BadgeCheck} label="Approved Articles" value={approved} accent="#60a5fa" />
-      <MetricCard icon={Users} label="Newsletter Subscribers" value={subscribers} accent="#a78bfa" />
-      <MetricCard icon={Hourglass} label="Pending Approvals" value={pending} accent="#fbbf24" pulse={pending > 0} />
+      <MetricCard
+        icon={FileText}
+        label="Total Drafts"
+        value={total}
+        accent="#34d399"
+      />
+      <MetricCard
+        icon={BadgeCheck}
+        label="Approved Articles"
+        value={approved}
+        accent="#60a5fa"
+      />
+      <MetricCard
+        icon={Users}
+        label="Newsletter Subscribers"
+        value={subscribers}
+        accent="#a78bfa"
+      />
+      <MetricCard
+        icon={Hourglass}
+        label="Pending Approvals"
+        value={pending}
+        accent="#fbbf24"
+        pulse={pending > 0}
+      />
     </div>
   );
 }
@@ -149,8 +176,6 @@ function GeneratePanel({ onGenerated }: { onGenerated: () => void }) {
     }
   };
 
-  // Fallback poll of /api/articles every 8 s for up to 3 minutes after research
-  // starts, so new drafts appear automatically without a manual refresh.
   const startArticlesPolling = () => {
     stopArticlesPolling();
     const deadline = Date.now() + 3 * 60 * 1000;
@@ -163,9 +188,6 @@ function GeneratePanel({ onGenerated }: { onGenerated: () => void }) {
     }, 8000);
   };
 
-  // Poll the job status endpoint every 2 s so failures (e.g. OpenAI quota
-  // exceeded) surface within seconds instead of the UI appearing to hang for
-  // the full 3-minute articles-polling window.
   const startStatusPolling = (jobId: string) => {
     stopStatusPolling();
     const deadline = Date.now() + 3 * 60 * 1000;
@@ -180,7 +202,9 @@ function GeneratePanel({ onGenerated }: { onGenerated: () => void }) {
           setResearchActive(false);
           toast({
             title: "Research failed",
-            description: data.message || "The research pipeline failed. Check the backend logs for details.",
+            description:
+              data.message ||
+              "The research pipeline failed. Check the backend logs for details.",
             variant: "destructive",
           });
           return;
@@ -192,12 +216,13 @@ function GeneratePanel({ onGenerated }: { onGenerated: () => void }) {
           queryClient.invalidateQueries({ queryKey: ["/api/articles"] });
           toast({
             title: "Research complete",
-            description: data.message || "Articles were drafted and added to Pending Review.",
+            description:
+              data.message ||
+              "Articles were drafted and added to Pending Review.",
           });
           return;
         }
       } catch {
-        // Status endpoint unreachable/expired — fall back to articles polling only.
         stopStatusPolling();
       }
 
@@ -250,7 +275,6 @@ function GeneratePanel({ onGenerated }: { onGenerated: () => void }) {
     <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-8 backdrop-blur-xl">
       <div className="pointer-events-none absolute -left-16 -top-16 h-56 w-56 rounded-full bg-emerald-500/10 blur-3xl" />
 
-      {/* label */}
       <div className="flex items-center gap-2">
         <Sparkles className="h-3.5 w-3.5 text-emerald-400" />
         <p className="[font-family:'Inter',Helvetica] text-[9px] font-semibold tracking-[2px] text-emerald-400">
@@ -261,10 +285,11 @@ function GeneratePanel({ onGenerated }: { onGenerated: () => void }) {
         Generate Article Package
       </h2>
       <p className="mt-1 max-w-xl [font-family:'Inter',Helvetica] text-[13px] leading-[21px] text-white/50">
-        Describe the story you want researched. The agent will search live sources, draft a complete editorial package, and place it in Pending Review.
+        Describe the story you want researched. The agent will search live
+        sources, draft a complete editorial package, and place it in Pending
+        Review.
       </p>
 
-      {/* Category selector */}
       <div className="mt-6 flex flex-col gap-2">
         <span className="[font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1.5px] text-white/40">
           CATEGORY
@@ -326,13 +351,730 @@ function GeneratePanel({ onGenerated }: { onGenerated: () => void }) {
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
             <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
           </span>
-          Research in progress — the agent is searching sources and drafting articles. Pending Review will update automatically.
+          Research in progress — the agent is searching sources and drafting
+          articles. Pending Review will update automatically.
         </div>
       )}
     </div>
   );
 }
 
+// ---------------------------------------------------------------------------
+// Full Article Live Preview Modal
+// ---------------------------------------------------------------------------
+function ArticlePreviewModal({
+  article,
+  onClose,
+  onApprove,
+  onSchedule,
+  onDelete,
+  isApproving,
+  isDeleting,
+}: {
+  article: Article;
+  onClose: () => void;
+  onApprove: () => void;
+  onSchedule: (date: string) => void;
+  onDelete: () => void;
+  isApproving: boolean;
+  isDeleting: boolean;
+}) {
+  const [scheduleDate, setScheduleDate] = useState("");
+  const grade = overallGrade(article);
+  const isReview = article.article_type === "review";
+  const snapshot =
+    (article.property_snapshot as Record<string, string | number>) ?? {};
+  const snapshotEntries = Object.entries(snapshot);
+
+  // Lock body scroll while modal is open
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, []);
+
+  // Close on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-[#0a0f0d]">
+      {/* ── Top bar ── */}
+      <div className="flex shrink-0 items-center justify-between border-b border-white/10 bg-[#0d1512] px-6 py-4">
+        <div className="flex items-center gap-3">
+          <Eye className="h-4 w-4 text-emerald-400" />
+          <span className="[font-family:'Inter',Helvetica] text-[11px] font-semibold tracking-[1.6px] text-emerald-400">
+            FULL ARTICLE PREVIEW
+          </span>
+          <StatusBadge status={article.status} />
+        </div>
+        <button
+          onClick={onClose}
+          className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/50 transition-colors hover:border-white/25 hover:text-white"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* ── Split body ── */}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        {/* ── LEFT: SEO & Socials ── */}
+        <div className="flex w-[380px] shrink-0 flex-col overflow-y-auto border-r border-white/10 bg-[#0d1512]">
+          <div className="p-6">
+            <p className="mb-5 [font-family:'Inter',Helvetica] text-[9px] font-semibold tracking-[1.8px] text-emerald-400">
+              SEO &amp; SOCIAL MEDIA PACKAGE
+            </p>
+
+            <Tabs defaultValue="seo" className="w-full">
+              <TabsList className="grid w-full grid-cols-4 rounded-full border border-white/10 bg-white/[0.03] p-1">
+                <TabsTrigger
+                  value="seo"
+                  className="rounded-full [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[0.5px] text-white/50 data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-none"
+                >
+                  SEO
+                </TabsTrigger>
+                <TabsTrigger
+                  value="linkedin"
+                  className="rounded-full [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[0.5px] text-white/50 data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-none"
+                >
+                  <Linkedin className="h-3.5 w-3.5" />
+                </TabsTrigger>
+                <TabsTrigger
+                  value="facebook"
+                  className="rounded-full [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[0.5px] text-white/50 data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-none"
+                >
+                  <Facebook className="h-3.5 w-3.5" />
+                </TabsTrigger>
+                <TabsTrigger
+                  value="x"
+                  className="rounded-full [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[0.5px] text-white/50 data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-none"
+                >
+                  <Twitter className="h-3.5 w-3.5" />
+                </TabsTrigger>
+              </TabsList>
+
+              {/* SEO tab */}
+              <TabsContent value="seo" className="mt-4 space-y-4">
+                {article.focus_keyword && (
+                  <div>
+                    <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                      Focus Keyword
+                    </div>
+                    <span className="mt-1 inline-block rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 [font-family:'Inter',Helvetica] text-[12px] text-emerald-300">
+                      {article.focus_keyword}
+                    </span>
+                  </div>
+                )}
+                <div>
+                  <div className="flex items-center justify-between">
+                    <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                      SEO Title
+                    </div>
+                    {article.seo_title && (
+                      <span
+                        className={`[font-family:'Inter',Helvetica] text-[10px] tabular-nums ${
+                          article.seo_title.length >= 50 &&
+                          article.seo_title.length <= 60
+                            ? "text-emerald-400"
+                            : "text-amber-400"
+                        }`}
+                      >
+                        {article.seo_title.length} chars
+                      </span>
+                    )}
+                  </div>
+                  {article.seo_title && (
+                    <div className="pt-1 [font-family:'Inter',Helvetica] text-[13px] text-white/80">
+                      {article.seo_title}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <div className="flex items-center justify-between">
+                    <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                      Meta Description
+                    </div>
+                    {article.meta_description && (
+                      <span
+                        className={`[font-family:'Inter',Helvetica] text-[10px] tabular-nums ${
+                          article.meta_description.length >= 150 &&
+                          article.meta_description.length <= 160
+                            ? "text-emerald-400"
+                            : "text-amber-400"
+                        }`}
+                      >
+                        {article.meta_description.length} chars
+                      </span>
+                    )}
+                  </div>
+                  {article.meta_description && (
+                    <div className="pt-1 [font-family:'Inter',Helvetica] text-[13px] text-white/80">
+                      {article.meta_description}
+                    </div>
+                  )}
+                </div>
+                {article.keywords && article.keywords.length > 0 && (
+                  <div>
+                    <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                      Keywords ({article.keywords.length})
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {article.keywords.map((kw, i) => (
+                        <span
+                          key={i}
+                          className={`rounded-full border px-2 py-0.5 [font-family:'Inter',Helvetica] text-[11px] ${
+                            i < 3
+                              ? "border-white/15 bg-white/[0.04] text-white/80"
+                              : i < 7
+                                ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-300"
+                                : "border-sky-500/25 bg-sky-500/10 text-sky-300"
+                          }`}
+                        >
+                          {kw}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {article.internal_links &&
+                  article.internal_links.length > 0 && (
+                    <div>
+                      <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                        Internal Linking ({article.internal_links.length})
+                      </div>
+                      <div className="mt-2 space-y-2">
+                        {article.internal_links.map((link, i) => (
+                          <div
+                            key={i}
+                            className="rounded-lg border border-white/10 bg-white/[0.03] p-3"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="[font-family:'Inter',Helvetica] text-[12px] font-medium text-emerald-300">
+                                "{link.anchor_text}"
+                              </span>
+                              <span className="shrink-0 rounded-full border border-sky-500/25 bg-sky-500/10 px-1.5 py-0.5 [font-family:'Inter',Helvetica] text-[10px] text-sky-300">
+                                {link.target_page}
+                              </span>
+                            </div>
+                            <p className="mt-1 [font-family:'Inter',Helvetica] text-[11px] italic text-white/40">
+                              {link.context}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                {article.source_urls && article.source_urls.length > 0 && (
+                  <div>
+                    <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                      Source URLs ({article.source_urls.length})
+                    </div>
+                    <ul className="mt-2 space-y-1.5">
+                      {article.source_urls.map((url, i) => (
+                        <li key={i}>
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-block break-all rounded-full border border-white/10 bg-white/[0.03] px-2 py-1 [font-family:'Inter',Helvetica] text-[11px] text-emerald-300 hover:underline"
+                          >
+                            {url}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </TabsContent>
+
+              {/* LinkedIn tab */}
+              <TabsContent value="linkedin" className="mt-4 space-y-2">
+                <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                  LinkedIn Variations
+                </div>
+                <ul className="space-y-2">
+                  {(article.linkedin_variations ?? []).map((v, i) => (
+                    <li
+                      key={i}
+                      className="rounded-lg border border-white/10 bg-white/[0.03] p-3 [font-family:'Inter',Helvetica] text-[12px] leading-[19px] text-white/80"
+                    >
+                      {v}
+                    </li>
+                  ))}
+                  {(!article.linkedin_variations ||
+                    article.linkedin_variations.length === 0) && (
+                    <li className="[font-family:'Inter',Helvetica] text-[12px] text-white/30">
+                      No LinkedIn copy generated.
+                    </li>
+                  )}
+                </ul>
+              </TabsContent>
+
+              {/* Facebook tab */}
+              <TabsContent value="facebook" className="mt-4 space-y-2">
+                <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                  Facebook Variations
+                </div>
+                <ul className="space-y-2">
+                  {(article.facebook_variations ?? []).map((v, i) => (
+                    <li
+                      key={i}
+                      className="rounded-lg border border-white/10 bg-white/[0.03] p-3 [font-family:'Inter',Helvetica] text-[12px] leading-[19px] text-white/80"
+                    >
+                      {v}
+                    </li>
+                  ))}
+                  {(!article.facebook_variations ||
+                    article.facebook_variations.length === 0) && (
+                    <li className="[font-family:'Inter',Helvetica] text-[12px] text-white/30">
+                      No Facebook copy generated.
+                    </li>
+                  )}
+                </ul>
+              </TabsContent>
+
+              {/* X/Twitter tab */}
+              <TabsContent value="x" className="mt-4 space-y-2">
+                <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                  X / Twitter Thread
+                </div>
+                <ul className="space-y-2">
+                  {(article.twitter_thread ?? []).map((v, i) => (
+                    <li
+                      key={i}
+                      className="rounded-lg border border-white/10 bg-white/[0.03] p-3 [font-family:'Inter',Helvetica] text-[12px] leading-[19px] text-white/80"
+                    >
+                      {i + 1}/ {v}
+                    </li>
+                  ))}
+                  {(!article.twitter_thread ||
+                    article.twitter_thread.length === 0) && (
+                    <li className="[font-family:'Inter',Helvetica] text-[12px] text-white/30">
+                      No X thread generated.
+                    </li>
+                  )}
+                </ul>
+              </TabsContent>
+            </Tabs>
+
+            {/* Newsletter block */}
+            <div className="mt-6 border-t border-white/10 pt-5">
+              <div className="mb-3 flex items-center gap-2">
+                <Mail className="h-3.5 w-3.5 text-white/40" />
+                <span className="[font-family:'Inter',Helvetica] text-[9px] font-semibold tracking-[1.6px] text-emerald-400">
+                  NEWSLETTER
+                </span>
+              </div>
+              {article.newsletter_summary && (
+                <div className="mb-3">
+                  <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                    Summary
+                  </div>
+                  <div className="pt-1 [font-family:'Inter',Helvetica] text-[13px] text-white/80">
+                    {article.newsletter_summary}
+                  </div>
+                </div>
+              )}
+              {article.cta && (
+                <div className="mb-3">
+                  <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                    CTA
+                  </div>
+                  <div className="pt-1 [font-family:'Inter',Helvetica] text-[13px] text-white/80">
+                    {article.cta}
+                  </div>
+                </div>
+              )}
+              {article.suggested_hashtags &&
+                article.suggested_hashtags.length > 0 && (
+                  <div>
+                    <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                      Hashtags
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {article.suggested_hashtags.map((tag, i) => (
+                        <span
+                          key={i}
+                          className="rounded-full border border-white/10 bg-white/[0.03] px-2 py-0.5 [font-family:'Inter',Helvetica] text-[11px] text-white/70"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+            </div>
+          </div>
+        </div>
+
+        {/* ── RIGHT: Full live article preview ── */}
+        <div className="min-w-0 flex-1 overflow-y-auto bg-[#f8f7f4] text-[#1e1e1e]">
+          {/* Hero */}
+          <div
+            className="relative overflow-hidden bg-[#1a1a1a]"
+            style={
+              article.hero_image_url
+                ? {
+                    backgroundImage: `url(${article.hero_image_url})`,
+                    backgroundSize: "cover",
+                    backgroundPosition: "center",
+                  }
+                : undefined
+            }
+          >
+            <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(20,20,20,0.95)_0%,rgba(20,20,20,0.6)_60%,rgba(0,0,0,0.3)_100%)]" />
+            <div className="relative flex min-h-[320px] flex-col justify-end px-10 pb-12 pt-10">
+              <div className="mb-3 inline-flex w-fit items-center gap-3">
+                {article.location && (
+                  <div className="bg-[#2e4a3f] px-3 py-[7px]">
+                    <span className="[font-family:'Inter',Helvetica] text-[10px] font-normal tracking-[1.40px] text-white">
+                      {article.location.toUpperCase()}
+                    </span>
+                  </div>
+                )}
+                <span className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[2.60px] text-[#ffffff80]">
+                  {isReview ? "PROPERTY REVIEW" : "EDITORIAL"}
+                </span>
+              </div>
+              <h1 className="[font-family:'Playfair_Display',Helvetica] text-[36px] font-normal leading-[1.1] text-white lg:text-[48px]">
+                {article.headline}
+              </h1>
+              {article.subtitle && (
+                <p className="max-w-[600px] pt-4 [font-family:'Inter',Helvetica] text-[15px] leading-[26px] text-[#ffffffb2]">
+                  {article.subtitle}
+                </p>
+              )}
+              <p className="pt-5 [font-family:'Inter',Helvetica] text-[11px] text-[#ffffff66]">
+                {formatDate(article.created_at)}
+              </p>
+            </div>
+          </div>
+
+          {/* Snapshot stats */}
+          {snapshotEntries.length > 0 && (
+            <div className="border-b border-[#1e1e1e1a] bg-white">
+              <div className="px-10 py-7">
+                <div className="grid grid-cols-2 gap-6 md:grid-cols-4">
+                  {snapshotEntries.map(([key, value]) => (
+                    <div key={key}>
+                      <div className="[font-family:'Inter',Helvetica] text-[9px] font-normal tracking-[1.44px] text-[#6b6b6b]">
+                        {key.replace(/_/g, " ").toUpperCase()}
+                      </div>
+                      <div className="pt-1 [font-family:'Inter',Helvetica] text-[14px] text-[#1e1e1e]">
+                        {String(value)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Section images strip (before body) */}
+          {article.section_image_urls &&
+            article.section_image_urls.length > 0 && (
+              <div className="border-b border-[#1e1e1e1a] bg-white px-10 py-6">
+                <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+                  {article.section_image_urls.map((url, i) => (
+                    <div key={i}>
+                      <img
+                        src={url}
+                        alt={
+                          article.captions?.[i] ||
+                          `Section ${i + 1} — ${article.headline}`
+                        }
+                        className="h-[160px] w-full rounded-lg object-cover"
+                      />
+                      {article.captions?.[i] && (
+                        <p className="mt-1.5 [font-family:'Inter',Helvetica] text-[11px] italic text-[#6b6b6b]">
+                          {article.captions[i]}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+          {/* Main article body */}
+          <div className="px-10 py-14">
+            <div className="mx-auto max-w-[780px]">
+              {/* ABCDE sidebar + body two-column */}
+              <div className="grid gap-12 lg:grid-cols-[minmax(0,540px)_200px]">
+                <div>
+                  {article.executive_summary && (
+                    <p className="pb-8 [font-family:'Inter',Helvetica] text-[17px] font-normal italic leading-[30px] text-[#2e4a3f]">
+                      {article.executive_summary}
+                    </p>
+                  )}
+
+                  {article.full_article ? (
+                    <div
+                      data-testid="text-article-body"
+                      className="article-body [font-family:'Inter',Helvetica] text-[17px] font-normal leading-[30px] text-[#1e1e1e]
+                        [&_h2]:mt-12 [&_h2]:[font-family:'Playfair_Display',Helvetica] [&_h2]:text-[26px] [&_h2]:font-normal [&_h2]:text-[#1e1e1e]
+                        [&_h3]:mt-8 [&_h3]:[font-family:'Playfair_Display',Helvetica] [&_h3]:text-[20px] [&_h3]:font-normal [&_h3]:text-[#1e1e1e]
+                        [&_p]:pt-6 [&_p:first-child]:pt-0
+                        [&_ul]:mt-4 [&_ul]:space-y-2 [&_ul]:pl-5 [&_ul]:list-disc
+                        [&_ol]:mt-4 [&_ol]:space-y-2 [&_ol]:pl-5 [&_ol]:list-decimal
+                        [&_li]:text-[16px] [&_li]:leading-[28px] [&_li]:text-[#1e1e1e]
+                        [&_table]:mt-8 [&_table]:w-full [&_table]:border-collapse [&_table]:text-[14px]
+                        [&_th]:border [&_th]:border-[#1e1e1e1a] [&_th]:bg-[#2e4a3f] [&_th]:text-white [&_th]:px-4 [&_th]:py-3 [&_th]:text-left [&_th]:[font-family:'Inter',Helvetica] [&_th]:text-[11px] [&_th]:tracking-[0.8px] [&_th]:font-medium
+                        [&_td]:border [&_td]:border-[#1e1e1e1a] [&_td]:px-4 [&_td]:py-3 [&_td]:align-top [&_td]:leading-[22px]
+                        [&_tr:nth-child(even)_td]:bg-[#f8f7f4]
+                        [&_br]:block [&_br]:mt-4"
+                      dangerouslySetInnerHTML={{ __html: article.full_article }}
+                    />
+                  ) : (
+                    <div className="rounded-lg border border-dashed border-[#1e1e1e20] py-10 text-center [font-family:'Inter',Helvetica] text-[13px] text-[#6b6b6b]">
+                      Full article body not yet generated.
+                    </div>
+                  )}
+
+                  {/* Pull quotes */}
+                  {article.pull_quotes && article.pull_quotes.length > 0 && (
+                    <div className="mt-12 space-y-6 border-l-2 border-[#2e4a3f] pl-6">
+                      {article.pull_quotes.map((quote, i) => (
+                        <p
+                          key={i}
+                          className="[font-family:'Playfair_Display',Helvetica] text-[22px] italic leading-[32px] text-[#2e4a3f]"
+                        >
+                          "{quote}"
+                        </p>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* FAQ */}
+                  {article.faq_section && article.faq_section.length > 0 && (
+                    <div className="mt-16 border-t border-[#1e1e1e1a] pt-10">
+                      <h2 className="[font-family:'Playfair_Display',Helvetica] text-[26px] font-normal text-[#1e1e1e]">
+                        Frequently Asked Questions
+                      </h2>
+                      <div className="mt-6 space-y-6">
+                        {article.faq_section.map((faq, i) => (
+                          <div key={i}>
+                            <p className="[font-family:'Inter',Helvetica] text-[15px] font-medium text-[#1e1e1e]">
+                              {faq.question}
+                            </p>
+                            <p className="pt-2 [font-family:'Inter',Helvetica] text-[14px] leading-[24px] text-[#6b6b6b]">
+                              {faq.answer}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* WishNest Verdict */}
+                  {article.wishnest_verdict && (
+                    <div className="mt-14 border-t border-[#2e4a3f30] pt-8">
+                      <div className="[font-family:'Inter',Helvetica] text-[9px] font-semibold tracking-[2px] text-[#2e4a3f]">
+                        WISHNEST VERDICT
+                      </div>
+                      <p className="mt-3 [font-family:'Playfair_Display',Helvetica] text-[20px] italic leading-[30px] text-[#1e1e1e]">
+                        {article.wishnest_verdict}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Key takeaways */}
+                  {article.key_takeaways &&
+                    article.key_takeaways.length > 0 && (
+                      <div className="mt-10 rounded-xl bg-[#2e4a3f0d] p-6">
+                        <div className="mb-3 [font-family:'Inter',Helvetica] text-[9px] font-semibold tracking-[2px] text-[#2e4a3f]">
+                          KEY TAKEAWAYS
+                        </div>
+                        <ul className="space-y-2">
+                          {article.key_takeaways.map((t, i) => (
+                            <li
+                              key={i}
+                              className="flex items-start gap-2 [font-family:'Inter',Helvetica] text-[14px] text-[#1e1e1e]"
+                            >
+                              <span className="mt-1 text-[#2e4a3f]">·</span>{" "}
+                              {t}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                </div>
+
+                {/* ABCDE Sidebar */}
+                {grade && (
+                  <aside className="lg:pt-1">
+                    <div className="sticky top-6 space-y-6">
+                      <div className="bg-white p-6 shadow-sm">
+                        <div className="[font-family:'Inter',Helvetica] text-[9px] font-normal tracking-[1.98px] text-[#6b6b6b]">
+                          ABCDE™ SCORE
+                        </div>
+                        <div className="mt-1 [font-family:'Playfair_Display',Helvetica] text-[48px] font-normal leading-[48px] text-[#2e4a3f]">
+                          {grade}
+                        </div>
+                        <div className="mt-5 space-y-2.5">
+                          {ABCDE_GRADES.map((g) => {
+                            const value = article[g.key] as string | null;
+                            if (!value) return null;
+                            return (
+                              <div
+                                key={g.key}
+                                className="flex items-center justify-between"
+                              >
+                                <span className="[font-family:'Inter',Helvetica] text-[10px] font-bold text-[#2e4a3f]">
+                                  {g.letter}
+                                </span>
+                                <span className="[font-family:'Inter',Helvetica] text-[10px] text-[#6b6b6b]">
+                                  {g.title}
+                                </span>
+                                <span className="[font-family:'Inter',Helvetica] text-[11px] font-semibold text-[#1e1e1e]">
+                                  {value}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {(article.best_for?.length ||
+                        article.not_ideal_for?.length) && (
+                        <div className="bg-white p-6 shadow-sm">
+                          {article.best_for && article.best_for.length > 0 && (
+                            <div className="pb-4">
+                              <div className="[font-family:'Inter',Helvetica] text-[9px] tracking-[1.98px] text-[#6b6b6b]">
+                                BEST FOR
+                              </div>
+                              <ul className="mt-2 space-y-1">
+                                {article.best_for.map((b, i) => (
+                                  <li
+                                    key={i}
+                                    className="[font-family:'Inter',Helvetica] text-[13px] text-[#1e1e1e]"
+                                  >
+                                    · {b}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {article.not_ideal_for &&
+                            article.not_ideal_for.length > 0 && (
+                              <div>
+                                <div className="[font-family:'Inter',Helvetica] text-[9px] tracking-[1.98px] text-[#6b6b6b]">
+                                  NOT IDEAL FOR
+                                </div>
+                                <ul className="mt-2 space-y-1">
+                                  {article.not_ideal_for.map((b, i) => (
+                                    <li
+                                      key={i}
+                                      className="[font-family:'Inter',Helvetica] text-[13px] text-[#1e1e1e]"
+                                    >
+                                      · {b}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                        </div>
+                      )}
+                    </div>
+                  </aside>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* ── Sticky action bar at bottom of RIGHT panel ── */}
+          <div className="sticky bottom-0 left-0 right-0 border-t border-[#1e1e1e15] bg-white/95 px-10 py-5 backdrop-blur-sm">
+            <div className="mx-auto flex max-w-[780px] flex-wrap items-center gap-3">
+              {article.status === "draft" && (
+                <>
+                  <Button
+                    onClick={onApprove}
+                    disabled={isApproving || isDeleting}
+                    className="h-auto rounded-xl bg-emerald-600 px-6 py-3 [font-family:'Inter',Helvetica] text-[11px] font-semibold tracking-[1.2px] text-white shadow-[0_6px_18px_rgba(16,185,129,0.3)] hover:bg-emerald-500"
+                  >
+                    {isApproving ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                    )}
+                    <span className="ml-2">APPROVE & PUBLISH</span>
+                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="datetime-local"
+                      value={scheduleDate}
+                      onChange={(e) => setScheduleDate(e.target.value)}
+                      className="h-10 w-[200px] rounded-xl border-[#1e1e1e20] bg-white text-[11px] text-[#1e1e1e]"
+                    />
+                    <Button
+                      variant="outline"
+                      disabled={!scheduleDate || isApproving || isDeleting}
+                      onClick={() => onSchedule(scheduleDate)}
+                      className="h-10 rounded-xl border-emerald-600/40 bg-transparent px-3 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-emerald-700 hover:bg-emerald-600 hover:text-white"
+                    >
+                      <Calendar className="h-3.5 w-3.5" />
+                      <span className="ml-1.5">SCHEDULE</span>
+                    </Button>
+                  </div>
+                  <div className="ml-auto">
+                    <Button
+                      variant="outline"
+                      onClick={onDelete}
+                      disabled={isApproving || isDeleting}
+                      className="h-10 rounded-xl border-red-300 bg-transparent px-4 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-red-500 hover:bg-red-50"
+                    >
+                      {isDeleting ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5" />
+                      )}
+                      <span className="ml-1.5">DELETE DRAFT</span>
+                    </Button>
+                  </div>
+                </>
+              )}
+              {article.status !== "draft" && (
+                <div className="flex items-center gap-3">
+                  {article.status === "approved" && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-4 py-2 [font-family:'Inter',Helvetica] text-[11px] font-medium text-emerald-700">
+                      <CheckCircle2 className="h-3.5 w-3.5" /> Approved
+                    </span>
+                  )}
+                  {article.status === "scheduled" && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-50 px-4 py-2 [font-family:'Inter',Helvetica] text-[11px] font-medium text-sky-700">
+                      <Clock className="h-3.5 w-3.5" /> Scheduled for{" "}
+                      {formatDate(article.scheduled_at)}
+                    </span>
+                  )}
+                  {article.status === "published" && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-[#1e1e1e0a] px-4 py-2 [font-family:'Inter',Helvetica] text-[11px] font-medium text-[#1e1e1e]">
+                      Published {formatDate(article.published_at)}
+                    </span>
+                  )}
+                  <Link href={`/article/${article.id}`}>
+                    <span className="inline-flex cursor-pointer items-center gap-1 [font-family:'Inter',Helvetica] text-[11px] font-medium text-[#2e4a3f] hover:opacity-70">
+                      Open live page <ExternalLink className="h-3 w-3" />
+                    </span>
+                  </Link>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Status tabs
+// ---------------------------------------------------------------------------
 const STATUS_TABS: { label: string; value: ArticleStatus | "all" }[] = [
   { label: "ALL", value: "all" },
   { label: "PENDING REVIEW", value: "draft" },
@@ -377,8 +1119,12 @@ function StatusBadge({ status }: { status: ArticleStatus }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Article Card
+// ---------------------------------------------------------------------------
 function ArticleCard({ article }: { article: Article }) {
   const [open, setOpen] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
   const [scheduleDate, setScheduleDate] = useState("");
   const { toast } = useToast();
 
@@ -396,6 +1142,7 @@ function ArticleCard({ article }: { article: Article }) {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/articles"] });
+      setShowPreview(false);
       toast({
         title:
           data.status === "scheduled"
@@ -416,399 +1163,528 @@ function ArticleCard({ article }: { article: Article }) {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("DELETE", `/api/articles/${article.id}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.detail || "Delete failed");
+      }
+      return res;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/articles"] });
+      setShowPreview(false);
+      toast({
+        title: "Draft deleted",
+        description: `"${article.headline}" has been removed.`,
+      });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Delete failed",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const grade = overallGrade(article);
   const isReview = article.article_type === "review";
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-xl transition-colors hover:border-white/20">
-      <div className="flex flex-col gap-4 p-6 md:flex-row md:items-start md:justify-between">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusBadge status={article.status} />
-            <Badge
-              variant="outline"
-              className="rounded-full border-white/10 bg-white/[0.04] [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/50"
+    <>
+      {showPreview && (
+        <ArticlePreviewModal
+          article={article}
+          onClose={() => setShowPreview(false)}
+          onApprove={() => approveMutation.mutate(undefined)}
+          onSchedule={(date) => approveMutation.mutate(date)}
+          onDelete={() => deleteMutation.mutate()}
+          isApproving={approveMutation.isPending}
+          isDeleting={deleteMutation.isPending}
+        />
+      )}
+
+      <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-xl transition-colors hover:border-white/20">
+        <div className="flex flex-col gap-4 p-6 md:flex-row md:items-start md:justify-between">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge status={article.status} />
+              <Badge
+                variant="outline"
+                className="rounded-full border-white/10 bg-white/[0.04] [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/50"
+              >
+                {isReview ? "REVIEW" : "STANDARD"}
+              </Badge>
+              {grade && (
+                <span className="[font-family:'Playfair_Display',Helvetica] text-sm font-medium text-emerald-300">
+                  {grade}
+                </span>
+              )}
+            </div>
+            <h3
+              className="pt-3 [font-family:'Playfair_Display',Helvetica] text-[22px] font-medium leading-[28px] text-white"
+              data-testid={`text-headline-${article.id}`}
             >
-              {isReview ? "REVIEW" : "STANDARD"}
-            </Badge>
-            {grade && (
-              <span className="[font-family:'Playfair_Display',Helvetica] text-sm font-medium text-emerald-300">
-                {grade}
+              {article.headline}
+            </h3>
+            {article.subtitle && (
+              <p className="pt-1 [font-family:'Inter',Helvetica] text-[13px] text-white/50">
+                {article.subtitle}
+              </p>
+            )}
+            <div className="flex flex-wrap gap-x-5 gap-y-1 pt-3 [font-family:'Inter',Helvetica] text-[11px] text-white/30">
+              <span>Created {formatDate(article.created_at)}</span>
+              {article.location && <span>{article.location}</span>}
+              {article.source_urls && (
+                <span>{article.source_urls.length} sources</span>
+              )}
+              {article.keywords && (
+                <span>{article.keywords.length} keywords</span>
+              )}
+            </div>
+          </div>
+
+          <div className="flex shrink-0 flex-col items-stretch gap-2 md:items-end">
+            {/* ── VIEW FULL ARTICLE button ── */}
+            <Button
+              onClick={() => setShowPreview(true)}
+              className="h-auto rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-5 py-2.5 [font-family:'Inter',Helvetica] text-[11px] font-semibold tracking-[1.1px] text-emerald-300 shadow-none hover:bg-emerald-500/20 hover:text-emerald-200"
+              variant="outline"
+            >
+              <Eye className="h-3.5 w-3.5" />
+              <span className="ml-2">VIEW FULL ARTICLE</span>
+            </Button>
+
+            {article.status === "draft" && (
+              <div className="flex flex-col gap-2 md:items-end">
+                <Button
+                  onClick={() => approveMutation.mutate(undefined)}
+                  disabled={approveMutation.isPending}
+                  className="h-auto rounded-xl bg-emerald-600 px-5 py-2.5 [font-family:'Inter',Helvetica] text-[11px] font-semibold tracking-[1.1px] text-white shadow-[0_6px_18px_rgba(16,185,129,0.3)] hover:bg-emerald-500"
+                  data-testid={`button-approve-${article.id}`}
+                >
+                  {approveMutation.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                  )}
+                  <span className="ml-2">APPROVE</span>
+                </Button>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="datetime-local"
+                    value={scheduleDate}
+                    onChange={(e) => setScheduleDate(e.target.value)}
+                    className="h-9 w-[190px] rounded-xl border-white/10 bg-white/[0.03] text-[11px] text-white focus-visible:border-emerald-500/50 focus-visible:ring-2 focus-visible:ring-emerald-600/40"
+                    data-testid={`input-schedule-${article.id}`}
+                  />
+                  <Button
+                    variant="outline"
+                    disabled={!scheduleDate || approveMutation.isPending}
+                    onClick={() => approveMutation.mutate(scheduleDate)}
+                    className="h-9 rounded-xl border-emerald-600/50 bg-transparent px-3 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-emerald-300 hover:bg-emerald-600 hover:text-white"
+                    data-testid={`button-schedule-${article.id}`}
+                  >
+                    <Calendar className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            )}
+            {article.status === "approved" && (
+              <span className="inline-flex items-center gap-1.5 [font-family:'Inter',Helvetica] text-[11px] font-medium text-emerald-300">
+                <CheckCircle2 className="h-3.5 w-3.5" /> Approved
               </span>
             )}
-          </div>
-          <h3
-            className="pt-3 [font-family:'Playfair_Display',Helvetica] text-[22px] font-medium leading-[28px] text-white"
-            data-testid={`text-headline-${article.id}`}
-          >
-            {article.headline}
-          </h3>
-          {article.subtitle && (
-            <p className="pt-1 [font-family:'Inter',Helvetica] text-[13px] text-white/50">
-              {article.subtitle}
-            </p>
-          )}
-          <div className="flex flex-wrap gap-x-5 gap-y-1 pt-3 [font-family:'Inter',Helvetica] text-[11px] text-white/30">
-            <span>Created {formatDate(article.created_at)}</span>
-            {article.location && <span>{article.location}</span>}
-            {article.source_urls && (
-              <span>{article.source_urls.length} sources</span>
+            {article.status === "scheduled" && (
+              <span className="inline-flex items-center gap-1.5 [font-family:'Inter',Helvetica] text-[11px] font-medium text-sky-300">
+                <Clock className="h-3.5 w-3.5" /> Publishes{" "}
+                {formatDate(article.scheduled_at)}
+              </span>
             )}
-            {article.keywords && (
-              <span>{article.keywords.length} keywords</span>
-            )}
+            <Link href={`/article/${article.id}`}>
+              <span className="inline-flex cursor-pointer items-center gap-1 [font-family:'Inter',Helvetica] text-[11px] font-medium tracking-[0.5px] text-white/40 hover:text-white">
+                Live preview <ExternalLink className="h-3 w-3" />
+              </span>
+            </Link>
           </div>
         </div>
 
-        <div className="flex shrink-0 flex-col items-stretch gap-2 md:items-end">
-          {article.status === "draft" && (
-            <div className="flex flex-col gap-2 md:items-end">
-              <Button
-                onClick={() => approveMutation.mutate(undefined)}
-                disabled={approveMutation.isPending}
-                className="h-auto rounded-xl bg-emerald-600 px-5 py-2.5 [font-family:'Inter',Helvetica] text-[11px] font-semibold tracking-[1.1px] text-white shadow-[0_6px_18px_rgba(16,185,129,0.3)] hover:bg-emerald-500"
-                data-testid={`button-approve-${article.id}`}
-              >
-                {approveMutation.isPending ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                )}
-                <span className="ml-2">APPROVE</span>
-              </Button>
-              <div className="flex items-center gap-2">
-                <Input
-                  type="datetime-local"
-                  value={scheduleDate}
-                  onChange={(e) => setScheduleDate(e.target.value)}
-                  className="h-9 w-[190px] rounded-xl border-white/10 bg-white/[0.03] text-[11px] text-white focus-visible:border-emerald-500/50 focus-visible:ring-2 focus-visible:ring-emerald-600/40"
-                  data-testid={`input-schedule-${article.id}`}
-                />
-                <Button
-                  variant="outline"
-                  disabled={!scheduleDate || approveMutation.isPending}
-                  onClick={() => approveMutation.mutate(scheduleDate)}
-                  className="h-9 rounded-xl border-emerald-600/50 bg-transparent px-3 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-emerald-300 hover:bg-emerald-600 hover:text-white"
-                  data-testid={`button-schedule-${article.id}`}
-                >
-                  <Calendar className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </div>
-          )}
-          {article.status === "approved" && (
-            <span className="inline-flex items-center gap-1.5 [font-family:'Inter',Helvetica] text-[11px] font-medium text-emerald-300">
-              <CheckCircle2 className="h-3.5 w-3.5" /> Approved
-            </span>
-          )}
-          {article.status === "scheduled" && (
-            <span className="inline-flex items-center gap-1.5 [font-family:'Inter',Helvetica] text-[11px] font-medium text-sky-300">
-              <Clock className="h-3.5 w-3.5" /> Publishes{" "}
-              {formatDate(article.scheduled_at)}
-            </span>
-          )}
-          <Link href={`/article/${article.id}`}>
-            <span className="inline-flex cursor-pointer items-center gap-1 [font-family:'Inter',Helvetica] text-[11px] font-medium tracking-[0.5px] text-white/40 hover:text-white">
-              Preview <ExternalLink className="h-3 w-3" />
-            </span>
-          </Link>
-        </div>
-      </div>
+        {/* Collapsible for SEO/admin package (kept for quick reference) */}
+        <Collapsible open={open} onOpenChange={setOpen}>
+          <CollapsibleTrigger asChild>
+            <button
+              className="flex w-full items-center justify-center gap-2 border-t border-white/10 py-3 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-white/40 transition-colors hover:bg-white/[0.03] hover:text-white"
+              data-testid={`button-expand-${article.id}`}
+            >
+              {open ? "HIDE FULL PACKAGE" : "VIEW FULL PACKAGE"}
+              <ChevronDown
+                className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`}
+              />
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="grid gap-6 border-t border-white/10 bg-black/20 p-6 lg:grid-cols-2">
+              {/* LEFT — Generated Content & Images */}
+              <div className="space-y-6 rounded-xl border border-white/10 bg-white/[0.02] p-5">
+                <SectionLabel>GENERATED CONTENT & IMAGES</SectionLabel>
 
-      <Collapsible open={open} onOpenChange={setOpen}>
-        <CollapsibleTrigger asChild>
-          <button
-            className="flex w-full items-center justify-center gap-2 border-t border-white/10 py-3 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-white/40 transition-colors hover:bg-white/[0.03] hover:text-white"
-            data-testid={`button-expand-${article.id}`}
-          >
-            {open ? "HIDE FULL PACKAGE" : "VIEW FULL PACKAGE"}
-            <ChevronDown
-              className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`}
-            />
-          </button>
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <div className="grid gap-6 border-t border-white/10 bg-black/20 p-6 lg:grid-cols-2">
-            {/* LEFT — Generated Content & Images */}
-            <div className="space-y-6 rounded-xl border border-white/10 bg-white/[0.02] p-5">
-              <SectionLabel>GENERATED CONTENT & IMAGES</SectionLabel>
-
-              {(article.hero_image_url || (article.section_image_urls && article.section_image_urls.length > 0)) && (
-                <div>
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    {article.hero_image_url && (
-                      <div className="sm:col-span-3">
-                        <div className="mb-1 [font-family:'Inter',Helvetica] text-[9px] tracking-[0.5px] text-white/40">HERO</div>
-                        <img
-                          src={article.hero_image_url}
-                          alt={`Hero image — ${article.headline}`}
-                          className="h-[220px] w-full rounded-lg object-cover"
-                        />
-                      </div>
-                    )}
-                    {(article.section_image_urls ?? []).slice(0, 2).map((url, i) => (
-                      <div key={i} className="sm:col-span-1">
-                        <div className="mb-1 [font-family:'Inter',Helvetica] text-[9px] tracking-[0.5px] text-white/40">
-                          SECTION {i + 1}
+                {(article.hero_image_url ||
+                  (article.section_image_urls &&
+                    article.section_image_urls.length > 0)) && (
+                  <div>
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      {article.hero_image_url && (
+                        <div className="sm:col-span-3">
+                          <div className="mb-1 [font-family:'Inter',Helvetica] text-[9px] tracking-[0.5px] text-white/40">
+                            HERO
+                          </div>
+                          <img
+                            src={article.hero_image_url}
+                            alt={`Hero image — ${article.headline}`}
+                            className="h-[220px] w-full rounded-lg object-cover"
+                          />
                         </div>
-                        <img
-                          src={url}
-                          alt={`Section image ${i + 1} — ${article.headline}`}
-                          className="h-[150px] w-full rounded-lg object-cover"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <Field label="Executive Summary" value={article.executive_summary} light />
-              </div>
-
-              {(article.best_for?.length || article.not_ideal_for?.length) && (
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <SectionLabel>BEST FOR</SectionLabel>
-                    <ListField items={article.best_for} bare light />
-                  </div>
-                  <div>
-                    <SectionLabel>NOT IDEAL FOR</SectionLabel>
-                    <ListField items={article.not_ideal_for} bare light />
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <SectionLabel>ABCDE™ SCORE</SectionLabel>
-                <div className="space-y-1.5">
-                  {ABCDE_GRADES.map((g) => {
-                    const value = article[g.key] as string | null;
-                    return (
-                      <div
-                        key={g.key}
-                        className="flex items-center justify-between border-b border-white/5 py-1.5"
-                      >
-                        <span className="[font-family:'Inter',Helvetica] text-[12px] text-white/50">
-                          {g.letter} · {g.title}
-                        </span>
-                        <span className="[font-family:'Playfair_Display',Helvetica] text-[15px] text-emerald-300">
-                          {value ?? "—"}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="mt-3">
-                  <ListField label="Key Takeaways" items={article.key_takeaways} light />
-                  <Field label="WishNest Verdict" value={article.wishnest_verdict} light />
-                </div>
-              </div>
-            </div>
-
-            {/* RIGHT — SEO & Social Media Package, floating tabs */}
-            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
-              <SectionLabel>SEO & SOCIAL MEDIA PACKAGE</SectionLabel>
-
-              <Tabs defaultValue="seo" className="w-full">
-                <TabsList className="grid w-full grid-cols-4 rounded-full border border-white/10 bg-white/[0.03] p-1">
-                  <TabsTrigger
-                    value="seo"
-                    className="rounded-full [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[0.5px] text-white/50 data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-none"
-                  >
-                    SEO
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="linkedin"
-                    className="rounded-full [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[0.5px] text-white/50 data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-none"
-                  >
-                    <Linkedin className="h-3.5 w-3.5" />
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="facebook"
-                    className="rounded-full [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[0.5px] text-white/50 data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-none"
-                  >
-                    <Facebook className="h-3.5 w-3.5" />
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="x"
-                    className="rounded-full [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[0.5px] text-white/50 data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-none"
-                  >
-                    <Twitter className="h-3.5 w-3.5" />
-                  </TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="seo" className="mt-4 space-y-3">
-                  {article.focus_keyword && (
-                    <div className="mb-3">
-                      <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">Focus Keyword</div>
-                      <span className="mt-0.5 inline-block rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 [font-family:'Inter',Helvetica] text-[12px] text-emerald-300">
-                        {article.focus_keyword}
-                      </span>
-                    </div>
-                  )}
-
-                  <div className="pb-2">
-                    <div className="flex items-center justify-between">
-                      <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">SEO Title</div>
-                      {article.seo_title && (
-                        <span className={`[font-family:'Inter',Helvetica] text-[10px] tabular-nums ${
-                          article.seo_title.length >= 50 && article.seo_title.length <= 60
-                            ? "text-emerald-400"
-                            : "text-amber-400"
-                        }`}>
-                          {article.seo_title.length} chars {article.seo_title.length >= 50 && article.seo_title.length <= 60 ? "✓" : "(target 50–60)"}
-                        </span>
                       )}
-                    </div>
-                    {article.seo_title && (
-                      <div className="pt-0.5 [font-family:'Inter',Helvetica] text-[13px] text-white/80">{article.seo_title}</div>
-                    )}
-                  </div>
-
-                  <div className="pb-2">
-                    <div className="flex items-center justify-between">
-                      <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">Meta Description</div>
-                      {article.meta_description && (
-                        <span className={`[font-family:'Inter',Helvetica] text-[10px] tabular-nums ${
-                          article.meta_description.length >= 150 && article.meta_description.length <= 160
-                            ? "text-emerald-400"
-                            : "text-amber-400"
-                        }`}>
-                          {article.meta_description.length} chars {article.meta_description.length >= 150 && article.meta_description.length <= 160 ? "✓" : "(target 150–160)"}
-                        </span>
-                      )}
-                    </div>
-                    {article.meta_description && (
-                      <div className="pt-0.5 [font-family:'Inter',Helvetica] text-[13px] text-white/80">{article.meta_description}</div>
-                    )}
-                  </div>
-
-                  {article.keywords && article.keywords.length > 0 && (
-                    <div className="pb-2">
-                      <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
-                        Keywords ({article.keywords.length})
-                      </div>
-                      <div className="mt-1.5 flex flex-wrap gap-1.5">
-                        {article.keywords.map((kw, i) => (
-                          <span
-                            key={i}
-                            className={`rounded-full border px-2 py-0.5 [font-family:'Inter',Helvetica] text-[11px] ${
-                              i < 3
-                                ? "border-white/15 bg-white/[0.04] text-white/80"
-                                : i < 7
-                                ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-300"
-                                : "border-sky-500/25 bg-sky-500/10 text-sky-300"
-                            }`}
-                            title={i < 3 ? "Head keyword" : i < 7 ? "LSI keyword" : "Long-tail keyword"}
-                          >
-                            {kw}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {article.internal_links && article.internal_links.length > 0 && (
-                    <div className="pb-2">
-                      <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
-                        Internal Linking Strategy ({article.internal_links.length})
-                      </div>
-                      <div className="mt-2 space-y-2">
-                        {article.internal_links.map((link, i) => (
-                          <div key={i} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
-                            <div className="flex items-start justify-between gap-2">
-                              <span className="[font-family:'Inter',Helvetica] text-[12px] font-medium text-emerald-300">
-                                "{link.anchor_text}"
-                              </span>
-                              <span className="shrink-0 rounded-full border border-sky-500/25 bg-sky-500/10 px-1.5 py-0.5 [font-family:'Inter',Helvetica] text-[10px] text-sky-300">
-                                {link.target_page}
-                              </span>
+                      {(article.section_image_urls ?? [])
+                        .slice(0, 2)
+                        .map((url, i) => (
+                          <div key={i} className="sm:col-span-1">
+                            <div className="mb-1 [font-family:'Inter',Helvetica] text-[9px] tracking-[0.5px] text-white/40">
+                              SECTION {i + 1}
                             </div>
-                            <p className="mt-1 [font-family:'Inter',Helvetica] text-[11px] italic text-white/40">
-                              Context: {link.context}
-                            </p>
-                            <p className="mt-1 [font-family:'Inter',Helvetica] text-[11px] text-white/70">
-                              {link.seo_reason}
-                            </p>
+                            <img
+                              src={url}
+                              alt={`Section image ${i + 1} — ${article.headline}`}
+                              className="h-[150px] w-full rounded-lg object-cover"
+                            />
                           </div>
                         ))}
-                      </div>
                     </div>
-                  )}
+                  </div>
+                )}
 
-                  <ListField label="Source URLs" items={article.source_urls} link light />
-                </TabsContent>
-
-                <TabsContent value="linkedin" className="mt-4 space-y-2">
-                  <Field label="LinkedIn (x3)" value={null} light />
-                  <ul className="space-y-2">
-                    {(article.linkedin_variations ?? []).map((v, i) => (
-                      <li
-                        key={i}
-                        className="rounded-lg border border-white/10 bg-white/[0.03] p-3 [font-family:'Inter',Helvetica] text-[12px] leading-[19px] text-white/80"
-                      >
-                        {v}
-                      </li>
-                    ))}
-                    {(!article.linkedin_variations || article.linkedin_variations.length === 0) && (
-                      <li className="[font-family:'Inter',Helvetica] text-[12px] text-white/30">No LinkedIn copy generated.</li>
-                    )}
-                  </ul>
-                </TabsContent>
-
-                <TabsContent value="facebook" className="mt-4 space-y-2">
-                  <Field label="Facebook (x2)" value={null} light />
-                  <ul className="space-y-2">
-                    {(article.facebook_variations ?? []).map((v, i) => (
-                      <li
-                        key={i}
-                        className="rounded-lg border border-white/10 bg-white/[0.03] p-3 [font-family:'Inter',Helvetica] text-[12px] leading-[19px] text-white/80"
-                      >
-                        {v}
-                      </li>
-                    ))}
-                    {(!article.facebook_variations || article.facebook_variations.length === 0) && (
-                      <li className="[font-family:'Inter',Helvetica] text-[12px] text-white/30">No Facebook copy generated.</li>
-                    )}
-                  </ul>
-                </TabsContent>
-
-                <TabsContent value="x" className="mt-4 space-y-2">
-                  <Field label="X / Twitter Thread" value={null} light />
-                  <ul className="space-y-2">
-                    {(article.twitter_thread ?? []).map((v, i) => (
-                      <li
-                        key={i}
-                        className="rounded-lg border border-white/10 bg-white/[0.03] p-3 [font-family:'Inter',Helvetica] text-[12px] leading-[19px] text-white/80"
-                      >
-                        {v}
-                      </li>
-                    ))}
-                    {(!article.twitter_thread || article.twitter_thread.length === 0) && (
-                      <li className="[font-family:'Inter',Helvetica] text-[12px] text-white/30">No X thread generated.</li>
-                    )}
-                  </ul>
-                </TabsContent>
-              </Tabs>
-
-              <div className="mt-4 border-t border-white/10 pt-4">
-                <div className="flex items-center gap-2">
-                  <Mail className="h-3.5 w-3.5 text-white/40" />
-                  <SectionLabel>NEWSLETTER</SectionLabel>
+                <div>
+                  <Field
+                    label="Executive Summary"
+                    value={article.executive_summary}
+                    light
+                  />
                 </div>
-                <Field label="Newsletter Summary" value={article.newsletter_summary} light />
-                <Field label="CTA" value={article.cta} light />
-                <ListField label="Hashtags" items={article.suggested_hashtags} light />
+
+                {(article.best_for?.length || article.not_ideal_for?.length) && (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <SectionLabel>BEST FOR</SectionLabel>
+                      <ListField items={article.best_for} bare light />
+                    </div>
+                    <div>
+                      <SectionLabel>NOT IDEAL FOR</SectionLabel>
+                      <ListField items={article.not_ideal_for} bare light />
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <SectionLabel>ABCDE™ SCORE</SectionLabel>
+                  <div className="space-y-1.5">
+                    {ABCDE_GRADES.map((g) => {
+                      const value = article[g.key] as string | null;
+                      return (
+                        <div
+                          key={g.key}
+                          className="flex items-center justify-between border-b border-white/5 py-1.5"
+                        >
+                          <span className="[font-family:'Inter',Helvetica] text-[12px] text-white/50">
+                            {g.letter} · {g.title}
+                          </span>
+                          <span className="[font-family:'Playfair_Display',Helvetica] text-[15px] text-emerald-300">
+                            {value ?? "—"}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-3">
+                    <ListField
+                      label="Key Takeaways"
+                      items={article.key_takeaways}
+                      light
+                    />
+                    <Field
+                      label="WishNest Verdict"
+                      value={article.wishnest_verdict}
+                      light
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* RIGHT — SEO & Social Media Package */}
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+                <SectionLabel>SEO & SOCIAL MEDIA PACKAGE</SectionLabel>
+
+                <Tabs defaultValue="seo" className="w-full">
+                  <TabsList className="grid w-full grid-cols-4 rounded-full border border-white/10 bg-white/[0.03] p-1">
+                    <TabsTrigger
+                      value="seo"
+                      className="rounded-full [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[0.5px] text-white/50 data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-none"
+                    >
+                      SEO
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="linkedin"
+                      className="rounded-full [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[0.5px] text-white/50 data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-none"
+                    >
+                      <Linkedin className="h-3.5 w-3.5" />
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="facebook"
+                      className="rounded-full [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[0.5px] text-white/50 data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-none"
+                    >
+                      <Facebook className="h-3.5 w-3.5" />
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="x"
+                      className="rounded-full [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[0.5px] text-white/50 data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-none"
+                    >
+                      <Twitter className="h-3.5 w-3.5" />
+                    </TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="seo" className="mt-4 space-y-3">
+                    {article.focus_keyword && (
+                      <div className="mb-3">
+                        <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                          Focus Keyword
+                        </div>
+                        <span className="mt-0.5 inline-block rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 [font-family:'Inter',Helvetica] text-[12px] text-emerald-300">
+                          {article.focus_keyword}
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="pb-2">
+                      <div className="flex items-center justify-between">
+                        <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                          SEO Title
+                        </div>
+                        {article.seo_title && (
+                          <span
+                            className={`[font-family:'Inter',Helvetica] text-[10px] tabular-nums ${
+                              article.seo_title.length >= 50 &&
+                              article.seo_title.length <= 60
+                                ? "text-emerald-400"
+                                : "text-amber-400"
+                            }`}
+                          >
+                            {article.seo_title.length} chars{" "}
+                            {article.seo_title.length >= 50 &&
+                            article.seo_title.length <= 60
+                              ? "✓"
+                              : "(target 50–60)"}
+                          </span>
+                        )}
+                      </div>
+                      {article.seo_title && (
+                        <div className="pt-0.5 [font-family:'Inter',Helvetica] text-[13px] text-white/80">
+                          {article.seo_title}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pb-2">
+                      <div className="flex items-center justify-between">
+                        <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                          Meta Description
+                        </div>
+                        {article.meta_description && (
+                          <span
+                            className={`[font-family:'Inter',Helvetica] text-[10px] tabular-nums ${
+                              article.meta_description.length >= 150 &&
+                              article.meta_description.length <= 160
+                                ? "text-emerald-400"
+                                : "text-amber-400"
+                            }`}
+                          >
+                            {article.meta_description.length} chars{" "}
+                            {article.meta_description.length >= 150 &&
+                            article.meta_description.length <= 160
+                              ? "✓"
+                              : "(target 150–160)"}
+                          </span>
+                        )}
+                      </div>
+                      {article.meta_description && (
+                        <div className="pt-0.5 [font-family:'Inter',Helvetica] text-[13px] text-white/80">
+                          {article.meta_description}
+                        </div>
+                      )}
+                    </div>
+
+                    {article.keywords && article.keywords.length > 0 && (
+                      <div className="pb-2">
+                        <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                          Keywords ({article.keywords.length})
+                        </div>
+                        <div className="mt-1.5 flex flex-wrap gap-1.5">
+                          {article.keywords.map((kw, i) => (
+                            <span
+                              key={i}
+                              className={`rounded-full border px-2 py-0.5 [font-family:'Inter',Helvetica] text-[11px] ${
+                                i < 3
+                                  ? "border-white/15 bg-white/[0.04] text-white/80"
+                                  : i < 7
+                                    ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-300"
+                                    : "border-sky-500/25 bg-sky-500/10 text-sky-300"
+                              }`}
+                              title={
+                                i < 3
+                                  ? "Head keyword"
+                                  : i < 7
+                                    ? "LSI keyword"
+                                    : "Long-tail keyword"
+                              }
+                            >
+                              {kw}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {article.internal_links &&
+                      article.internal_links.length > 0 && (
+                        <div className="pb-2">
+                          <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                            Internal Linking Strategy (
+                            {article.internal_links.length})
+                          </div>
+                          <div className="mt-2 space-y-2">
+                            {article.internal_links.map((link, i) => (
+                              <div
+                                key={i}
+                                className="rounded-lg border border-white/10 bg-white/[0.03] p-3"
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <span className="[font-family:'Inter',Helvetica] text-[12px] font-medium text-emerald-300">
+                                    "{link.anchor_text}"
+                                  </span>
+                                  <span className="shrink-0 rounded-full border border-sky-500/25 bg-sky-500/10 px-1.5 py-0.5 [font-family:'Inter',Helvetica] text-[10px] text-sky-300">
+                                    {link.target_page}
+                                  </span>
+                                </div>
+                                <p className="mt-1 [font-family:'Inter',Helvetica] text-[11px] italic text-white/40">
+                                  Context: {link.context}
+                                </p>
+                                <p className="mt-1 [font-family:'Inter',Helvetica] text-[11px] text-white/70">
+                                  {link.seo_reason}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                    <ListField
+                      label="Source URLs"
+                      items={article.source_urls}
+                      link
+                      light
+                    />
+                  </TabsContent>
+
+                  <TabsContent value="linkedin" className="mt-4 space-y-2">
+                    <Field label="LinkedIn (x3)" value={null} light />
+                    <ul className="space-y-2">
+                      {(article.linkedin_variations ?? []).map((v, i) => (
+                        <li
+                          key={i}
+                          className="rounded-lg border border-white/10 bg-white/[0.03] p-3 [font-family:'Inter',Helvetica] text-[12px] leading-[19px] text-white/80"
+                        >
+                          {v}
+                        </li>
+                      ))}
+                      {(!article.linkedin_variations ||
+                        article.linkedin_variations.length === 0) && (
+                        <li className="[font-family:'Inter',Helvetica] text-[12px] text-white/30">
+                          No LinkedIn copy generated.
+                        </li>
+                      )}
+                    </ul>
+                  </TabsContent>
+
+                  <TabsContent value="facebook" className="mt-4 space-y-2">
+                    <Field label="Facebook (x2)" value={null} light />
+                    <ul className="space-y-2">
+                      {(article.facebook_variations ?? []).map((v, i) => (
+                        <li
+                          key={i}
+                          className="rounded-lg border border-white/10 bg-white/[0.03] p-3 [font-family:'Inter',Helvetica] text-[12px] leading-[19px] text-white/80"
+                        >
+                          {v}
+                        </li>
+                      ))}
+                      {(!article.facebook_variations ||
+                        article.facebook_variations.length === 0) && (
+                        <li className="[font-family:'Inter',Helvetica] text-[12px] text-white/30">
+                          No Facebook copy generated.
+                        </li>
+                      )}
+                    </ul>
+                  </TabsContent>
+
+                  <TabsContent value="x" className="mt-4 space-y-2">
+                    <Field label="X / Twitter Thread" value={null} light />
+                    <ul className="space-y-2">
+                      {(article.twitter_thread ?? []).map((v, i) => (
+                        <li
+                          key={i}
+                          className="rounded-lg border border-white/10 bg-white/[0.03] p-3 [font-family:'Inter',Helvetica] text-[12px] leading-[19px] text-white/80"
+                        >
+                          {v}
+                        </li>
+                      ))}
+                      {(!article.twitter_thread ||
+                        article.twitter_thread.length === 0) && (
+                        <li className="[font-family:'Inter',Helvetica] text-[12px] text-white/30">
+                          No X thread generated.
+                        </li>
+                      )}
+                    </ul>
+                  </TabsContent>
+                </Tabs>
+
+                <div className="mt-4 border-t border-white/10 pt-4">
+                  <div className="flex items-center gap-2">
+                    <Mail className="h-3.5 w-3.5 text-white/40" />
+                    <SectionLabel>NEWSLETTER</SectionLabel>
+                  </div>
+                  <Field
+                    label="Newsletter Summary"
+                    value={article.newsletter_summary}
+                    light
+                  />
+                  <Field label="CTA" value={article.cta} light />
+                  <ListField
+                    label="Hashtags"
+                    items={article.suggested_hashtags}
+                    light
+                  />
+                </div>
               </div>
             </div>
-          </div>
-        </CollapsibleContent>
-      </Collapsible>
-    </div>
+          </CollapsibleContent>
+        </Collapsible>
+      </div>
+    </>
   );
 }
 
+// ---------------------------------------------------------------------------
+// Helper UI atoms
+// ---------------------------------------------------------------------------
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div className="mb-3 [font-family:'Inter',Helvetica] text-[9px] font-semibold tracking-[1.6px] text-emerald-400">
@@ -817,14 +1693,26 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Field({ label, value, light }: { label: string; value: string | null; light?: boolean }) {
+function Field({
+  label,
+  value,
+  light,
+}: {
+  label: string;
+  value: string | null;
+  light?: boolean;
+}) {
   return (
     <div className="pb-3">
-      <div className={`[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] ${light ? "text-white/40" : "text-[#6b6b6b]"}`}>
+      <div
+        className={`[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] ${light ? "text-white/40" : "text-[#6b6b6b]"}`}
+      >
         {label}
       </div>
       {value !== null && (
-        <div className={`pt-0.5 [font-family:'Inter',Helvetica] text-[13px] ${light ? "text-white/80" : "text-[#1e1e1e]"}`}>
+        <div
+          className={`pt-0.5 [font-family:'Inter',Helvetica] text-[13px] ${light ? "text-white/80" : "text-[#1e1e1e]"}`}
+        >
           {value ?? "—"}
         </div>
       )}
@@ -851,13 +1739,13 @@ function ListField({
   return (
     <div className="pb-3">
       {label && (
-        <div className={`[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] ${light ? "text-white/40" : "text-[#6b6b6b]"}`}>
+        <div
+          className={`[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] ${light ? "text-white/40" : "text-[#6b6b6b]"}`}
+        >
           {label}
         </div>
       )}
-      <ul
-        className={`flex flex-wrap gap-1.5 ${bare ? "flex-col" : ""} pt-1`}
-      >
+      <ul className={`flex flex-wrap gap-1.5 ${bare ? "flex-col" : ""} pt-1`}>
         {items.map((item, i) =>
           link ? (
             <li key={i}>
@@ -899,6 +1787,9 @@ function ListField({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Main page
+// ---------------------------------------------------------------------------
 export const ReviewDashboard = (): JSX.Element => {
   const [activeTab, setActiveTab] = useState<ArticleStatus | "all">("all");
   const { logout } = useAuth();
@@ -910,7 +1801,12 @@ export const ReviewDashboard = (): JSX.Element => {
     navigate("/login");
   };
 
-  const { data: articles, isLoading, isError, error } = useQuery<Article[]>({
+  const {
+    data: articles,
+    isLoading,
+    isError,
+    error,
+  } = useQuery<Article[]>({
     queryKey: ["/api/articles"],
   });
 
@@ -951,8 +1847,8 @@ export const ReviewDashboard = (): JSX.Element => {
           </div>
           <p className="max-w-[600px] pt-3 [font-family:'Inter',Helvetica] text-[15px] leading-[24px] text-white/50">
             Every article generated by the AI Research Editor Agent lands here
-            as a draft. Nothing is published or scheduled without your
-            explicit approval.
+            as a draft. Nothing is published or scheduled without your explicit
+            approval.
           </p>
 
           <div className="mt-10">
