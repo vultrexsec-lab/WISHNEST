@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.dependencies import require_admin
 from app.models.newsletter import NewsletterSubscriber
 
 router = APIRouter(tags=["newsletter"])
@@ -26,6 +27,20 @@ class SubscribeRequest(BaseModel):
 
 class SubscribeResponse(BaseModel):
     message: str
+
+
+class SubscriberCountResponse(BaseModel):
+    count: int
+
+
+@router.get("/api/newsletter/count", response_model=SubscriberCountResponse)
+def subscriber_count(
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """Admin-only — total newsletter subscriber count for dashboard metrics."""
+    count = db.query(NewsletterSubscriber).count()
+    return SubscriberCountResponse(count=count)
 
 
 @router.post("/api/newsletter/subscribe", response_model=SubscribeResponse)

@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Collapsible,
   CollapsibleContent,
@@ -23,6 +24,14 @@ import {
   Calendar,
   ExternalLink,
   Sparkles,
+  FileText,
+  BadgeCheck,
+  Users,
+  Hourglass,
+  Linkedin,
+  Facebook,
+  Twitter,
+  Mail,
 } from "lucide-react";
 import {
   ABCDE_GRADES,
@@ -31,6 +40,80 @@ import {
   formatDate,
   overallGrade,
 } from "@/lib/article-types";
+
+// ---------------------------------------------------------------------------
+// Metric cards
+// ---------------------------------------------------------------------------
+function MetricCard({
+  icon: Icon,
+  label,
+  value,
+  accent,
+  pulse,
+}: {
+  icon: typeof FileText;
+  label: string;
+  value: number | string;
+  accent: string;
+  pulse?: boolean;
+}) {
+  return (
+    <div
+      className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl transition-all duration-300 hover:-translate-y-0.5 hover:border-emerald-500/30 hover:bg-white/[0.06] hover:shadow-[0_8px_30px_rgba(16,185,129,0.12)]"
+      style={{
+        backgroundImage:
+          "linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01))",
+      }}
+    >
+      <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-emerald-500/10 blur-2xl transition-opacity duration-300 group-hover:opacity-80" />
+      <div className="flex items-center justify-between">
+        <span
+          className="[font-family:'Inter',Helvetica] text-[10px] font-semibold uppercase tracking-[1.4px] text-white/50"
+        >
+          {label}
+        </span>
+        <div
+          className="flex h-8 w-8 items-center justify-center rounded-lg"
+          style={{ backgroundColor: `${accent}1a` }}
+        >
+          <Icon className="h-4 w-4" style={{ color: accent }} />
+        </div>
+      </div>
+      <div className="mt-3 flex items-baseline gap-2">
+        <span className="[font-family:'Playfair_Display',Helvetica] text-[32px] font-medium leading-none text-white">
+          {value}
+        </span>
+        {pulse && (
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MetricsBar({ articles }: { articles: Article[] | undefined }) {
+  const { data: subscriberData } = useQuery<{ count: number }>({
+    queryKey: ["/api/newsletter/count"],
+  });
+
+  const total = articles?.length ?? 0;
+  const approved =
+    articles?.filter((a) => a.status === "approved" || a.status === "scheduled" || a.status === "published").length ?? 0;
+  const pending = articles?.filter((a) => a.status === "draft").length ?? 0;
+  const subscribers = subscriberData?.count ?? 0;
+
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <MetricCard icon={FileText} label="Total Drafts" value={total} accent="#34d399" />
+      <MetricCard icon={BadgeCheck} label="Approved Articles" value={approved} accent="#60a5fa" />
+      <MetricCard icon={Users} label="Newsletter Subscribers" value={subscribers} accent="#a78bfa" />
+      <MetricCard icon={Hourglass} label="Pending Approvals" value={pending} accent="#fbbf24" pulse={pending > 0} />
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Generate panel
@@ -164,21 +247,26 @@ function GeneratePanel({ onGenerated }: { onGenerated: () => void }) {
   const isSubmitting = generateMutation.isPending;
 
   return (
-    <div className="border border-[#2e4a3f33] bg-white p-8">
+    <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-8 backdrop-blur-xl">
+      <div className="pointer-events-none absolute -left-16 -top-16 h-56 w-56 rounded-full bg-emerald-500/10 blur-3xl" />
+
       {/* label */}
-      <p className="[font-family:'Inter',Helvetica] text-[9px] font-medium tracking-[2px] text-[#2e4a3f]">
-        AI RESEARCH EDITOR AGENT
-      </p>
-      <h2 className="pt-2 [font-family:'Playfair_Display',Helvetica] text-[22px] font-normal text-[#1e1e1e]">
+      <div className="flex items-center gap-2">
+        <Sparkles className="h-3.5 w-3.5 text-emerald-400" />
+        <p className="[font-family:'Inter',Helvetica] text-[9px] font-semibold tracking-[2px] text-emerald-400">
+          AI RESEARCH EDITOR AGENT
+        </p>
+      </div>
+      <h2 className="pt-2 [font-family:'Playfair_Display',Helvetica] text-[24px] font-medium text-white">
         Generate Article Package
       </h2>
-      <p className="mt-1 [font-family:'Inter',Helvetica] text-[13px] leading-[21px] text-[#6b6b6b]">
+      <p className="mt-1 max-w-xl [font-family:'Inter',Helvetica] text-[13px] leading-[21px] text-white/50">
         Describe the story you want researched. The agent will search live sources, draft a complete editorial package, and place it in Pending Review.
       </p>
 
       {/* Category selector */}
-      <div className="mt-5 flex items-center gap-3">
-        <span className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1.5px] text-[#6b6b6b]">
+      <div className="mt-6 flex flex-col gap-2">
+        <span className="[font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1.5px] text-white/40">
           CATEGORY
         </span>
         <div className="flex flex-wrap gap-2">
@@ -188,10 +276,10 @@ function GeneratePanel({ onGenerated }: { onGenerated: () => void }) {
               type="button"
               onClick={() => setCategory(opt.value)}
               disabled={isSubmitting}
-              className={`border px-3 py-1 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.8px] transition-colors ${
+              className={`rounded-full border px-3.5 py-1.5 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.6px] transition-all ${
                 category === opt.value
-                  ? "border-[#2e4a3f] bg-[#2e4a3f] text-white"
-                  : "border-[#1e1e1e1a] bg-white text-[#6b6b6b] hover:border-[#2e4a3f] hover:text-[#2e4a3f]"
+                  ? "border-emerald-500 bg-emerald-500/15 text-emerald-300 shadow-[0_0_0_1px_rgba(16,185,129,0.3)]"
+                  : "border-white/10 bg-white/[0.03] text-white/50 hover:border-emerald-500/40 hover:text-emerald-300"
               }`}
             >
               {opt.label}
@@ -200,7 +288,7 @@ function GeneratePanel({ onGenerated }: { onGenerated: () => void }) {
         </div>
       </div>
 
-      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-start">
+      <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-stretch">
         <Textarea
           ref={textareaRef}
           value={brief}
@@ -211,12 +299,12 @@ function GeneratePanel({ onGenerated }: { onGenerated: () => void }) {
           placeholder='e.g. "Find the best boutique resorts in Goa for architecture-forward travellers" or "Write about the rise of silent luxury retreats in Himachal Pradesh"'
           disabled={isSubmitting}
           rows={3}
-          className="flex-1 resize-none rounded-none border-[#1e1e1e1a] [font-family:'Inter',Helvetica] text-[13px] leading-[21px] placeholder:text-[#6b6b6b66] focus-visible:ring-[#2e4a3f]"
+          className="flex-1 resize-none rounded-xl border-white/10 bg-white/[0.03] [font-family:'Inter',Helvetica] text-[13px] leading-[21px] text-white placeholder:text-white/30 focus-visible:border-emerald-500/50 focus-visible:ring-2 focus-visible:ring-emerald-600/40 focus-visible:ring-offset-0"
         />
         <Button
           onClick={handleSubmit}
           disabled={isSubmitting || !brief.trim()}
-          className="shrink-0 h-auto rounded-none bg-[#2e4a3f] px-6 py-3 [font-family:'Inter',Helvetica] text-[11px] font-medium tracking-[1.2px] text-white hover:bg-[#243a32] disabled:opacity-50 sm:self-stretch"
+          className="shrink-0 h-auto rounded-xl bg-emerald-600 px-6 py-3 [font-family:'Inter',Helvetica] text-[11px] font-semibold tracking-[1.2px] text-white shadow-[0_8px_24px_rgba(16,185,129,0.35)] transition-all hover:bg-emerald-500 hover:shadow-[0_10px_28px_rgba(16,185,129,0.45)] disabled:opacity-40 disabled:shadow-none sm:self-stretch"
         >
           {isSubmitting ? (
             <span className="flex items-center gap-2">
@@ -233,8 +321,11 @@ function GeneratePanel({ onGenerated }: { onGenerated: () => void }) {
       </div>
 
       {researchActive && (
-        <div className="mt-4 flex items-center gap-2 [font-family:'Inter',Helvetica] text-[12px] text-[#2e4a3f]">
-          <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-[#2e4a3f]" />
+        <div className="mt-4 flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 [font-family:'Inter',Helvetica] text-[12px] text-emerald-300">
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+          </span>
           Research in progress — the agent is searching sources and drafting articles. Pending Review will update automatically.
         </div>
       )}
@@ -251,11 +342,40 @@ const STATUS_TABS: { label: string; value: ArticleStatus | "all" }[] = [
 ];
 
 const statusStyles: Record<ArticleStatus, string> = {
-  draft: "bg-[#f8f3e2] text-[#8a6d1a] border-[#8a6d1a33]",
-  approved: "bg-[#e6efe9] text-[#2e4a3f] border-[#2e4a3f33]",
-  scheduled: "bg-[#e6eef5] text-[#2a5a8a] border-[#2a5a8a33]",
-  published: "bg-[#1e1e1e] text-white border-[#1e1e1e]",
+  draft: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+  approved: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+  scheduled: "bg-sky-500/15 text-sky-300 border-sky-500/30",
+  published: "bg-white/15 text-white border-white/25",
 };
+
+function StatusBadge({ status }: { status: ArticleStatus }) {
+  return (
+    <Badge
+      variant="outline"
+      className={`rounded-full border px-2.5 py-1 [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[0.6px] ${statusStyles[status]}`}
+      data-testid={`badge-status`}
+    >
+      <span className="inline-flex items-center gap-1.5">
+        {status === "approved" && (
+          <span className="relative flex h-1.5 w-1.5">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
+          </span>
+        )}
+        {status === "draft" && (
+          <span className="inline-flex h-1.5 w-1.5 rounded-full bg-amber-400" />
+        )}
+        {status === "scheduled" && (
+          <span className="inline-flex h-1.5 w-1.5 rounded-full bg-sky-400" />
+        )}
+        {status === "published" && (
+          <span className="inline-flex h-1.5 w-1.5 rounded-full bg-white" />
+        )}
+        {status.toUpperCase()}
+      </span>
+    </Badge>
+  );
+}
 
 function ArticleCard({ article }: { article: Article }) {
   const [open, setOpen] = useState(false);
@@ -300,41 +420,35 @@ function ArticleCard({ article }: { article: Article }) {
   const isReview = article.article_type === "review";
 
   return (
-    <div className="bg-white border border-[#1e1e1e14]">
+    <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-xl transition-colors hover:border-white/20">
       <div className="flex flex-col gap-4 p-6 md:flex-row md:items-start md:justify-between">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge status={article.status} />
             <Badge
               variant="outline"
-              className={`rounded-none text-[10px] font-medium tracking-[0.5px] ${statusStyles[article.status]}`}
-              data-testid={`badge-status-${article.id}`}
-            >
-              {article.status.toUpperCase()}
-            </Badge>
-            <Badge
-              variant="outline"
-              className="rounded-none border-[#1e1e1e1a] text-[10px] font-medium tracking-[0.5px] text-[#6b6b6b]"
+              className="rounded-full border-white/10 bg-white/[0.04] [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/50"
             >
               {isReview ? "REVIEW" : "STANDARD"}
             </Badge>
             {grade && (
-              <span className="[font-family:'Playfair_Display',Helvetica] text-sm font-normal text-[#2e4a3f]">
+              <span className="[font-family:'Playfair_Display',Helvetica] text-sm font-medium text-emerald-300">
                 {grade}
               </span>
             )}
           </div>
           <h3
-            className="pt-3 [font-family:'Playfair_Display',Helvetica] text-[22px] font-normal leading-[28px] text-[#1e1e1e]"
+            className="pt-3 [font-family:'Playfair_Display',Helvetica] text-[22px] font-medium leading-[28px] text-white"
             data-testid={`text-headline-${article.id}`}
           >
             {article.headline}
           </h3>
           {article.subtitle && (
-            <p className="pt-1 [font-family:'Inter',Helvetica] text-[13px] text-[#6b6b6b]">
+            <p className="pt-1 [font-family:'Inter',Helvetica] text-[13px] text-white/50">
               {article.subtitle}
             </p>
           )}
-          <div className="flex flex-wrap gap-x-5 gap-y-1 pt-3 [font-family:'Inter',Helvetica] text-[11px] text-[#6b6b6b80]">
+          <div className="flex flex-wrap gap-x-5 gap-y-1 pt-3 [font-family:'Inter',Helvetica] text-[11px] text-white/30">
             <span>Created {formatDate(article.created_at)}</span>
             {article.location && <span>{article.location}</span>}
             {article.source_urls && (
@@ -352,7 +466,7 @@ function ArticleCard({ article }: { article: Article }) {
               <Button
                 onClick={() => approveMutation.mutate(undefined)}
                 disabled={approveMutation.isPending}
-                className="h-auto rounded-none bg-[#2e4a3f] px-5 py-2.5 [font-family:'Inter',Helvetica] text-[11px] font-medium tracking-[1.1px] text-white hover:bg-[#243a32]"
+                className="h-auto rounded-xl bg-emerald-600 px-5 py-2.5 [font-family:'Inter',Helvetica] text-[11px] font-semibold tracking-[1.1px] text-white shadow-[0_6px_18px_rgba(16,185,129,0.3)] hover:bg-emerald-500"
                 data-testid={`button-approve-${article.id}`}
               >
                 {approveMutation.isPending ? (
@@ -367,14 +481,14 @@ function ArticleCard({ article }: { article: Article }) {
                   type="datetime-local"
                   value={scheduleDate}
                   onChange={(e) => setScheduleDate(e.target.value)}
-                  className="h-9 w-[190px] rounded-none border-[#1e1e1e1a] text-[11px]"
+                  className="h-9 w-[190px] rounded-xl border-white/10 bg-white/[0.03] text-[11px] text-white focus-visible:border-emerald-500/50 focus-visible:ring-2 focus-visible:ring-emerald-600/40"
                   data-testid={`input-schedule-${article.id}`}
                 />
                 <Button
                   variant="outline"
                   disabled={!scheduleDate || approveMutation.isPending}
                   onClick={() => approveMutation.mutate(scheduleDate)}
-                  className="h-9 rounded-none border-[#2e4a3f] px-3 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-[#2e4a3f] hover:bg-[#2e4a3f] hover:text-white"
+                  className="h-9 rounded-xl border-emerald-600/50 bg-transparent px-3 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-emerald-300 hover:bg-emerald-600 hover:text-white"
                   data-testid={`button-schedule-${article.id}`}
                 >
                   <Calendar className="h-3.5 w-3.5" />
@@ -383,18 +497,18 @@ function ArticleCard({ article }: { article: Article }) {
             </div>
           )}
           {article.status === "approved" && (
-            <span className="inline-flex items-center gap-1.5 [font-family:'Inter',Helvetica] text-[11px] font-medium text-[#2e4a3f]">
+            <span className="inline-flex items-center gap-1.5 [font-family:'Inter',Helvetica] text-[11px] font-medium text-emerald-300">
               <CheckCircle2 className="h-3.5 w-3.5" /> Approved
             </span>
           )}
           {article.status === "scheduled" && (
-            <span className="inline-flex items-center gap-1.5 [font-family:'Inter',Helvetica] text-[11px] font-medium text-[#2a5a8a]">
+            <span className="inline-flex items-center gap-1.5 [font-family:'Inter',Helvetica] text-[11px] font-medium text-sky-300">
               <Clock className="h-3.5 w-3.5" /> Publishes{" "}
               {formatDate(article.scheduled_at)}
             </span>
           )}
           <Link href={`/article/${article.id}`}>
-            <span className="inline-flex cursor-pointer items-center gap-1 [font-family:'Inter',Helvetica] text-[11px] font-medium tracking-[0.5px] text-[#6b6b6b] hover:text-[#1e1e1e]">
+            <span className="inline-flex cursor-pointer items-center gap-1 [font-family:'Inter',Helvetica] text-[11px] font-medium tracking-[0.5px] text-white/40 hover:text-white">
               Preview <ExternalLink className="h-3 w-3" />
             </span>
           </Link>
@@ -404,7 +518,7 @@ function ArticleCard({ article }: { article: Article }) {
       <Collapsible open={open} onOpenChange={setOpen}>
         <CollapsibleTrigger asChild>
           <button
-            className="flex w-full items-center justify-center gap-2 border-t border-[#1e1e1e0d] py-3 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-[#6b6b6b] hover:bg-[#f8f7f4]"
+            className="flex w-full items-center justify-center gap-2 border-t border-white/10 py-3 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-white/40 transition-colors hover:bg-white/[0.03] hover:text-white"
             data-testid={`button-expand-${article.id}`}
           >
             {open ? "HIDE FULL PACKAGE" : "VIEW FULL PACKAGE"}
@@ -414,244 +528,278 @@ function ArticleCard({ article }: { article: Article }) {
           </button>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="grid gap-8 border-t border-[#1e1e1e0d] bg-[#f8f7f4] p-6 lg:grid-cols-2">
+          <div className="grid gap-6 border-t border-white/10 bg-black/20 p-6 lg:grid-cols-2">
+            {/* LEFT — Generated Content & Images */}
+            <div className="space-y-6 rounded-xl border border-white/10 bg-white/[0.02] p-5">
+              <SectionLabel>GENERATED CONTENT & IMAGES</SectionLabel>
 
-            {/* Generated images */}
-            {(article.hero_image_url || (article.section_image_urls && article.section_image_urls.length > 0)) && (
-              <div className="lg:col-span-2">
-                <SectionLabel>GENERATED IMAGES</SectionLabel>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {article.hero_image_url && (
-                    <div className="sm:col-span-2">
-                      <div className="mb-1 [font-family:'Inter',Helvetica] text-[9px] tracking-[0.5px] text-[#6b6b6b]">HERO</div>
-                      <img
-                        src={article.hero_image_url}
-                        alt={`Hero image — ${article.headline}`}
-                        className="h-[220px] w-full object-cover"
-                      />
-                    </div>
-                  )}
-                  {(article.section_image_urls ?? []).slice(0, 2).map((url, i) => (
-                    <div key={i}>
-                      <div className="mb-1 [font-family:'Inter',Helvetica] text-[9px] tracking-[0.5px] text-[#6b6b6b]">
-                        SECTION {i + 1}
+              {(article.hero_image_url || (article.section_image_urls && article.section_image_urls.length > 0)) && (
+                <div>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    {article.hero_image_url && (
+                      <div className="sm:col-span-3">
+                        <div className="mb-1 [font-family:'Inter',Helvetica] text-[9px] tracking-[0.5px] text-white/40">HERO</div>
+                        <img
+                          src={article.hero_image_url}
+                          alt={`Hero image — ${article.headline}`}
+                          className="h-[220px] w-full rounded-lg object-cover"
+                        />
                       </div>
-                      <img
-                        src={url}
-                        alt={`Section image ${i + 1} — ${article.headline}`}
-                        className="h-[220px] w-full object-cover"
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div>
-              <SectionLabel>SEO PACKAGE</SectionLabel>
-
-              {/* Focus keyword + char-count badges */}
-              {article.focus_keyword && (
-                <div className="mb-3">
-                  <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-[#6b6b6b]">Focus Keyword</div>
-                  <span className="mt-0.5 inline-block border border-[#2e4a3f33] bg-[#e6efe9] px-2 py-0.5 [font-family:'Inter',Helvetica] text-[12px] text-[#2e4a3f]">
-                    {article.focus_keyword}
-                  </span>
-                </div>
-              )}
-
-              {/* SEO title with character count */}
-              <div className="pb-3">
-                <div className="flex items-center justify-between">
-                  <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-[#6b6b6b]">SEO Title</div>
-                  {article.seo_title && (
-                    <span className={`[font-family:'Inter',Helvetica] text-[10px] tabular-nums ${
-                      article.seo_title.length >= 50 && article.seo_title.length <= 60
-                        ? "text-[#2e4a3f]"
-                        : "text-[#8a3a1a]"
-                    }`}>
-                      {article.seo_title.length} chars {article.seo_title.length >= 50 && article.seo_title.length <= 60 ? "✓" : "(target 50–60)"}
-                    </span>
-                  )}
-                </div>
-                {article.seo_title && (
-                  <div className="pt-0.5 [font-family:'Inter',Helvetica] text-[13px] text-[#1e1e1e]">{article.seo_title}</div>
-                )}
-              </div>
-
-              {/* Meta description with character count */}
-              <div className="pb-3">
-                <div className="flex items-center justify-between">
-                  <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-[#6b6b6b]">Meta Description</div>
-                  {article.meta_description && (
-                    <span className={`[font-family:'Inter',Helvetica] text-[10px] tabular-nums ${
-                      article.meta_description.length >= 150 && article.meta_description.length <= 160
-                        ? "text-[#2e4a3f]"
-                        : "text-[#8a3a1a]"
-                    }`}>
-                      {article.meta_description.length} chars {article.meta_description.length >= 150 && article.meta_description.length <= 160 ? "✓" : "(target 150–160)"}
-                    </span>
-                  )}
-                </div>
-                {article.meta_description && (
-                  <div className="pt-0.5 [font-family:'Inter',Helvetica] text-[13px] text-[#1e1e1e]">{article.meta_description}</div>
-                )}
-              </div>
-
-              {/* Keywords — grouped head / LSI / long-tail */}
-              {article.keywords && article.keywords.length > 0 && (
-                <div className="pb-3">
-                  <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-[#6b6b6b]">
-                    Keywords ({article.keywords.length})
-                  </div>
-                  <div className="mt-1 flex flex-wrap gap-1.5">
-                    {article.keywords.map((kw, i) => (
-                      <span
-                        key={i}
-                        className={`border px-2 py-0.5 [font-family:'Inter',Helvetica] text-[11px] ${
-                          i < 3
-                            ? "border-[#1e1e1e33] bg-white text-[#1e1e1e]"          // head
-                            : i < 7
-                            ? "border-[#2e4a3f33] bg-[#e6efe9] text-[#2e4a3f]"     // LSI
-                            : "border-[#2a5a8a33] bg-[#e6eef5] text-[#2a5a8a]"     // long-tail
-                        }`}
-                        title={i < 3 ? "Head keyword" : i < 7 ? "LSI keyword" : "Long-tail keyword"}
-                      >
-                        {kw}
-                      </span>
-                    ))}
-                  </div>
-                  <div className="mt-1.5 flex gap-3 [font-family:'Inter',Helvetica] text-[9px] text-[#6b6b6b]">
-                    <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 border border-[#1e1e1e33] bg-white" />Head</span>
-                    <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 border border-[#2e4a3f33] bg-[#e6efe9]" />LSI</span>
-                    <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 border border-[#2a5a8a33] bg-[#e6eef5]" />Long-tail</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Internal linking strategy */}
-              {article.internal_links && article.internal_links.length > 0 && (
-                <div className="pb-3">
-                  <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-[#6b6b6b]">
-                    Internal Linking Strategy ({article.internal_links.length})
-                  </div>
-                  <div className="mt-2 space-y-3">
-                    {article.internal_links.map((link, i) => (
-                      <div key={i} className="border border-[#1e1e1e0d] bg-white p-3">
-                        <div className="flex items-start justify-between gap-2">
-                          <span className="[font-family:'Inter',Helvetica] text-[12px] font-medium text-[#2e4a3f]">
-                            "{link.anchor_text}"
-                          </span>
-                          <span className="shrink-0 border border-[#2a5a8a33] bg-[#e6eef5] px-1.5 py-0.5 [font-family:'Inter',Helvetica] text-[10px] text-[#2a5a8a]">
-                            {link.target_page}
-                          </span>
+                    )}
+                    {(article.section_image_urls ?? []).slice(0, 2).map((url, i) => (
+                      <div key={i} className="sm:col-span-1">
+                        <div className="mb-1 [font-family:'Inter',Helvetica] text-[9px] tracking-[0.5px] text-white/40">
+                          SECTION {i + 1}
                         </div>
-                        <p className="mt-1 [font-family:'Inter',Helvetica] text-[11px] italic text-[#6b6b6b]">
-                          Context: {link.context}
-                        </p>
-                        <p className="mt-1 [font-family:'Inter',Helvetica] text-[11px] text-[#1e1e1e]">
-                          {link.seo_reason}
-                        </p>
+                        <img
+                          src={url}
+                          alt={`Section image ${i + 1} — ${article.headline}`}
+                          className="h-[150px] w-full rounded-lg object-cover"
+                        />
                       </div>
                     ))}
                   </div>
                 </div>
               )}
 
-              <ListField label="Source URLs" items={article.source_urls} link />
+              <div>
+                <Field label="Executive Summary" value={article.executive_summary} light />
+              </div>
+
+              {(article.best_for?.length || article.not_ideal_for?.length) && (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <SectionLabel>BEST FOR</SectionLabel>
+                    <ListField items={article.best_for} bare light />
+                  </div>
+                  <div>
+                    <SectionLabel>NOT IDEAL FOR</SectionLabel>
+                    <ListField items={article.not_ideal_for} bare light />
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <SectionLabel>ABCDE™ SCORE</SectionLabel>
+                <div className="space-y-1.5">
+                  {ABCDE_GRADES.map((g) => {
+                    const value = article[g.key] as string | null;
+                    return (
+                      <div
+                        key={g.key}
+                        className="flex items-center justify-between border-b border-white/5 py-1.5"
+                      >
+                        <span className="[font-family:'Inter',Helvetica] text-[12px] text-white/50">
+                          {g.letter} · {g.title}
+                        </span>
+                        <span className="[font-family:'Playfair_Display',Helvetica] text-[15px] text-emerald-300">
+                          {value ?? "—"}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-3">
+                  <ListField label="Key Takeaways" items={article.key_takeaways} light />
+                  <Field label="WishNest Verdict" value={article.wishnest_verdict} light />
+                </div>
+              </div>
             </div>
 
-            <div>
-              <SectionLabel>ABCDE™ SCORE</SectionLabel>
-              <div className="space-y-2">
-                {ABCDE_GRADES.map((g) => {
-                  const value = article[g.key] as string | null;
-                  return (
-                    <div
-                      key={g.key}
-                      className="flex items-center justify-between border-b border-[#1e1e1e0d] py-1.5"
-                    >
-                      <span className="[font-family:'Inter',Helvetica] text-[12px] text-[#6b6b6b]">
-                        {g.letter} · {g.title}
-                      </span>
-                      <span className="[font-family:'Playfair_Display',Helvetica] text-[15px] text-[#2e4a3f]">
-                        {value ?? "—"}
+            {/* RIGHT — SEO & Social Media Package, floating tabs */}
+            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+              <SectionLabel>SEO & SOCIAL MEDIA PACKAGE</SectionLabel>
+
+              <Tabs defaultValue="seo" className="w-full">
+                <TabsList className="grid w-full grid-cols-4 rounded-full border border-white/10 bg-white/[0.03] p-1">
+                  <TabsTrigger
+                    value="seo"
+                    className="rounded-full [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[0.5px] text-white/50 data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-none"
+                  >
+                    SEO
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="linkedin"
+                    className="rounded-full [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[0.5px] text-white/50 data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-none"
+                  >
+                    <Linkedin className="h-3.5 w-3.5" />
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="facebook"
+                    className="rounded-full [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[0.5px] text-white/50 data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-none"
+                  >
+                    <Facebook className="h-3.5 w-3.5" />
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="x"
+                    className="rounded-full [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[0.5px] text-white/50 data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-none"
+                  >
+                    <Twitter className="h-3.5 w-3.5" />
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="seo" className="mt-4 space-y-3">
+                  {article.focus_keyword && (
+                    <div className="mb-3">
+                      <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">Focus Keyword</div>
+                      <span className="mt-0.5 inline-block rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 [font-family:'Inter',Helvetica] text-[12px] text-emerald-300">
+                        {article.focus_keyword}
                       </span>
                     </div>
-                  );
-                })}
-              </div>
-              <ListField label="Key Takeaways" items={article.key_takeaways} />
-              <Field label="WishNest Verdict" value={article.wishnest_verdict} />
-            </div>
+                  )}
 
-            <div className="lg:col-span-2">
-              <SectionLabel>EXECUTIVE SUMMARY</SectionLabel>
-              <p className="[font-family:'Inter',Helvetica] text-[13px] leading-[22px] text-[#1e1e1e]">
-                {article.executive_summary ?? "—"}
-              </p>
-            </div>
+                  <div className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">SEO Title</div>
+                      {article.seo_title && (
+                        <span className={`[font-family:'Inter',Helvetica] text-[10px] tabular-nums ${
+                          article.seo_title.length >= 50 && article.seo_title.length <= 60
+                            ? "text-emerald-400"
+                            : "text-amber-400"
+                        }`}>
+                          {article.seo_title.length} chars {article.seo_title.length >= 50 && article.seo_title.length <= 60 ? "✓" : "(target 50–60)"}
+                        </span>
+                      )}
+                    </div>
+                    {article.seo_title && (
+                      <div className="pt-0.5 [font-family:'Inter',Helvetica] text-[13px] text-white/80">{article.seo_title}</div>
+                    )}
+                  </div>
 
-            {(article.best_for?.length || article.not_ideal_for?.length) && (
-              <div className="lg:col-span-2 grid gap-6 sm:grid-cols-2">
-                <div>
-                  <SectionLabel>BEST FOR</SectionLabel>
-                  <ListField items={article.best_for} bare />
-                </div>
-                <div>
-                  <SectionLabel>NOT IDEAL FOR</SectionLabel>
-                  <ListField items={article.not_ideal_for} bare />
-                </div>
-              </div>
-            )}
+                  <div className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">Meta Description</div>
+                      {article.meta_description && (
+                        <span className={`[font-family:'Inter',Helvetica] text-[10px] tabular-nums ${
+                          article.meta_description.length >= 150 && article.meta_description.length <= 160
+                            ? "text-emerald-400"
+                            : "text-amber-400"
+                        }`}>
+                          {article.meta_description.length} chars {article.meta_description.length >= 150 && article.meta_description.length <= 160 ? "✓" : "(target 150–160)"}
+                        </span>
+                      )}
+                    </div>
+                    {article.meta_description && (
+                      <div className="pt-0.5 [font-family:'Inter',Helvetica] text-[13px] text-white/80">{article.meta_description}</div>
+                    )}
+                  </div>
 
-            <div className="lg:col-span-2">
-              <SectionLabel>SOCIAL MEDIA PACKAGE</SectionLabel>
-              <div className="grid gap-6 sm:grid-cols-2">
-                <div>
-                  <Field label="LinkedIn (x3)" value={null} />
+                  {article.keywords && article.keywords.length > 0 && (
+                    <div className="pb-2">
+                      <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                        Keywords ({article.keywords.length})
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {article.keywords.map((kw, i) => (
+                          <span
+                            key={i}
+                            className={`rounded-full border px-2 py-0.5 [font-family:'Inter',Helvetica] text-[11px] ${
+                              i < 3
+                                ? "border-white/15 bg-white/[0.04] text-white/80"
+                                : i < 7
+                                ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-300"
+                                : "border-sky-500/25 bg-sky-500/10 text-sky-300"
+                            }`}
+                            title={i < 3 ? "Head keyword" : i < 7 ? "LSI keyword" : "Long-tail keyword"}
+                          >
+                            {kw}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {article.internal_links && article.internal_links.length > 0 && (
+                    <div className="pb-2">
+                      <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                        Internal Linking Strategy ({article.internal_links.length})
+                      </div>
+                      <div className="mt-2 space-y-2">
+                        {article.internal_links.map((link, i) => (
+                          <div key={i} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="[font-family:'Inter',Helvetica] text-[12px] font-medium text-emerald-300">
+                                "{link.anchor_text}"
+                              </span>
+                              <span className="shrink-0 rounded-full border border-sky-500/25 bg-sky-500/10 px-1.5 py-0.5 [font-family:'Inter',Helvetica] text-[10px] text-sky-300">
+                                {link.target_page}
+                              </span>
+                            </div>
+                            <p className="mt-1 [font-family:'Inter',Helvetica] text-[11px] italic text-white/40">
+                              Context: {link.context}
+                            </p>
+                            <p className="mt-1 [font-family:'Inter',Helvetica] text-[11px] text-white/70">
+                              {link.seo_reason}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <ListField label="Source URLs" items={article.source_urls} link light />
+                </TabsContent>
+
+                <TabsContent value="linkedin" className="mt-4 space-y-2">
+                  <Field label="LinkedIn (x3)" value={null} light />
                   <ul className="space-y-2">
                     {(article.linkedin_variations ?? []).map((v, i) => (
                       <li
                         key={i}
-                        className="border border-[#1e1e1e0d] bg-white p-3 [font-family:'Inter',Helvetica] text-[12px] leading-[19px] text-[#1e1e1e]"
+                        className="rounded-lg border border-white/10 bg-white/[0.03] p-3 [font-family:'Inter',Helvetica] text-[12px] leading-[19px] text-white/80"
                       >
                         {v}
                       </li>
                     ))}
+                    {(!article.linkedin_variations || article.linkedin_variations.length === 0) && (
+                      <li className="[font-family:'Inter',Helvetica] text-[12px] text-white/30">No LinkedIn copy generated.</li>
+                    )}
                   </ul>
-                </div>
-                <div>
-                  <Field label="Facebook (x2)" value={null} />
+                </TabsContent>
+
+                <TabsContent value="facebook" className="mt-4 space-y-2">
+                  <Field label="Facebook (x2)" value={null} light />
                   <ul className="space-y-2">
                     {(article.facebook_variations ?? []).map((v, i) => (
                       <li
                         key={i}
-                        className="border border-[#1e1e1e0d] bg-white p-3 [font-family:'Inter',Helvetica] text-[12px] leading-[19px] text-[#1e1e1e]"
+                        className="rounded-lg border border-white/10 bg-white/[0.03] p-3 [font-family:'Inter',Helvetica] text-[12px] leading-[19px] text-white/80"
                       >
                         {v}
                       </li>
                     ))}
+                    {(!article.facebook_variations || article.facebook_variations.length === 0) && (
+                      <li className="[font-family:'Inter',Helvetica] text-[12px] text-white/30">No Facebook copy generated.</li>
+                    )}
                   </ul>
-                </div>
-                <div>
-                  <Field label="X / Twitter Thread" value={null} />
+                </TabsContent>
+
+                <TabsContent value="x" className="mt-4 space-y-2">
+                  <Field label="X / Twitter Thread" value={null} light />
                   <ul className="space-y-2">
                     {(article.twitter_thread ?? []).map((v, i) => (
                       <li
                         key={i}
-                        className="border border-[#1e1e1e0d] bg-white p-3 [font-family:'Inter',Helvetica] text-[12px] leading-[19px] text-[#1e1e1e]"
+                        className="rounded-lg border border-white/10 bg-white/[0.03] p-3 [font-family:'Inter',Helvetica] text-[12px] leading-[19px] text-white/80"
                       >
                         {v}
                       </li>
                     ))}
+                    {(!article.twitter_thread || article.twitter_thread.length === 0) && (
+                      <li className="[font-family:'Inter',Helvetica] text-[12px] text-white/30">No X thread generated.</li>
+                    )}
                   </ul>
+                </TabsContent>
+              </Tabs>
+
+              <div className="mt-4 border-t border-white/10 pt-4">
+                <div className="flex items-center gap-2">
+                  <Mail className="h-3.5 w-3.5 text-white/40" />
+                  <SectionLabel>NEWSLETTER</SectionLabel>
                 </div>
-                <div>
-                  <Field label="Newsletter Summary" value={article.newsletter_summary} />
-                  <Field label="CTA" value={article.cta} />
-                  <ListField label="Hashtags" items={article.suggested_hashtags} />
-                </div>
+                <Field label="Newsletter Summary" value={article.newsletter_summary} light />
+                <Field label="CTA" value={article.cta} light />
+                <ListField label="Hashtags" items={article.suggested_hashtags} light />
               </div>
             </div>
           </div>
@@ -663,20 +811,20 @@ function ArticleCard({ article }: { article: Article }) {
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mb-3 [font-family:'Inter',Helvetica] text-[9px] font-medium tracking-[1.6px] text-[#2e4a3f]">
+    <div className="mb-3 [font-family:'Inter',Helvetica] text-[9px] font-semibold tracking-[1.6px] text-emerald-400">
       {children}
     </div>
   );
 }
 
-function Field({ label, value }: { label: string; value: string | null }) {
+function Field({ label, value, light }: { label: string; value: string | null; light?: boolean }) {
   return (
     <div className="pb-3">
-      <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-[#6b6b6b]">
+      <div className={`[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] ${light ? "text-white/40" : "text-[#6b6b6b]"}`}>
         {label}
       </div>
       {value !== null && (
-        <div className="pt-0.5 [font-family:'Inter',Helvetica] text-[13px] text-[#1e1e1e]">
+        <div className={`pt-0.5 [font-family:'Inter',Helvetica] text-[13px] ${light ? "text-white/80" : "text-[#1e1e1e]"}`}>
           {value ?? "—"}
         </div>
       )}
@@ -689,19 +837,21 @@ function ListField({
   items,
   link,
   bare,
+  light,
 }: {
   label?: string;
   items: string[] | null | undefined;
   link?: boolean;
   bare?: boolean;
+  light?: boolean;
 }) {
   if (!items || items.length === 0) {
-    return label ? <Field label={label} value="—" /> : null;
+    return label ? <Field label={label} value="—" light={light} /> : null;
   }
   return (
     <div className="pb-3">
       {label && (
-        <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-[#6b6b6b]">
+        <div className={`[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] ${light ? "text-white/40" : "text-[#6b6b6b]"}`}>
           {label}
         </div>
       )}
@@ -715,7 +865,11 @@ function ListField({
                 href={item}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-block break-all border border-[#1e1e1e14] bg-white px-2 py-1 [font-family:'Inter',Helvetica] text-[11px] text-[#2e4a3f] hover:underline"
+                className={`inline-block break-all rounded-full border px-2 py-1 [font-family:'Inter',Helvetica] text-[11px] hover:underline ${
+                  light
+                    ? "border-white/10 bg-white/[0.03] text-emerald-300"
+                    : "border-[#1e1e1e14] bg-white text-[#2e4a3f]"
+                }`}
               >
                 {item}
               </a>
@@ -723,14 +877,18 @@ function ListField({
           ) : bare ? (
             <li
               key={i}
-              className="[font-family:'Inter',Helvetica] text-[13px] text-[#1e1e1e]"
+              className={`[font-family:'Inter',Helvetica] text-[13px] ${light ? "text-white/70" : "text-[#1e1e1e]"}`}
             >
               · {item}
             </li>
           ) : (
             <li
               key={i}
-              className="border border-[#1e1e1e14] bg-white px-2 py-1 [font-family:'Inter',Helvetica] text-[11px] text-[#1e1e1e]"
+              className={`rounded-full border px-2 py-1 [font-family:'Inter',Helvetica] text-[11px] ${
+                light
+                  ? "border-white/10 bg-white/[0.03] text-white/70"
+                  : "border-[#1e1e1e14] bg-white text-[#1e1e1e]"
+              }`}
             >
               {item}
             </li>
@@ -766,52 +924,62 @@ export const ReviewDashboard = (): JSX.Element => {
   }, {});
 
   return (
-    <main className="min-h-screen bg-[#f8f7f4] text-[#1e1e1e]">
+    <main className="min-h-screen bg-[#0a0f0d] text-white">
       <SiteNav />
 
-      <section className="border-b border-[#1e1e1e1a] bg-white py-16">
-        <div className="mx-auto w-full max-w-[1166px] px-8">
-          <p className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[2.6px] text-[#2e4a3f]">
+      <section
+        className="relative overflow-hidden border-b border-white/10 py-16"
+        style={{
+          backgroundImage:
+            "radial-gradient(ellipse at top left, rgba(16,185,129,0.12), transparent 55%), radial-gradient(ellipse at bottom right, rgba(96,165,250,0.08), transparent 55%), linear-gradient(180deg, #0d1512, #0a0f0d)",
+        }}
+      >
+        <div className="mx-auto w-full max-w-[1280px] px-8">
+          <p className="[font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[2.6px] text-emerald-400">
             EDITORIAL WORKFLOW
           </p>
           <div className="flex items-start justify-between">
-            <h1 className="pt-4 [font-family:'Playfair_Display',Helvetica] text-[42px] font-normal leading-[1.1] text-[#1e1e1e]">
+            <h1 className="pt-4 [font-family:'Playfair_Display',Helvetica] text-[42px] font-medium leading-[1.1] text-white">
               Review Dashboard
             </h1>
             <button
               onClick={handleLogout}
-              className="mt-5 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-[#6b6b6b] hover:text-[#1e1e1e]"
+              className="mt-5 rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-white/50 transition-colors hover:border-white/20 hover:text-white"
             >
               SIGN OUT
             </button>
           </div>
-          <p className="max-w-[600px] pt-3 [font-family:'Inter',Helvetica] text-[15px] leading-[24px] text-[#6b6b6b]">
+          <p className="max-w-[600px] pt-3 [font-family:'Inter',Helvetica] text-[15px] leading-[24px] text-white/50">
             Every article generated by the AI Research Editor Agent lands here
             as a draft. Nothing is published or scheduled without your
             explicit approval.
           </p>
+
+          <div className="mt-10">
+            <MetricsBar articles={articles} />
+          </div>
         </div>
       </section>
 
       {/* ── Generate panel ── */}
-      <section className="border-b border-[#1e1e1e1a] bg-[#f8f7f4] py-10">
-        <div className="mx-auto w-full max-w-[1166px] px-8">
+      <section className="border-b border-white/10 bg-[#0a0f0d] py-10">
+        <div className="mx-auto w-full max-w-[1280px] px-8">
           <GeneratePanel onGenerated={() => setActiveTab("draft")} />
         </div>
       </section>
 
-      <section className="py-12">
-        <div className="mx-auto w-full max-w-[1166px] px-8">
+      <section className="bg-[#0a0f0d] py-12">
+        <div className="mx-auto w-full max-w-[1280px] px-8">
           <div className="mb-8 flex flex-wrap gap-2">
             {STATUS_TABS.map((tab) => (
               <button
                 key={tab.value}
                 onClick={() => setActiveTab(tab.value)}
                 data-testid={`tab-status-${tab.value}`}
-                className={`border px-4 py-2 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] transition-colors ${
+                className={`rounded-full border px-4 py-2 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] transition-all ${
                   activeTab === tab.value
-                    ? "border-[#2e4a3f] bg-[#2e4a3f] text-white"
-                    : "border-[#1e1e1e1a] bg-white text-[#6b6b6b] hover:border-[#2e4a3f]"
+                    ? "border-emerald-500 bg-emerald-600 text-white shadow-[0_4px_14px_rgba(16,185,129,0.35)]"
+                    : "border-white/10 bg-white/[0.03] text-white/50 hover:border-emerald-500/40 hover:text-emerald-300"
                 }`}
               >
                 {tab.label}
@@ -828,7 +996,7 @@ export const ReviewDashboard = (): JSX.Element => {
           </div>
 
           {isLoading && (
-            <div className="flex items-center justify-center gap-2 py-24 text-[#6b6b6b]">
+            <div className="flex items-center justify-center gap-2 py-24 text-white/50">
               <Loader2 className="h-4 w-4 animate-spin" />
               <span className="[font-family:'Inter',Helvetica] text-[13px]">
                 Loading articles…
@@ -837,14 +1005,14 @@ export const ReviewDashboard = (): JSX.Element => {
           )}
 
           {isError && (
-            <div className="border border-[#8a1a1a33] bg-[#f8e2e2] p-6 [font-family:'Inter',Helvetica] text-[13px] text-[#8a1a1a]">
+            <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-6 [font-family:'Inter',Helvetica] text-[13px] text-red-300">
               Failed to load articles: {(error as Error).message}
             </div>
           )}
 
           {!isLoading && !isError && filtered.length === 0 && (
-            <div className="border border-dashed border-[#1e1e1e1a] py-24 text-center">
-              <p className="[font-family:'Inter',Helvetica] text-[13px] text-[#6b6b6b]">
+            <div className="rounded-xl border border-dashed border-white/10 py-24 text-center">
+              <p className="[font-family:'Inter',Helvetica] text-[13px] text-white/40">
                 No articles in this category yet. Run the research pipeline to
                 generate drafts.
               </p>
