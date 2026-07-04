@@ -1,17 +1,29 @@
 """
-AI image generation for WishNest articles using DALL-E 3.
+AI image generation for WishNest articles.
 
-DALL-E 3 returns a hosted HTTPS URL (not base64), so no storage infrastructure
-is needed and the DB column stays a normal-sized string. URLs are valid for
-~1 hour — for permanent storage, download and re-host on a CDN separately.
+IMPORTANT: this OpenAI account/API key does not have access to the legacy
+"dall-e-3" model (confirmed via a live API call — OpenAI returns
+"The model 'dall-e-3' does not exist" for this key). The key DOES have
+access to the newer "gpt-image-1" family, so that is what we use.
+
+Unlike DALL-E 3, gpt-image-1 does not return a hosted URL — it returns the
+image as base64 (b64_json). We decode it and save it to a local static
+directory served by the FastAPI app at /api/static/images/<filename>.png,
+then store that URL in the DB. This also means images no longer expire
+after ~1 hour like DALL-E 3's hosted URLs did.
 
 Generates per article:
-  - one hero image  (1792×1024 landscape — ideal cover/hero)
-  - up to 2 section images (1024×1024 square)
+  - one hero image  (1536x1024 landscape — ideal cover/hero)
+  - up to 2 section images (1024x1024 square)
 
-Image generation is wrapped in try/except so a failure never crashes the pipeline.
+Image generation is wrapped in try/except so a failure never crashes the
+pipeline, but every failure is logged AND printed to the terminal with the
+exact exception so it's immediately visible in the backend console.
 """
+import base64
 import logging
+import uuid
+from pathlib import Path
 
 from openai import OpenAI
 
@@ -19,10 +31,29 @@ from app.config import get_settings
 
 logger = logging.getLogger("wishnest.image_service")
 
-IMAGE_MODEL = "dall-e-3"
-HERO_SIZE = "1792x1024"     # landscape, best for hero/cover
+IMAGE_MODEL = "gpt-image-1"
+HERO_SIZE = "1536x1024"    # landscape, best for hero/cover
 SECTION_SIZE = "1024x1024"  # square, best for in-article sections
-IMAGE_QUALITY = "standard"  # "standard" or "hd"; hd costs 2x
+IMAGE_QUALITY = "high"     # gpt-image-1: "low" | "medium" | "high" | "auto"
+
+STATIC_IMAGES_DIR = Path(__file__).resolve().parent.parent / "static" / "images"
+STATIC_IMAGES_URL_PREFIX = "/api/static/images"
+
+
+def _log_failure(stage: str, headline: str, exc: Exception) -> None:
+    """Log AND print the exact exception so it's impossible to miss in the terminal."""
+    message = f"[image_service] {stage} FAILED for {headline[:60]!r}: {type(exc).__name__}: {exc}"
+    logger.error(message, exc_info=True)
+    print(message, flush=True)
+
+
+def _save_base64_image(b64_json: str) -> str:
+    """Decode base64 PNG data, save it to the static images dir, return its served URL."""
+    STATIC_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+    filename = f"{uuid.uuid4().hex}.png"
+    file_path = STATIC_IMAGES_DIR / filename
+    file_path.write_bytes(base64.b64decode(b64_json))
+    return f"{STATIC_IMAGES_URL_PREFIX}/{filename}"
 
 
 def _build_prompt(
@@ -33,7 +64,7 @@ def _build_prompt(
     angle: str,
 ) -> str:
     """
-    Construct a strict professional editorial photography prompt.
+    Construct a strict, luxury/architectural editorial photography prompt.
     Uses focus_keyword > location > headline for subject grounding.
     """
     subject_parts: list[str] = []
@@ -54,7 +85,8 @@ def _build_prompt(
     )
 
     return (
-        f"Professional {style_base}. "
+        f"High-end architectural photography, luxury hospitality style, 8k resolution, "
+        f"realistic lighting. Professional {style_base}. "
         f"Subject: {subject}. "
         f"{angle} "
         f"Technical specs: 8K resolution, photorealistic, natural golden-hour or diffused daylight, "
@@ -74,13 +106,16 @@ def generate_article_images(
     """
     Returns (hero_image_url, section_image_urls).
 
-    Uses DALL-E 3 which returns hosted HTTPS URLs — no base64, no storage needed.
-    Never raises — failures are logged and that slot returns None/skipped so the
-    pipeline always persists the article even without images.
+    Uses gpt-image-1 (this account has no dall-e-3 access). Images are decoded
+    from base64 and saved locally, served at /api/static/images/<file>.png.
+    Never raises — failures are logged/printed and that slot returns
+    None/skipped so the pipeline always persists the article even without images.
     """
     settings = get_settings()
     if not settings.openai_api_key:
-        logger.warning("OPENAI_API_KEY not configured; skipping image generation.")
+        message = "[image_service] OPENAI_API_KEY / CHATGPT_API_KEY not configured; skipping image generation."
+        logger.error(message)
+        print(message, flush=True)
         return None, []
 
     client = OpenAI(api_key=settings.openai_api_key)
@@ -102,14 +137,14 @@ def generate_article_images(
             quality=IMAGE_QUALITY,
             n=1,
         )
-        url = hero_result.data[0].url
-        if url:
-            hero_url = url
-            logger.info("Hero image generated for %r", headline[:50])
+        b64 = hero_result.data[0].b64_json
+        if b64:
+            hero_url = _save_base64_image(b64)
+            logger.info("Hero image generated for %r -> %s", headline[:50], hero_url)
         else:
-            logger.warning("Hero image: DALL-E 3 returned no URL for %r", headline[:50])
+            print(f"[image_service] Hero image: no b64_json returned for {headline[:50]!r}", flush=True)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Hero image generation failed for %r: %s", headline[:50], exc)
+        _log_failure("Hero image generation", headline, exc)
 
     # ── Section images (square) ───────────────────────────────────────────────
     section_urls: list[str] = []
@@ -135,12 +170,12 @@ def generate_article_images(
                 quality=IMAGE_QUALITY,
                 n=1,
             )
-            url = result.data[0].url
-            if url:
-                section_urls.append(url)
+            b64 = result.data[0].b64_json
+            if b64:
+                section_urls.append(_save_base64_image(b64))
             else:
-                logger.warning("Section image: no URL returned for %r", headline[:50])
+                print(f"[image_service] Section image: no b64_json returned for {headline[:50]!r}", flush=True)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Section image generation failed for %r: %s", headline[:50], exc)
+            _log_failure("Section image generation", headline, exc)
 
     return hero_url, section_urls

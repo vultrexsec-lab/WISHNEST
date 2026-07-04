@@ -9,3 +9,5 @@ vite.config.ts.*
 __pycache__/
 *.pyc
 .venv/
+backend/app/static/images/*
+!backend/app/static/images/.gitkeep
