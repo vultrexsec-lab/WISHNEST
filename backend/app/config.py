@@ -31,12 +31,9 @@ class Settings(BaseSettings):
 
     # --- App ---
     environment: str = os.environ.get("ENVIRONMENT", "development")
-    # Comma-separated list of allowed CORS origins. Set CORS_ORIGINS in secrets
-    # for production. Defaults to permissive dev-only setting.
-    cors_origins: list[str] = [
-        origin.strip()
-        for origin in os.environ.get("CORS_ORIGINS", "*").split(",")
-    ]
+    # Comma-separated allowed CORS origins (kept as str so pydantic_settings
+    # never tries to JSON-parse it). main.py splits on comma.
+    cors_origins_raw: str = os.environ.get("CORS_ORIGINS", "")
 
 
 @lru_cache

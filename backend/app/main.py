@@ -34,13 +34,26 @@ STATIC_IMAGES_DIR = Path(__file__).resolve().parent / "static" / "images"
 STATIC_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/api/static/images", StaticFiles(directory=str(STATIC_IMAGES_DIR)), name="static-images")
 
+# Explicit origins that must always be allowed (Vercel frontend + Replit dev).
+# allow_credentials=True requires named origins — wildcard "*" is forbidden by
+# the browser when credentials mode is "include".
+_ALWAYS_ALLOWED = [
+    "https://public-brown-one-94.vercel.app",
+    "https://b7f50de8-22d2-4e87-b4bd-7ec7e0b00cfc-00-1yj2ksywkheg8.pike.replit.dev",
+]
+_env_origins = [
+    o.strip()
+    for o in settings.cors_origins_raw.split(",")
+    if o.strip() and o.strip() != "*"
+]
+_allow_origins = list(dict.fromkeys(_ALWAYS_ALLOWED + _env_origins))  # dedup, order-stable
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
-    # allow_credentials requires explicit origins (not wildcard "*")
-    allow_credentials="*" not in settings.cors_origins,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_allow_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 app.include_router(auth.router)
