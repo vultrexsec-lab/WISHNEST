@@ -1,11 +1,9 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import { getStoredToken, removeToken } from "@/contexts/AuthContext";
 
-const API_BASE = "https://b7f50de8-22d2-4e87-b4bd-7ec7e0b00cfc-00-1yj2ksywkheg8.pike.replit.dev";
-
 function apiUrl(path: string): string {
   if (path.startsWith("http://") || path.startsWith("https://")) return path;
-  return API_BASE + path;
+  return path;
 }
 
 async function throwIfResNotOk(res: Response) {
