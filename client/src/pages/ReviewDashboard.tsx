@@ -50,20 +50,78 @@ function GeneratePanel({ onGenerated }: { onGenerated: () => void }) {
   const { toast } = useToast();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const statusPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Poll /api/articles every 8 s for up to 3 minutes after research starts,
-  // so new drafts appear automatically without a manual refresh.
-  const startPolling = () => {
-    if (pollRef.current) clearInterval(pollRef.current);
+  const stopArticlesPolling = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  };
+
+  const stopStatusPolling = () => {
+    if (statusPollRef.current) {
+      clearInterval(statusPollRef.current);
+      statusPollRef.current = null;
+    }
+  };
+
+  // Fallback poll of /api/articles every 8 s for up to 3 minutes after research
+  // starts, so new drafts appear automatically without a manual refresh.
+  const startArticlesPolling = () => {
+    stopArticlesPolling();
     const deadline = Date.now() + 3 * 60 * 1000;
     pollRef.current = setInterval(() => {
       queryClient.invalidateQueries({ queryKey: ["/api/articles"] });
       if (Date.now() > deadline) {
-        clearInterval(pollRef.current!);
-        pollRef.current = null;
+        stopArticlesPolling();
         setResearchActive(false);
       }
     }, 8000);
+  };
+
+  // Poll the job status endpoint every 2 s so failures (e.g. OpenAI quota
+  // exceeded) surface within seconds instead of the UI appearing to hang for
+  // the full 3-minute articles-polling window.
+  const startStatusPolling = (jobId: string) => {
+    stopStatusPolling();
+    const deadline = Date.now() + 3 * 60 * 1000;
+    statusPollRef.current = setInterval(async () => {
+      try {
+        const res = await apiRequest("GET", `/api/research/status/${jobId}`);
+        const data = await res.json();
+
+        if (data.status === "failed") {
+          stopStatusPolling();
+          stopArticlesPolling();
+          setResearchActive(false);
+          toast({
+            title: "Research failed",
+            description: data.message || "The research pipeline failed. Check the backend logs for details.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        if (data.status === "success") {
+          stopStatusPolling();
+          setResearchActive(false);
+          queryClient.invalidateQueries({ queryKey: ["/api/articles"] });
+          toast({
+            title: "Research complete",
+            description: data.message || "Articles were drafted and added to Pending Review.",
+          });
+          return;
+        }
+      } catch {
+        // Status endpoint unreachable/expired — fall back to articles polling only.
+        stopStatusPolling();
+      }
+
+      if (Date.now() > deadline) {
+        stopStatusPolling();
+      }
+    }, 2000);
   };
 
   const generateMutation = useMutation({
@@ -79,7 +137,8 @@ function GeneratePanel({ onGenerated }: { onGenerated: () => void }) {
       setResearchActive(true);
       queryClient.invalidateQueries({ queryKey: ["/api/articles"] });
       onGenerated();
-      startPolling();
+      startArticlesPolling();
+      if (data.job_id) startStatusPolling(data.job_id);
       toast({
         title: "Research started",
         description:

@@ -146,6 +146,14 @@ class ResearchResponse(BaseModel):
     message: str
     query: str
     draft_article_ids: list[uuid.UUID] = []
+    job_id: str
+
+
+class ResearchStatusResponse(BaseModel):
+    job_id: str
+    status: str  # "pending" | "success" | "failed"
+    message: str
+    article_count: int = 0
 
 
 class ApproveArticleRequest(BaseModel):
