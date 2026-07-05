@@ -11,3 +11,4 @@ __pycache__/
 .venv/
 backend/app/static/images/*
 !backend/app/static/images/.gitkeep
+.vercel
