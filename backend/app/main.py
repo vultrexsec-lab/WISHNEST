@@ -63,6 +63,11 @@ app.include_router(approve.router)
 app.include_router(newsletter.router)
 
 
+@app.get("/")
+def root():
+    return {"status": "ok", "service": "WishNest API"}
+
+
 @app.get("/api/health")
 def health_check():
     return {"status": "ok"}
