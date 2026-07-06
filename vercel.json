@@ -5,7 +5,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://pixly-premiumzipzip--bom003844.replit.app/api/:path*"
+      "destination": "https://wishnest-backend-mjpa.onrender.com/api/:path*"
     },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
