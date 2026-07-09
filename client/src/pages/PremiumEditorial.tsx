@@ -361,6 +361,13 @@ export const PremiumEditorial = (): JSX.Element => {
     ["approved", "scheduled", "published"].includes(a.status),
   );
 
+  // Live trending = 4 most recent approved articles (any category)
+  const trendingLive = publishedArticles.slice(0, 4);
+  // Live intelligence = approved articles tagged intelligence
+  const intelligenceLive = publishedArticles
+    .filter((a) => a.category === "intelligence" || (a.article_type === "standard" && !a.category))
+    .slice(0, 4);
+
   return (
     <main className="bg-[#f8f7f4] text-[#1e1e1e]">
       <SearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
@@ -821,37 +828,60 @@ export const PremiumEditorial = (): JSX.Element => {
               </button>
             </div>
             <div className="pt-10">
-              {trendingItems.map((item, index) => (
-                <article
-                  key={item.number}
-                  className={`flex items-center gap-6 py-6 ${
-                    index < trendingItems.length - 1
-                      ? "border-b border-[#1e1e1e1a]"
-                      : ""
-                  }`}
-                >
-                  <div className="w-9 shrink-0 [font-family:'Playfair_Display',Helvetica] text-[28px] font-normal leading-7 text-[#1e1e1e22]">
-                    {item.number}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="[font-family:'Inter',Helvetica] text-[9px] font-normal leading-[13.5px] tracking-[1.44px] text-[#2e4a3f]">
-                      {item.category}
+              {(trendingLive.length > 0 ? trendingLive : trendingItems).map((item, index, arr) =>
+                "id" in item ? (
+                  // Live article
+                  <Link key={(item as Article).id} href={`/article/${(item as Article).id}`}>
+                    <article className={`flex cursor-pointer items-center gap-6 py-6 transition-opacity hover:opacity-70 ${index < arr.length - 1 ? "border-b border-[#1e1e1e1a]" : ""}`}>
+                      <div className="w-9 shrink-0 [font-family:'Playfair_Display',Helvetica] text-[28px] font-normal leading-7 text-[#1e1e1e22]">
+                        {String(index + 1).padStart(2, "0")}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="[font-family:'Inter',Helvetica] text-[9px] font-normal leading-[13.5px] tracking-[1.44px] text-[#2e4a3f]">
+                          {((item as Article).category ?? (item as Article).article_type ?? "EDITORIAL").toUpperCase().replace(/-/g, " ")}
+                        </div>
+                        <h3 className="pt-1.5 [font-family:'Playfair_Display',Helvetica] text-[14.4px] font-normal leading-[19.8px] text-[#1e1e1e]">
+                          {(item as Article).headline}
+                        </h3>
+                        {(item as Article).location && (
+                          <div className="pt-1 [font-family:'Inter',Helvetica] text-[11px] font-normal leading-[16.5px] text-[#6b6b6b]">
+                            {(item as Article).location}
+                          </div>
+                        )}
+                      </div>
+                      {(item as Article).hero_image_url ? (
+                        <div className="h-[50px] w-[72px] shrink-0 bg-cover bg-center bg-[#e8e6e0]" style={{ backgroundImage: `url(${(item as Article).hero_image_url})` }} />
+                      ) : (
+                        <div className="h-[50px] w-[72px] shrink-0 bg-[#e8e6e0]" />
+                      )}
+                    </article>
+                  </Link>
+                ) : (
+                  // Static fallback
+                  <article
+                    key={(item as typeof trendingItems[0]).number}
+                    className={`flex items-center gap-6 py-6 ${index < arr.length - 1 ? "border-b border-[#1e1e1e1a]" : ""}`}
+                  >
+                    <div className="w-9 shrink-0 [font-family:'Playfair_Display',Helvetica] text-[28px] font-normal leading-7 text-[#1e1e1e22]">
+                      {(item as typeof trendingItems[0]).number}
                     </div>
-                    <h3 className="pt-1.5 [font-family:'Playfair_Display',Helvetica] text-[14.4px] font-normal leading-[19.8px] text-[#1e1e1e]">
-                      {item.title}
-                    </h3>
-                    <div className="pt-1 [font-family:'Inter',Helvetica] text-[11px] font-normal leading-[16.5px] text-[#6b6b6b]">
-                      {item.readTime}
+                    <div className="min-w-0 flex-1">
+                      <div className="[font-family:'Inter',Helvetica] text-[9px] font-normal leading-[13.5px] tracking-[1.44px] text-[#2e4a3f]">
+                        {(item as typeof trendingItems[0]).category}
+                      </div>
+                      <h3 className="pt-1.5 [font-family:'Playfair_Display',Helvetica] text-[14.4px] font-normal leading-[19.8px] text-[#1e1e1e]">
+                        {(item as typeof trendingItems[0]).title}
+                      </h3>
+                      <div className="pt-1 [font-family:'Inter',Helvetica] text-[11px] font-normal leading-[16.5px] text-[#6b6b6b]">
+                        {(item as typeof trendingItems[0]).readTime}
+                      </div>
                     </div>
-                  </div>
-                  <div className="h-[50px] w-[72px] shrink-0 bg-[#e8e6e0]">
-                    <div
-                      className="h-full w-full bg-cover bg-center"
-                      style={{ backgroundImage: `url(${item.image})` }}
-                    />
-                  </div>
-                </article>
-              ))}
+                    <div className="h-[50px] w-[72px] shrink-0 bg-[#e8e6e0]">
+                      <div className="h-full w-full bg-cover bg-center" style={{ backgroundImage: `url(${(item as typeof trendingItems[0]).image})` }} />
+                    </div>
+                  </article>
+                )
+              )}
             </div>
           </div>
           <div>
@@ -867,30 +897,41 @@ export const PremiumEditorial = (): JSX.Element => {
               </button>
             </div>
             <div className="pt-10">
-              {intelligenceItems.map((item, index) => (
-                <Link href="/article/seclude-ramgarh-willows" key={item.title}>
-                  <article
-                    className={`cursor-pointer py-6 transition-opacity hover:opacity-70 ${
-                      index < intelligenceItems.length - 1
-                        ? "border-b border-[#1e1e1e1a]"
-                        : ""
-                    }`}
-                  >
-                    <div className="[font-family:'Inter',Helvetica] text-[9px] font-normal leading-[13.5px] tracking-[1.44px] text-[#6b6b6b]">
-                      {item.category}
-                    </div>
-                    <h3 className="pt-2 [font-family:'Playfair_Display',Helvetica] text-base font-normal leading-[22px] text-[#1e1e1e]">
-                      {item.title}
-                    </h3>
-                    <p className="pt-2 [font-family:'Inter',Helvetica] text-[13px] font-normal leading-[22.1px] text-[#6b6b6b]">
-                      {item.description}
-                    </p>
-                    <div className="[font-family:'Inter',Helvetica] pt-3 text-[11px] font-normal leading-[16.5px] text-[#6b6b6b80]">
-                      {item.readTime}
-                    </div>
-                  </article>
-                </Link>
-              ))}
+              {(intelligenceLive.length > 0 ? intelligenceLive : intelligenceItems).map((item, index, arr) =>
+                "id" in item ? (
+                  <Link href={`/article/${(item as Article).id}`} key={(item as Article).id}>
+                    <article className={`cursor-pointer py-6 transition-opacity hover:opacity-70 ${index < arr.length - 1 ? "border-b border-[#1e1e1e1a]" : ""}`}>
+                      <div className="[font-family:'Inter',Helvetica] text-[9px] font-normal leading-[13.5px] tracking-[1.44px] text-[#6b6b6b]">
+                        {((item as Article).category ?? "EDITORIAL").toUpperCase().replace(/-/g, " ")}
+                        {(item as Article).location ? ` · ${(item as Article).location!.toUpperCase()}` : ""}
+                      </div>
+                      <h3 className="pt-2 [font-family:'Playfair_Display',Helvetica] text-base font-normal leading-[22px] text-[#1e1e1e]">
+                        {(item as Article).headline}
+                      </h3>
+                      <p className="pt-2 [font-family:'Inter',Helvetica] text-[13px] font-normal leading-[22.1px] text-[#6b6b6b] line-clamp-2">
+                        {(item as Article).executive_summary ?? (item as Article).subtitle}
+                      </p>
+                    </article>
+                  </Link>
+                ) : (
+                  <Link href="/article/seclude-ramgarh-willows" key={(item as typeof intelligenceItems[0]).title}>
+                    <article className={`cursor-pointer py-6 transition-opacity hover:opacity-70 ${index < arr.length - 1 ? "border-b border-[#1e1e1e1a]" : ""}`}>
+                      <div className="[font-family:'Inter',Helvetica] text-[9px] font-normal leading-[13.5px] tracking-[1.44px] text-[#6b6b6b]">
+                        {(item as typeof intelligenceItems[0]).category}
+                      </div>
+                      <h3 className="pt-2 [font-family:'Playfair_Display',Helvetica] text-base font-normal leading-[22px] text-[#1e1e1e]">
+                        {(item as typeof intelligenceItems[0]).title}
+                      </h3>
+                      <p className="pt-2 [font-family:'Inter',Helvetica] text-[13px] font-normal leading-[22.1px] text-[#6b6b6b]">
+                        {(item as typeof intelligenceItems[0]).description}
+                      </p>
+                      <div className="[font-family:'Inter',Helvetica] pt-3 text-[11px] font-normal leading-[16.5px] text-[#6b6b6b80]">
+                        {(item as typeof intelligenceItems[0]).readTime}
+                      </div>
+                    </article>
+                  </Link>
+                )
+              )}
             </div>
           </div>
         </div>

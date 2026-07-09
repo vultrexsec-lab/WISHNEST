@@ -2,6 +2,7 @@
 WishNest AI Research Editor Agent — FastAPI backend entrypoint.
 """
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -10,10 +11,8 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.routers import approve, articles, auth, newsletter, research
+from app.routers import scheduler as scheduler_router
 
-# Explicit logging config so every logger.info/warning/error (research pipeline,
-# OpenAI service, image service, etc.) is guaranteed to print to the backend
-# terminal — without this, INFO-level logs are silently dropped by default.
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -21,22 +20,29 @@ logging.basicConfig(
 
 settings = get_settings()
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Start the weekly scheduler on boot; stop it on shutdown."""
+    from app.services import scheduler_service
+    scheduler_service.start_scheduler()
+    yield
+    scheduler_service.stop_scheduler()
+
+
 app = FastAPI(
     title="WishNest AI Research Editor Agent",
     description="Backend powering research, drafting, scoring and human-approved publishing of WishNest editorial content.",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
-# Serve AI-generated article images (hero + section images) under /api/static
-# so they work through the same-origin dev proxy AND through VITE_API_BASE_URL
-# in split-domain production deployments (Vercel frontend + Render backend).
+# Serve AI-generated article images under /api/static
 STATIC_IMAGES_DIR = Path(__file__).resolve().parent / "static" / "images"
 STATIC_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/api/static/images", StaticFiles(directory=str(STATIC_IMAGES_DIR)), name="static-images")
 
-# Explicit origins that must always be allowed (Vercel frontend + Replit dev).
-# allow_credentials=True requires named origins — wildcard "*" is forbidden by
-# the browser when credentials mode is "include".
+# CORS — allow_credentials=True requires explicit origins (no wildcard).
 _ALWAYS_ALLOWED = [
     "https://public-brown-one-94.vercel.app",
     "https://b7f50de8-22d2-4e87-b4bd-7ec7e0b00cfc-00-1yj2ksywkheg8.pike.replit.dev",
@@ -46,7 +52,7 @@ _env_origins = [
     for o in settings.cors_origins_raw.split(",")
     if o.strip() and o.strip() != "*"
 ]
-_allow_origins = list(dict.fromkeys(_ALWAYS_ALLOWED + _env_origins))  # dedup, order-stable
+_allow_origins = list(dict.fromkeys(_ALWAYS_ALLOWED + _env_origins))
 
 app.add_middleware(
     CORSMiddleware,
@@ -61,6 +67,7 @@ app.include_router(research.router)
 app.include_router(articles.router)
 app.include_router(approve.router)
 app.include_router(newsletter.router)
+app.include_router(scheduler_router.router)
 
 
 @app.get("/")

@@ -35,6 +35,10 @@ import {
   X,
   Trash2,
   Eye,
+  Timer,
+  Play,
+  Zap,
+  RefreshCw,
 } from "lucide-react";
 import {
   ABCDE_GRADES,
@@ -353,6 +357,180 @@ function GeneratePanel({ onGenerated }: { onGenerated: () => void }) {
           </span>
           Research in progress — the agent is searching sources and drafting
           articles. Pending Review will update automatically.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Auto-Schedule Panel
+// ---------------------------------------------------------------------------
+interface SchedulerRun {
+  category: string;
+  label: string;
+  status: "success" | "failed";
+  message: string;
+  article_count: number;
+  ran_at: string;
+}
+
+interface SchedulerStatus {
+  running: boolean;
+  next_run: string | null;
+  started_at: string | null;
+  categories: Array<{ category: string; label: string }>;
+  history: SchedulerRun[];
+}
+
+function AutoSchedulePanel() {
+  const { toast } = useToast();
+  const [triggeringCategory, setTriggeringCategory] = useState<string | null>(null);
+
+  const { data: schedulerData, refetch: refetchScheduler } = useQuery<SchedulerStatus>({
+    queryKey: ["/api/scheduler/status"],
+    refetchInterval: 30000,
+  });
+
+  const triggerMutation = useMutation({
+    mutationFn: async (category: string | null) => {
+      const res = await apiRequest("POST", "/api/scheduler/trigger", { category });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setTriggeringCategory(null);
+      toast({
+        title: "Auto-generation triggered",
+        description: data.message ?? "Pipeline started — articles will appear in Pending Review shortly.",
+      });
+      const pollTimer = setInterval(() => {
+        refetchScheduler();
+        queryClient.invalidateQueries({ queryKey: ["/api/articles"] });
+      }, 5000);
+      setTimeout(() => clearInterval(pollTimer), 3 * 60 * 1000);
+    },
+    onError: (err: Error) => {
+      setTriggeringCategory(null);
+      toast({ title: "Trigger failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const handleTrigger = (category: string | null) => {
+    setTriggeringCategory(category ?? "all");
+    triggerMutation.mutate(category);
+  };
+
+  const formatNextRun = (iso: string | null) => {
+    if (!iso) return "—";
+    return new Date(iso).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+  };
+
+  const recentHistory = (schedulerData?.history ?? []).slice(0, 6);
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-emerald-500/20 bg-white/[0.02] p-8 backdrop-blur-xl">
+      <div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-emerald-500/8 blur-3xl" />
+
+      <div className="flex flex-wrap items-start justify-between gap-6">
+        <div>
+          <div className="flex items-center gap-2">
+            <Timer className="h-3.5 w-3.5 text-emerald-400" />
+            <p className="[font-family:'Inter',Helvetica] text-[9px] font-semibold tracking-[2px] text-emerald-400">
+              WEEKLY AUTO-SCHEDULE
+            </p>
+            <span className={`ml-1 rounded-full px-2 py-0.5 [font-family:'Inter',Helvetica] text-[9px] font-medium ${
+              schedulerData?.running
+                ? "bg-emerald-500/15 text-emerald-400"
+                : "bg-white/10 text-white/40"
+            }`}>
+              {schedulerData?.running ? "ACTIVE" : "—"}
+            </span>
+          </div>
+          <h2 className="pt-2 [font-family:'Playfair_Display',Helvetica] text-[22px] font-medium text-white">
+            Automatic Weekly Generation
+          </h2>
+          <p className="mt-1 max-w-xl [font-family:'Inter',Helvetica] text-[13px] leading-[21px] text-white/50">
+            Every week the AI agent auto-generates articles for Hospitality, Destinations &amp; Villas.
+            Each one lands in Pending Review for your approval before going live.
+          </p>
+          {schedulerData?.next_run && (
+            <p className="mt-3 [font-family:'Inter',Helvetica] text-[12px] text-white/40">
+              Next scheduled run:{" "}
+              <span className="text-emerald-300">{formatNextRun(schedulerData.next_run)}</span>
+            </p>
+          )}
+        </div>
+
+        {/* Trigger buttons */}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            onClick={() => handleTrigger(null)}
+            disabled={triggerMutation.isPending}
+            className="h-auto rounded-xl bg-emerald-600 px-4 py-2.5 [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1px] text-white shadow-[0_6px_20px_rgba(16,185,129,0.3)] hover:bg-emerald-500 disabled:opacity-40 disabled:shadow-none"
+          >
+            {triggeringCategory === "all" && triggerMutation.isPending ? (
+              <span className="flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" /> RUNNING…</span>
+            ) : (
+              <span className="flex items-center gap-1.5"><Zap className="h-3 w-3" /> RUN ALL NOW</span>
+            )}
+          </Button>
+          {(schedulerData?.categories ?? []).map((cat) => (
+            <Button
+              key={cat.category}
+              onClick={() => handleTrigger(cat.category)}
+              disabled={triggerMutation.isPending}
+              variant="outline"
+              className="h-auto rounded-xl border-white/10 bg-white/[0.03] px-3.5 py-2 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/60 hover:border-emerald-500/40 hover:text-emerald-300 disabled:opacity-40"
+            >
+              {triggeringCategory === cat.category && triggerMutation.isPending ? (
+                <span className="flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" /> RUNNING…</span>
+              ) : (
+                <span className="flex items-center gap-1.5"><Play className="h-3 w-3" /> {cat.label.split(" &")[0].toUpperCase()}</span>
+              )}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      {/* Run history */}
+      {recentHistory.length > 0 && (
+        <div className="mt-7 border-t border-white/10 pt-5">
+          <p className="mb-3 [font-family:'Inter',Helvetica] text-[9px] font-semibold tracking-[1.8px] text-white/30">
+            RECENT RUNS
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {recentHistory.map((run, i) => (
+              <div
+                key={i}
+                className={`rounded-lg border px-3 py-2.5 ${
+                  run.status === "success"
+                    ? "border-emerald-500/20 bg-emerald-500/5"
+                    : "border-red-500/20 bg-red-500/5"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className={`[font-family:'Inter',Helvetica] text-[9px] font-semibold tracking-[1px] ${
+                    run.status === "success" ? "text-emerald-400" : "text-red-400"
+                  }`}>
+                    {run.status === "success" ? "✓" : "✕"} {run.label}
+                  </span>
+                  <span className="shrink-0 [font-family:'Inter',Helvetica] text-[9px] text-white/25">
+                    {new Date(run.ran_at).toLocaleDateString("en-IN")}
+                  </span>
+                </div>
+                <p className="mt-0.5 [font-family:'Inter',Helvetica] text-[11px] text-white/50 line-clamp-1">{run.message}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {recentHistory.length === 0 && (
+        <div className="mt-6 flex items-center gap-2 rounded-lg border border-dashed border-white/10 px-4 py-3">
+          <RefreshCw className="h-3.5 w-3.5 shrink-0 text-white/20" />
+          <p className="[font-family:'Inter',Helvetica] text-[12px] text-white/30">
+            No runs yet. Click "Run All Now" to generate the first batch, or wait for the weekly schedule.
+          </p>
         </div>
       )}
     </div>
@@ -1857,7 +2035,14 @@ export const ReviewDashboard = (): JSX.Element => {
         </div>
       </section>
 
-      {/* ── Generate panel ── */}
+      {/* ── Auto-Schedule panel ── */}
+      <section className="border-b border-white/10 bg-[#0a0f0d] py-10">
+        <div className="mx-auto w-full max-w-[1280px] px-8">
+          <AutoSchedulePanel />
+        </div>
+      </section>
+
+      {/* ── Manual Generate panel ── */}
       <section className="border-b border-white/10 bg-[#0a0f0d] py-10">
         <div className="mx-auto w-full max-w-[1280px] px-8">
           <GeneratePanel onGenerated={() => setActiveTab("draft")} />
