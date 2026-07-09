@@ -142,6 +142,34 @@ export const ArticleDetailPage = (): JSX.Element => {
                 </p>
               )}
 
+              {article.section_image_urls &&
+                article.section_image_urls.some(Boolean) && (
+                  <div className="mb-10 grid grid-cols-2 gap-4 md:grid-cols-3">
+                    {article.section_image_urls
+                      .map((url, originalIdx) => ({
+                        url,
+                        caption: article.captions?.[originalIdx],
+                      }))
+                      .filter(({ url }) => !!url)
+                      .map(({ url, caption }, i) => (
+                        <div key={i}>
+                          <img
+                            src={url}
+                            alt={caption || `Section ${i + 1} — ${article.headline}`}
+                            loading="lazy"
+                            referrerPolicy="no-referrer"
+                            className="h-[160px] w-full rounded-lg object-cover"
+                          />
+                          {caption && (
+                            <p className="mt-1.5 [font-family:'Inter',Helvetica] text-[11px] italic text-[#6b6b6b]">
+                              {caption}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                )}
+
               {article.full_article && (
                 <div
                   data-testid="text-article-body"
@@ -239,7 +267,7 @@ export const ArticleDetailPage = (): JSX.Element => {
                   </div>
                 )}
 
-                {(article.best_for?.length || article.not_ideal_for?.length) && (
+                {!!(article.best_for?.length || article.not_ideal_for?.length) && (
                   <div className="bg-white p-8">
                     {article.best_for && article.best_for.length > 0 && (
                       <div className="pb-5">
