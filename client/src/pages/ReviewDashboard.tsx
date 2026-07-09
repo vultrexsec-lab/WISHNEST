@@ -24,6 +24,16 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
@@ -1332,6 +1342,7 @@ function ArticleCard({ article }: { article: Article }) {
   const [open, setOpen] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [scheduleDate, setScheduleDate] = useState("");
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const { toast } = useToast();
 
   const approveMutation = useMutation({
@@ -1398,15 +1409,51 @@ function ArticleCard({ article }: { article: Article }) {
   const grade = overallGrade(article);
   const isReview = article.article_type === "review";
 
+  // Drafts are low-stakes (nothing has shipped yet), so deleting one is
+  // one click. Anything already approved/scheduled/published requires an
+  // explicit confirmation dialog since removing it is destructive and
+  // irreversible from the dashboard.
+  const requestDelete = () => {
+    if (article.status === "draft") {
+      deleteMutation.mutate();
+    } else {
+      setConfirmDeleteOpen(true);
+    }
+  };
+
   return (
     <>
+      <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this article?</AlertDialogTitle>
+            <AlertDialogDescription>
+              "{article.headline}" is currently{" "}
+              <strong>{article.status}</strong>
+              {article.status === "published" ? " and live on the site" : ""}.
+              Deleting it removes it permanently from the database — this
+              cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteMutation.mutate()}
+              className="bg-red-600 text-white hover:bg-red-500"
+            >
+              Delete permanently
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {showPreview && (
         <ArticlePreviewModal
           article={article}
           onClose={() => setShowPreview(false)}
           onApprove={() => approveMutation.mutate(undefined)}
           onSchedule={(date) => approveMutation.mutate(date)}
-          onDelete={() => deleteMutation.mutate()}
+          onDelete={requestDelete}
           isApproving={approveMutation.isPending}
           isDeleting={deleteMutation.isPending}
         />
@@ -1517,7 +1564,7 @@ function ArticleCard({ article }: { article: Article }) {
             {article.status !== "draft" && (
               <Button
                 variant="outline"
-                onClick={() => deleteMutation.mutate()}
+                onClick={requestDelete}
                 disabled={approveMutation.isPending || deleteMutation.isPending}
                 className="h-8 rounded-xl border-red-500/30 bg-transparent px-3 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-red-400 hover:bg-red-500/10"
                 data-testid={`button-delete-${article.id}`}
