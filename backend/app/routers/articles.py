@@ -10,7 +10,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import optional_admin
+from app.dependencies import optional_admin, require_admin
 from app.models.article import Article, ArticleStatus
 from app.schemas.article import ArticleOut
 
@@ -71,3 +71,17 @@ def get_article(
     if not admin and article.status not in PUBLIC_STATUSES:
         raise HTTPException(status_code=404, detail="Article not found")
     return article
+
+
+@router.delete("/api/articles/{article_id}", status_code=204)
+def delete_article(
+    article_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    article = db.query(Article).filter(Article.id == article_id).first()
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+    db.delete(article)
+    db.commit()
+    return None
