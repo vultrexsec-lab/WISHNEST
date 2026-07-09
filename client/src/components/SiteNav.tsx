@@ -12,7 +12,6 @@ const navLinks = [
   { label: "INTELLIGENCE", href: "/intelligence" },
   { label: "CONTRIBUTORS", href: "/contributors" },
   { label: "REIMAGINED™", href: "/reimagined" },
-  { label: "DASHBOARD", href: "/dashboard" },
 ];
 
 export const SiteNav = () => {
