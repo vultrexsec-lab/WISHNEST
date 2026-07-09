@@ -7,6 +7,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
@@ -70,11 +71,36 @@ app.include_router(newsletter.router)
 app.include_router(scheduler_router.router)
 
 
-@app.get("/")
-def root():
-    return {"status": "ok", "service": "WishNest API"}
-
-
 @app.get("/api/health")
 def health_check():
     return {"status": "ok"}
+
+
+# ── Serve built React frontend for all non-API routes ─────────────────────
+# Mount the Vite build output so assets (JS/CSS/images) are served directly.
+# The catch-all route below handles SPA client-side routing (e.g. /dashboard).
+FRONTEND_DIST = Path(__file__).resolve().parents[2] / "dist" / "public"
+
+if FRONTEND_DIST.exists():
+    app.mount(
+        "/assets",
+        StaticFiles(directory=str(FRONTEND_DIST / "assets")),
+        name="frontend-assets",
+    )
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str):
+        """
+        Catch-all: serve index.html for every path that isn't an /api route,
+        so React Router (wouter) handles client-side navigation.
+        """
+        # Serve known static root files directly (favicon, robots.txt, etc.)
+        candidate = FRONTEND_DIST / full_path
+        if candidate.is_file():
+            return FileResponse(str(candidate))
+        # Everything else → SPA shell
+        return FileResponse(str(FRONTEND_DIST / "index.html"))
+else:
+    @app.get("/")
+    def root():
+        return {"status": "ok", "service": "WishNest API (frontend not built)"}
