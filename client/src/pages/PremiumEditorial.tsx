@@ -996,7 +996,7 @@ export const PremiumEditorial = (): JSX.Element => {
                 </button>
               </div>
               <div className="relative mt-5 h-[240px] bg-[#e8e6e0] sm:h-[320px] md:h-[406.93px]">
-                <div className="h-full w-full bg-[url(..//figmaAssets/image--property-as-it-currently-stands-.png)] bg-cover bg-center" />
+                <div className="h-full w-full bg-[url(/figmaAssets/image--property-as-it-currently-stands-.png)] bg-cover bg-center" />
                 <div className="absolute inset-x-0 bottom-0 bg-[linear-gradient(180deg,rgba(0,0,0,0)_0%,rgba(20,20,20,0.65)_100%)] p-5">
                   <p className="max-w-[400px] [font-family:'Inter',Helvetica] text-xs font-normal leading-[16.5px] text-[#ffffffcc]">
                     An underutilised hill property with unrealised structural
