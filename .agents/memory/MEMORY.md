@@ -1,0 +1,1 @@
+- [Image search approach](image-search.md) — DDG image search via `ddgs` package replaces Pollinations; positional heading→image injection into full_article HTML.

@@ -1,143 +1,288 @@
 """
-AI image generation for WishNest articles.
+Real image search for WishNest articles.
 
-Uses the free Pollinations.ai API — no API key required, zero cost.
-Images are served directly as URLs in the format:
-  https://image.pollinations.ai/prompt/{encoded_prompt}?width=W&height=H&seed=N&nologo=true
+Uses the DuckDuckGo Images search API (free, no API key required) to find
+relevant real photographs for each article section.
 
-The `seed` parameter is derived from a hash of each article's headline +
-focus_keyword + location, guaranteeing a unique image per article even when
-two prompts share similar wording.
+Strategy:
+  1. Extract h2/h3 headings from the full_article HTML (in document order).
+  2. For each heading build a targeted search query and fetch the top image.
+  3. Inject a <figure> block immediately after each heading tag so readers see
+     a contextual photo right where the subject is discussed.
+  4. Also populate hero_image_url (wide search on the headline + location) and
+     section_image_urls (list of fetched URLs) for backward-compatible rendering.
 
-No local file storage, no base64 decoding, no OpenAI billing.
+Never raises — any per-image failure silently skips that slot.
 """
-import hashlib
+import html
 import logging
+import re
+import time
 import urllib.parse
 
 logger = logging.getLogger("wishnest.image_service")
 
+# ---------------------------------------------------------------------------
+# URL safety
+# ---------------------------------------------------------------------------
 
-def _article_seed(headline: str, focus_keyword: str | None, location: str | None) -> int:
+_SAFE_URL_RE = re.compile(
+    r"^https?://"            # must be http or https
+    r"[a-zA-Z0-9._~:/?#\[\]@!$&'()*+,;=%\-]+"  # RFC-3986 allowed chars only
+    r"$"
+)
+
+
+def _safe_image_url(url: str) -> str | None:
     """
-    Deterministic per-article seed — same article always gets the same image,
-    different articles always get different images.
-    Maps a 32-bit unsigned integer from the MD5 of the key fields.
+    Return the URL unchanged if it is a safe http(s) image URL, else None.
+    Rejects anything that could break out of an HTML attribute context.
     """
-    key = f"{headline}|{focus_keyword or ''}|{location or ''}".encode()
-    digest = hashlib.md5(key).hexdigest()
-    return int(digest[:8], 16)  # 0 – 4 294 967 295
+    if not url or not isinstance(url, str):
+        return None
+    url = url.strip()
+    if not _SAFE_URL_RE.match(url):
+        return None
+    # Reject javascript: or data: embedded inside the path
+    lower = url.lower()
+    if "javascript:" in lower or "data:" in lower:
+        return None
+    return url
 
 
-def _build_prompt(
-    headline: str,
-    focus_keyword: str | None,
-    location: str | None,
-    article_type: str,
-    angle: str,
+# ---------------------------------------------------------------------------
+# DuckDuckGo image search (no API key required)
+# ---------------------------------------------------------------------------
+
+def _ddg_image_search(query: str, max_results: int = 5) -> list[str]:
+    """
+    Return a list of validated direct image URLs from DuckDuckGo Images.
+    Returns an empty list on any failure.
+    """
+    try:
+        from ddgs import DDGS
+        results: list[str] = []
+        with DDGS() as ddgs:
+            for r in ddgs.images(
+                query,
+                region="wt-wt",
+                safesearch="moderate",
+                size="Large",
+                type_image="photo",
+                layout="Wide",
+                max_results=max_results,
+            ):
+                raw_url = r.get("image") or r.get("url") or ""
+                safe = _safe_image_url(raw_url)
+                if safe:
+                    results.append(safe)
+                if len(results) >= max_results:
+                    break
+        logger.debug("DDG images for %r → %d results", query[:60], len(results))
+        return results
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("DDG image search failed for %r: %s", query[:60], exc)
+        return []
+
+
+def _best_image(query: str) -> str | None:
+    """Return the single best validated image URL for *query*, or None."""
+    urls = _ddg_image_search(query, max_results=5)
+    return urls[0] if urls else None
+
+
+# ---------------------------------------------------------------------------
+# Heading extraction (positional — handles duplicate heading text correctly)
+# ---------------------------------------------------------------------------
+
+_HEADING_RE = re.compile(
+    r"(<(h[23])[^>]*>)(.*?)(</\2>)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _strip_tags(markup: str) -> str:
+    """Remove all HTML tags from *markup* and collapse whitespace."""
+    return _HTML_TAG_RE.sub("", markup).strip()
+
+
+def _extract_headings(full_article_html: str) -> list[str]:
+    """
+    Return a list of plain-text heading strings (h2 and h3) in document order.
+    Duplicate heading texts are preserved as separate entries so that the
+    positional injection can handle them independently.
+    Skips headings that are completely empty after tag-stripping.
+    """
+    headings: list[str] = []
+    for _open, _tag, inner, _close in _HEADING_RE.findall(full_article_html):
+        text = _strip_tags(inner)
+        if text:
+            headings.append(text)
+    return headings
+
+
+# ---------------------------------------------------------------------------
+# Image injection into article HTML (positional, with safe HTML escaping)
+# ---------------------------------------------------------------------------
+
+_FIGURE_TEMPLATE = (
+    '<figure class="wishnest-section-image" '
+    'style="margin:2rem 0;text-align:center;">'
+    '<img src="{url}" alt="{alt}" '
+    'style="max-width:100%;width:100%;height:auto;border-radius:8px;object-fit:cover;" '
+    'loading="lazy" />'
+    '<figcaption style="font-size:0.8rem;color:#666;margin-top:0.5rem;">'
+    "{caption}"
+    "</figcaption>"
+    "</figure>"
+)
+
+
+def _inject_images_into_html(
+    full_article_html: str,
+    heading_images: list[tuple[str, str]],   # [(heading_text, image_url), ...]  positional
 ) -> str:
     """
-    Construct a luxury/architectural editorial photography prompt.
-    Uses focus_keyword > location > headline for subject grounding.
-    The headline is always included so every article gets a meaningfully
-    distinct subject even when category and location are similar.
+    Insert a <figure> block immediately *after* each closing </h2> or </h3> tag.
+    Matches headings positionally so duplicate heading texts are handled correctly.
+    All interpolated values are HTML-escaped to prevent XSS.
     """
-    subject_parts: list[str] = []
-    if focus_keyword:
-        subject_parts.append(focus_keyword)
-    if location:
-        subject_parts.append(f"in {location}")
-    # Always anchor to the headline for uniqueness
-    subject_parts.append(f"— {headline[:80]}")
+    if not heading_images:
+        return full_article_html
 
-    subject = ", ".join(subject_parts)
+    # Build an iterator over (heading_text, url) pairs; we consume one entry
+    # per heading match in document order.
+    img_iter = iter(heading_images)
+    current: tuple[str, str] | None = next(img_iter, None)
 
-    style_base = (
-        "high-end architectural photography, precise material and detail shots, "
-        "property review style"
-        if article_type == "review"
-        else "editorial travel and luxury hospitality photography, destination storytelling style"
-    )
+    def _replace_heading(match: re.Match) -> str:
+        nonlocal current, img_iter
 
-    return (
-        f"High-end architectural photography, luxury hospitality style, 8K resolution, "
-        f"realistic lighting. Professional {style_base}. "
-        f"Subject: {subject}. "
-        f"{angle} "
-        f"Technical specs: 8K resolution, photorealistic, natural golden-hour or diffused daylight, "
-        f"warm elegant tones, shallow depth of field, magazine-quality composition. "
-        f"Aesthetic: luxury boutique hospitality, architect-designed space, refined minimalism. "
-        f"Strict exclusions: no text, no watermarks, no logos, no people, no digital artifacts, "
-        f"no oversaturated filters."
-    )
+        open_tag = match.group(1)
+        inner = match.group(3)
+        close_tag = match.group(4)
+        full_match = match.group(0)
+
+        heading_text = _strip_tags(inner)
+
+        if current is None:
+            return full_match                   # no more images left
+
+        _expected_text, url = current
+        current = next(img_iter, None)          # advance iterator for next call
+
+        safe_url = _safe_image_url(url)
+        if not safe_url:
+            return full_match                   # skip unsafe URL
+
+        alt = html.escape(heading_text[:120], quote=True)
+        caption = html.escape(f"Image: {heading_text[:80]}", quote=False)
+        figure = _FIGURE_TEMPLATE.format(url=safe_url, alt=alt, caption=caption)
+        return full_match + "\n" + figure
+
+    return _HEADING_RE.sub(_replace_heading, full_article_html)
 
 
-def _pollinations_url(
-    prompt: str,
-    seed: int,
-    width: int = 1024,
-    height: int = 576,
-) -> str:
-    """Build a Pollinations.ai image URL from a prompt string and a numeric seed."""
-    safe_prompt = urllib.parse.quote(prompt)
-    return (
-        f"https://image.pollinations.ai/prompt/{safe_prompt}"
-        f"?width={width}&height={height}&seed={seed}&nologo=true&private=true"
-    )
-
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
 def generate_article_images(
     headline: str,
     focus_keyword: str | None = None,
     location: str | None = None,
     article_type: str = "standard",
-) -> tuple[str | None, list[str]]:
+    full_article: str | None = None,
+) -> tuple[str | None, list[str], str | None]:
     """
-    Returns (hero_image_url, section_image_urls).
+    Search for real images and inject them into the article.
 
-    Generates Pollinations.ai URLs — free, no API key, instant (no network call
-    at generation time; the browser fetches the image directly when rendered).
+    Returns:
+        (hero_image_url, section_image_urls, enriched_full_article)
 
-    Each article receives a unique seed so images are article-specific even when
-    topics or categories overlap. Never raises.
+    - hero_image_url:        URL of the best wide shot for the article header.
+    - section_image_urls:    One URL per extracted heading (for gallery widgets).
+    - enriched_full_article: full_article HTML with <figure> blocks injected after
+                             each h2/h3 heading.  None if full_article was not provided.
+
+    Never raises; individual search failures silently skip that image slot.
     """
-    seed = _article_seed(headline, focus_keyword, location)
+    # ── Build a base context string used in every query ──────────────────────
+    context_parts: list[str] = []
+    if location:
+        context_parts.append(location)
+    if focus_keyword:
+        context_parts.append(focus_keyword)
+    context = " ".join(context_parts)
 
+    # ── Hero image ────────────────────────────────────────────────────────────
+    hero_url: str | None = None
     try:
-        hero_prompt = _build_prompt(
-            headline, focus_keyword, location, article_type,
-            angle=(
-                "Wide establishing shot capturing the full property or destination as a cinematic "
-                "hero cover image — grand scale, strong horizon line, immersive sense of place."
-            ),
-        )
-        hero_url = _pollinations_url(hero_prompt, seed=seed, width=1280, height=720)
-        logger.info("Hero image URL built for %r (seed=%d)", headline[:50], seed)
+        hero_query = f"{headline} {context}".strip()
+        hero_url = _best_image(hero_query)
+        if hero_url:
+            logger.info("Hero image found for %r", headline[:60])
+        else:
+            logger.warning("No hero image found for %r", headline[:60])
     except Exception as exc:  # noqa: BLE001
-        logger.error("Hero image URL build failed for %r: %s", headline[:50], exc)
-        hero_url = None
+        logger.error("Hero image search failed for %r: %s", headline[:60], exc)
 
+    # ── Section images — one per heading in document order ────────────────────
     section_urls: list[str] = []
-    section_angles = [
-        (
-            "Close-up detail shot highlighting architectural materials, craftsmanship, and texture — "
-            "raw stone, teak joinery, hand-plastered walls, or bespoke lighting fixture. "
-            "Macro precision, editorial still-life quality.",
-            seed + 1,  # offset seed so section images also differ from each other
-        ),
-        (
-            "Interior or curated landscape view conveying the guest experience and atmosphere — "
-            "a suite terrace with valley views, a candlelit dining setup, or a plunge pool "
-            "reflecting mountain light. Intimate, aspirational, evocative.",
-            seed + 2,
-        ),
-    ]
-    for angle, section_seed in section_angles:
-        try:
-            prompt = _build_prompt(headline, focus_keyword, location, article_type, angle)
-            url = _pollinations_url(prompt, seed=section_seed, width=1024, height=576)
-            section_urls.append(url)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Section image URL build failed for %r: %s", headline[:50], exc)
+    heading_images: list[tuple[str, str]] = []   # positional: [(heading_text, url)]
 
-    return hero_url, section_urls
+    if full_article:
+        headings = _extract_headings(full_article)
+        logger.info("Extracted %d headings from article %r", len(headings), headline[:50])
+
+        for heading in headings:
+            time.sleep(0.4)   # polite DDG rate-limit buffer
+            try:
+                query = f"{heading} {context}".strip()
+                url = _best_image(query)
+                if url:
+                    section_urls.append(url)
+                    heading_images.append((heading, url))
+                    logger.info("Section image for heading %r → found", heading[:50])
+                else:
+                    # Still append a placeholder entry so the positional iterator
+                    # stays in sync; None entries are skipped during injection.
+                    heading_images.append((heading, ""))
+                    logger.info("Section image for heading %r → not found", heading[:50])
+            except Exception as exc:  # noqa: BLE001
+                heading_images.append((heading, ""))
+                logger.warning("Section image failed for heading %r: %s", heading[:50], exc)
+
+    else:
+        # Fallback: generate 2 generic section images when no HTML is provided
+        for i, suffix in enumerate(["exterior view", "interior ambiance"]):
+            time.sleep(0.3)
+            try:
+                query = f"{focus_keyword or headline} {suffix} {context}".strip()
+                url = _best_image(query)
+                if url:
+                    section_urls.append(url)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Fallback section image %d failed: %s", i, exc)
+
+    # ── Inject images into article HTML ───────────────────────────────────────
+    # Pass ALL heading entries (including empty-URL ones) to preserve 1:1
+    # positional alignment. The injector skips insertion when the URL is empty.
+    injected_count = sum(1 for _, u in heading_images if u)
+    enriched_html: str | None = None
+    if full_article and heading_images:
+        try:
+            enriched_html = _inject_images_into_html(full_article, heading_images)
+            logger.info(
+                "Injected %d/%d images into article HTML for %r",
+                injected_count, len(heading_images), headline[:50],
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("HTML injection failed for %r: %s", headline[:50], exc)
+            enriched_html = full_article
+    elif full_article:
+        enriched_html = full_article
+
+    return hero_url, section_urls, enriched_html

@@ -169,31 +169,41 @@ def run_research_pipeline(brief: str, db: Session, category: str | None = None) 
             "OpenAI did not return any article package that matched the required schema."
         )
 
-    # ── 4. Generate Pollinations.ai image URLs and patch saved rows ───────────
+    # ── 4. Fetch real images from DuckDuckGo and patch saved rows ────────────
     # Runs after all articles are committed, so a failure never blocks an
     # article from appearing. Each patch is committed individually.
+    # generate_article_images now returns a 3-tuple:
+    #   (hero_url, section_urls, enriched_full_article)
+    # where enriched_full_article has <figure> blocks injected after each heading.
     for article in created:
         try:
-            hero_url, section_urls = generate_article_images(
+            hero_url, section_urls, enriched_html = generate_article_images(
                 headline=article.headline,
                 focus_keyword=article.focus_keyword,
                 location=article.location,
                 article_type=article.article_type.value,
+                full_article=article.full_article,
             )
+            html_changed = bool(enriched_html and enriched_html != article.full_article)
+            patched_any = bool(hero_url or section_urls or html_changed)
             if hero_url or section_urls:
                 article.hero_image_url = hero_url
                 article.section_image_urls = section_urls or None
+            if html_changed:
+                article.full_article = enriched_html
+            if patched_any:
                 db.add(article)
                 db.commit()
                 db.refresh(article)
                 logger.info(
-                    "Patched images for %r — hero: %s, sections: %d",
+                    "Patched images for %r — hero: %s, sections: %d, html_enriched: %s",
                     article.headline[:50],
                     "yes" if hero_url else "no",
                     len(section_urls),
+                    "yes" if html_changed else "no",
                 )
             else:
-                logger.info("No images generated for %r — article saved without images.", article.headline[:50])
+                logger.info("No images found for %r — article saved without images.", article.headline[:50])
         except Exception as exc:  # noqa: BLE001
             logger.warning("Image patch failed for %r: %s", article.headline[:50], exc)
             try:
