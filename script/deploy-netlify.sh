@@ -18,9 +18,12 @@ echo "Building client..."
 npm run build:client
 
 echo "Deploying dist/public to Netlify (site: $NETLIFY_SITE_ID)..."
+# NETLIFY_AUTH_TOKEN is picked up from the environment by netlify-cli itself —
+# never pass it as a --auth CLI argument, since that leaks it into process
+# listings/shell history/logs.
+export NETLIFY_AUTH_TOKEN
 npx --yes netlify-cli deploy \
   --dir=dist/public \
   --site="$NETLIFY_SITE_ID" \
-  --auth="$NETLIFY_AUTH_TOKEN" \
   --prod \
   --message="Deploy from Replit $(date -u +%Y-%m-%dT%H:%M:%SZ)"
