@@ -138,7 +138,7 @@ const gradeScale = ["A+", "A", "A−", "B+", "B", "B−", "C+", "C", "C−"];
 
 const latestReviews = [
   {
-    image: "..//figmaAssets/image--sarunya-raisem-.png",
+    image: "/figmaAssets/image--sarunya-raisem-.png",
     grade: "A−",
     location: "LONAVALA, MAHARASHTRA",
     title: "Sarunya Raisem",
@@ -148,7 +148,7 @@ const latestReviews = [
     readTime: "8 min read",
   },
   {
-    image: "..//figmaAssets/image--the-kannan-.png",
+    image: "/figmaAssets/image--the-kannan-.png",
     grade: "B+",
     location: "COORG, KARNATAKA",
     title: "The Kannan",
@@ -158,7 +158,7 @@ const latestReviews = [
     readTime: "6 min read",
   },
   {
-    image: "..//figmaAssets/image--amzi-stays---trails-.png",
+    image: "/figmaAssets/image--amzi-stays---trails-.png",
     grade: "B+",
     location: "SPITI VALLEY, HP",
     title: "Amzi Stays & Trails",
@@ -176,7 +176,7 @@ const trendingItems = [
     title: "Kasauli Emerging as India's Next Wellness Hub",
     readTime: "2 min read",
     image:
-      "..//figmaAssets/image--kasauli-emerging-as-india-s-next-wellness-hub-.png",
+      "/figmaAssets/image--kasauli-emerging-as-india-s-next-wellness-hub-.png",
   },
   {
     number: "02",
@@ -184,14 +184,14 @@ const trendingItems = [
     title: "Luxury Staycations: India's New 3% Frontier",
     readTime: "4 min read",
     image:
-      "..//figmaAssets/image--luxury-staycations--india-s-new-3--frontier-.png",
+      "/figmaAssets/image--luxury-staycations--india-s-new-3--frontier-.png",
   },
   {
     number: "03",
     category: "DESTINATION",
     title: "Undervalued: Himachal's Western Pocket",
     readTime: "3 min read",
-    image: "..//figmaAssets/image--undervalued--himachal-s-western-pocket-.png",
+    image: "/figmaAssets/image--undervalued--himachal-s-western-pocket-.png",
   },
   {
     number: "04",
@@ -199,7 +199,7 @@ const trendingItems = [
     title: "Hospitality Funding: Key Deals & Updates",
     readTime: "5 min read",
     image:
-      "..//figmaAssets/image--hospitality-funding--key-deals---updates-.png",
+      "/figmaAssets/image--hospitality-funding--key-deals---updates-.png",
   },
 ];
 
@@ -268,7 +268,7 @@ const bestOfItems = [
   {
     number: "01",
     image:
-      "..//figmaAssets/image--the-12-best-boutique-hotels-in-the-indian-himalaya-.png",
+      "/figmaAssets/image--the-12-best-boutique-hotels-in-the-indian-himalaya-.png",
     category: "TOP BOUTIQUE HOTELS",
     title: "The 12 Best Boutique Hotels in the Indian Himalaya",
     meta: "12 properties",
@@ -276,7 +276,7 @@ const bestOfItems = [
   {
     number: "02",
     image:
-      "..//figmaAssets/image--best-wellness-retreats-for-discerning-travellers--winter-.png",
+      "/figmaAssets/image--best-wellness-retreats-for-discerning-travellers--winter-.png",
     category: "BEST WELLNESS RETREATS",
     title: "Best Wellness Retreats for Discerning Travellers, Winter 2025",
     meta: "9 properties",
@@ -284,7 +284,7 @@ const bestOfItems = [
   {
     number: "03",
     image:
-      "..//figmaAssets/image--most-celebrated-architecturally-led-stays-in-india-.png",
+      "/figmaAssets/image--most-celebrated-architecturally-led-stays-in-india-.png",
     category: "ARCHITECTURE & DESIGN",
     title: "Most Celebrated Architecturally-Led Stays in India",
     meta: "8 properties",
@@ -292,7 +292,7 @@ const bestOfItems = [
   {
     number: "04",
     image:
-      "..//figmaAssets/image--top-investment-plays-in-boutique-indian-hospitality-.png",
+      "/figmaAssets/image--top-investment-plays-in-boutique-indian-hospitality-.png",
     category: "INVESTMENT INTELLIGENCE",
     title: "Top Investment Plays in Boutique Indian Hospitality",
     meta: "10 markets",
@@ -510,7 +510,7 @@ export const PremiumEditorial = (): JSX.Element => {
         )}
       </header>
       <section className="relative overflow-hidden bg-[#1a1a1a]">
-        <div className="absolute inset-0 bg-[url(..//figmaAssets/image--infinity-pool-overlooking-misty-mountain-valleys-at-a-lux.png)] bg-cover bg-center opacity-[0.72]" />
+        <div className="absolute inset-0 bg-[url(/figmaAssets/image--infinity-pool-overlooking-misty-mountain-valleys-at-a-lux.png)] bg-cover bg-center opacity-[0.72]" />
         <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(20,20,20,0.92)_0%,rgba(20,20,20,0.55)_38%,rgba(20,20,20,0.15)_65%,rgba(0,0,0,0)_100%)]" />
         <div className="relative mx-auto flex min-h-[580px] w-full max-w-[1166px] flex-col px-4 pb-16 pt-6 sm:px-8 lg:min-h-[730px] lg:pb-24 lg:pt-8">
           <div className="mb-8 ml-auto mt-8 flex w-fit border border-[#ffffff33] px-3 py-[6px] lg:mb-16 lg:mt-[73px]">

@@ -8,7 +8,7 @@ import { overallGrade } from "@/lib/article-types";
 const staticReviews = [
   {
     id: "seclude-ramgarh-willows",
-    image: "..//figmaAssets/image--sarunya-raisem-.png",
+    image: "/figmaAssets/image--sarunya-raisem-.png",
     grade: "A−",
     location: "LONAVALA, MAHARASHTRA",
     title: "Sarunya Raisem",
@@ -18,7 +18,7 @@ const staticReviews = [
   },
   {
     id: "seclude-ramgarh-willows",
-    image: "..//figmaAssets/image--the-kannan-.png",
+    image: "/figmaAssets/image--the-kannan-.png",
     grade: "B+",
     location: "COORG, KARNATAKA",
     title: "The Kannan",
@@ -28,7 +28,7 @@ const staticReviews = [
   },
   {
     id: "seclude-ramgarh-willows",
-    image: "..//figmaAssets/image--amzi-stays---trails-.png",
+    image: "/figmaAssets/image--amzi-stays---trails-.png",
     grade: "B+",
     location: "SPITI VALLEY, HP",
     title: "Amzi Stays & Trails",
