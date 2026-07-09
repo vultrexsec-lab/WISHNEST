@@ -22,7 +22,7 @@ class TriggerRequest(BaseModel):
 
 @router.get("/api/scheduler/status")
 def scheduler_status(admin: str = Depends(require_admin)):
-    """Return scheduler running state, next run time, and recent history."""
+    """Return scheduler running state, next run time, active categories, and recent history."""
     return scheduler_service.get_scheduler_status()
 
 
@@ -33,7 +33,8 @@ def trigger_auto_generate(
 ):
     """
     Manually kick off the auto-generation pipeline for one or all categories.
-    Returns 202 immediately — progress visible in GET /api/scheduler/status history.
+    Returns 202 immediately — progress visible in GET /api/scheduler/status.
+    Returns 409 if the requested category (or any run) is already in progress.
     """
     settings = get_settings()
     if not settings.openai_api_key:
@@ -51,6 +52,9 @@ def trigger_auto_generate(
         scheduler_service.trigger_now(category=payload.category)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        # Already in progress
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     label = payload.category or "all categories"
     logger.info("Manual trigger by admin=%r for category=%r", admin, label)

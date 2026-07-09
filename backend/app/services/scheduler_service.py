@@ -53,14 +53,21 @@ AUTO_BRIEFS = [
     },
 ]
 
-# ── In-memory run history (last 30 runs across all categories) ────────────────
-_HISTORY: list[dict] = []
-_HISTORY_LOCK = threading.Lock()
-_MAX_HISTORY = 30
-
+# ── Shared state — ALL access must hold _STATE_LOCK ──────────────────────────
+_STATE_LOCK = threading.Lock()
 _scheduler: Optional[BackgroundScheduler] = None
 _next_run: Optional[datetime] = None
 _started_at: Optional[str] = None
+
+# ── In-progress guard — tracks which category keys are currently running ──────
+# "all" is used when all categories are triggered together.
+_PROGRESS_LOCK = threading.Lock()
+_IN_PROGRESS: set[str] = set()
+
+# ── Run history (last 30 runs, newest-first on read) ─────────────────────────
+_HISTORY: list[dict] = []
+_HISTORY_LOCK = threading.Lock()
+_MAX_HISTORY = 30
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
@@ -100,16 +107,29 @@ def _run_category(brief: str, category: str, label: str) -> None:
 
 def _weekly_auto_generate() -> None:
     """Weekly job: generates one article per category, in sequence."""
-    logger.info("Scheduler: weekly auto-generation started.")
-    for item in AUTO_BRIEFS:
-        _run_category(item["brief"], item["category"], item["label"])
-    logger.info("Scheduler: weekly auto-generation finished.")
-    # Refresh next_run after the job completes
-    global _next_run
-    if _scheduler:
-        job = _scheduler.get_job("weekly_auto_generate")
-        if job:
-            _next_run = job.next_run_time
+    progress_key = "all"
+    with _PROGRESS_LOCK:
+        if progress_key in _IN_PROGRESS:
+            logger.warning("Scheduler: weekly job skipped — already in progress.")
+            return
+        _IN_PROGRESS.add(progress_key)
+
+    try:
+        logger.info("Scheduler: weekly auto-generation started.")
+        for item in AUTO_BRIEFS:
+            _run_category(item["brief"], item["category"], item["label"])
+        logger.info("Scheduler: weekly auto-generation finished.")
+    finally:
+        with _PROGRESS_LOCK:
+            _IN_PROGRESS.discard(progress_key)
+
+        # Refresh next_run after the job completes
+        with _STATE_LOCK:
+            if _scheduler:
+                job = _scheduler.get_job("weekly_auto_generate")
+                if job:
+                    global _next_run
+                    _next_run = job.next_run_time
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -118,49 +138,62 @@ def start_scheduler() -> None:
     """Start the background scheduler. Call once from FastAPI lifespan startup."""
     global _scheduler, _next_run, _started_at
 
-    if _scheduler is not None:
-        return  # already running
+    with _STATE_LOCK:
+        if _scheduler is not None:
+            return  # already running
 
-    _scheduler = BackgroundScheduler(timezone="UTC")
-    trigger = IntervalTrigger(weeks=1)
-    job = _scheduler.add_job(
-        _weekly_auto_generate,
-        trigger,
-        id="weekly_auto_generate",
-        replace_existing=True,
-    )
-    _scheduler.start()
-    _next_run = job.next_run_time
-    _started_at = datetime.now(timezone.utc).isoformat()
+        sched = BackgroundScheduler(timezone="UTC")
+        trigger = IntervalTrigger(weeks=1)
+        job = sched.add_job(
+            _weekly_auto_generate,
+            trigger,
+            id="weekly_auto_generate",
+            replace_existing=True,
+        )
+        sched.start()
+        _scheduler = sched
+        _next_run = job.next_run_time
+        _started_at = datetime.now(timezone.utc).isoformat()
+
     logger.info("Scheduler started. Next auto-generation: %s", _next_run)
 
 
 def stop_scheduler() -> None:
     """Gracefully stop the scheduler. Call from FastAPI lifespan shutdown."""
     global _scheduler
-    if _scheduler:
-        _scheduler.shutdown(wait=False)
+    with _STATE_LOCK:
+        sched = _scheduler
         _scheduler = None
+
+    if sched:
+        sched.shutdown(wait=False)
         logger.info("Scheduler stopped.")
 
 
 def get_scheduler_status() -> dict:
     """Return current scheduler state for the dashboard API."""
-    global _next_run
+    with _STATE_LOCK:
+        running = _scheduler is not None and _scheduler.running
+        # Refresh next_run from live job metadata while holding the lock
+        if _scheduler:
+            job = _scheduler.get_job("weekly_auto_generate")
+            next_run_val = job.next_run_time if job else _next_run
+        else:
+            next_run_val = _next_run
+        started = _started_at
 
-    # Refresh next_run from live job metadata
-    if _scheduler:
-        job = _scheduler.get_job("weekly_auto_generate")
-        if job:
-            _next_run = job.next_run_time
+    with _PROGRESS_LOCK:
+        active = sorted(_IN_PROGRESS)
 
     with _HISTORY_LOCK:
         history = list(reversed(_HISTORY))  # newest first
 
     return {
-        "running": _scheduler is not None and _scheduler.running,
-        "next_run": _next_run.isoformat() if _next_run else None,
-        "started_at": _started_at,
+        "running": running,
+        "run_state": "running" if active else "idle",
+        "active_categories": active,
+        "next_run": next_run_val.isoformat() if next_run_val else None,
+        "started_at": started,
         "categories": [
             {"category": b["category"], "label": b["label"]} for b in AUTO_BRIEFS
         ],
@@ -172,17 +205,36 @@ def trigger_now(category: str | None = None) -> None:
     """
     Manually trigger auto-generation for one or all categories.
     Runs in a background thread and returns immediately.
+
+    Raises ValueError for unknown category.
+    Raises RuntimeError if the requested category (or "all") is already in progress.
     """
     if category:
         items = [b for b in AUTO_BRIEFS if b["category"] == category]
         if not items:
             raise ValueError(f"Unknown category: {category!r}")
+        progress_key = category
     else:
-        items = AUTO_BRIEFS
+        items = list(AUTO_BRIEFS)
+        progress_key = "all"
+
+    with _PROGRESS_LOCK:
+        if progress_key in _IN_PROGRESS or "all" in _IN_PROGRESS:
+            label = category or "all categories"
+            raise RuntimeError(f"Auto-generation for '{label}' is already in progress.")
+        _IN_PROGRESS.add(progress_key)
 
     def _run() -> None:
-        for item in items:
-            _run_category(item["brief"], item["category"], item["label"])
+        try:
+            for item in items:
+                _run_category(item["brief"], item["category"], item["label"])
+        finally:
+            with _PROGRESS_LOCK:
+                _IN_PROGRESS.discard(progress_key)
 
-    thread = threading.Thread(target=_run, daemon=True, name=f"scheduler-trigger-{category or 'all'}")
+    thread = threading.Thread(
+        target=_run,
+        daemon=True,
+        name=f"scheduler-trigger-{progress_key}",
+    )
     thread.start()
