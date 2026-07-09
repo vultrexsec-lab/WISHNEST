@@ -25,6 +25,56 @@ from app.services.openai_service import generate_article_packages
 
 logger = logging.getLogger("wishnest.research_pipeline")
 
+# ── SEO field coercion ────────────────────────────────────────────────────────
+_SEO_TITLE_MIN, _SEO_TITLE_MAX = 50, 60
+_META_DESC_MIN, _META_DESC_MAX = 150, 160
+
+
+def _coerce_seo_fields(raw: dict) -> None:
+    """
+    Mutate *raw* in-place: auto-fix seo_title and meta_description so they
+    satisfy Pydantic length constraints — rather than discarding valid articles
+    because of a few-character SEO overshoot after retries.
+    """
+    title: str = raw.get("seo_title") or ""
+    if title:
+        # Trim overly long titles at the last space before the limit
+        if len(title) > _SEO_TITLE_MAX:
+            cut = title[:_SEO_TITLE_MAX].rsplit(" ", 1)[0]
+            # If we ended up shorter than min, just hard-cut at max
+            title = cut if len(cut) >= _SEO_TITLE_MIN else title[:_SEO_TITLE_MAX]
+        # Pad too-short titles by appending "| WishNest"
+        if len(title) < _SEO_TITLE_MIN:
+            suffix = " | WishNest"
+            title = (title + suffix)[: _SEO_TITLE_MAX]
+            if len(title) < _SEO_TITLE_MIN:
+                title = title.ljust(_SEO_TITLE_MIN)
+        raw["seo_title"] = title
+
+    desc: str = raw.get("meta_description") or ""
+    if desc:
+        if len(desc) > _META_DESC_MAX:
+            # Trim at a word boundary, leaving room for a CTA arrow
+            trimmed = desc[: _META_DESC_MAX - 2].rsplit(" ", 1)[0]
+            desc = (trimmed + " →")[: _META_DESC_MAX]
+        if len(desc) < _META_DESC_MIN:
+            # Append a filler CTA to reach minimum length
+            fillers = [
+                " Discover more on WishNest →",
+                " Read the full guide on WishNest →",
+                " Explore now on WishNest →",
+            ]
+            for filler in fillers:
+                candidate = desc.rstrip("→").rstrip() + filler
+                if _META_DESC_MIN <= len(candidate) <= _META_DESC_MAX:
+                    desc = candidate
+                    break
+            else:
+                # Last resort: pad/truncate to exact range
+                desc = desc.ljust(_META_DESC_MIN)[: _META_DESC_MAX]
+        raw["meta_description"] = desc
+
+
 # OpenAI sometimes returns grade values using Python enum-name style
 # (e.g. "a_plus", "b_minus") or plain lowercase ("a", "b+").
 # Normalise all variants to the canonical WishNest grade strings.
@@ -83,22 +133,12 @@ def run_research_pipeline(brief: str, db: Session, category: str | None = None) 
             raw["source_urls"] = source_urls
 
         _normalise_grades(raw)
+        _coerce_seo_fields(raw)  # auto-fix minor SEO length violations
 
         try:
             validated = ArticleCreate(**raw)
         except ValidationError as exc:
-            seo_errors = [
-                f"{e['loc'][-1]}: {e['msg']}"
-                for e in exc.errors()
-                if e.get("loc") and e["loc"][-1] in ("seo_title", "meta_description")
-            ]
-            if seo_errors:
-                logger.warning(
-                    "Skipping article — SEO hard constraints still violated after retries: %s",
-                    "; ".join(seo_errors),
-                )
-            else:
-                logger.warning("Skipping invalid article package from OpenAI: %s", exc)
+            logger.warning("Skipping invalid article package from OpenAI: %s", exc)
             continue
 
         # Save immediately WITHOUT images (hero_image_url=None, section_image_urls=None)
