@@ -130,8 +130,8 @@ def _extract_headings(full_article_html: str) -> list[str]:
 _FIGURE_TEMPLATE = (
     '<figure class="wishnest-section-image" '
     'style="margin:2rem 0;text-align:center;">'
-    '<img src="{url}" alt="{alt}" '
-    'style="max-width:100%;width:100%;height:auto;border-radius:8px;object-fit:cover;" '
+    '<img src="{url}" alt="{alt}" referrerpolicy="no-referrer" crossorigin="anonymous" '
+    'style="max-width:100%;width:100%;height:auto;border-radius:8px;object-fit:cover;display:block;" '
     'loading="lazy" />'
     '<figcaption style="font-size:0.8rem;color:#666;margin-top:0.5rem;">'
     "{caption}"

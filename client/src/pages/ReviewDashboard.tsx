@@ -1,4 +1,16 @@
 import { useState, useRef, useEffect } from "react";
+
+/**
+ * Inject referrerpolicy="no-referrer" into every <img> tag in raw article HTML
+ * so external scraped images load without sending a Referer header.
+ * Many image hosts block embedding when they see a foreign Referer.
+ */
+function sanitizeArticleHtml(html: string): string {
+  return html.replace(
+    /<img(?![^>]*referrerpolicy)([^>]*)(\/?>)/gi,
+    '<img referrerpolicy="no-referrer"$1$2',
+  );
+}
 import { Link, useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
