@@ -956,22 +956,22 @@ function ArticlePreviewModal({
 
           {/* Section images strip (before body) */}
           {article.section_image_urls &&
-            article.section_image_urls.length > 0 && (
+            article.section_image_urls.some(Boolean) && (
               <div className="border-b border-[#1e1e1e1a] bg-white px-10 py-6">
                 <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-                  {article.section_image_urls.map((url, i) => (
+                  {article.section_image_urls
+                    .map((url, originalIdx) => ({ url, caption: article.captions?.[originalIdx] }))
+                    .filter(({ url }) => !!url)
+                    .map(({ url, caption }, i) => (
                     <div key={i}>
                       <img
                         src={url}
-                        alt={
-                          article.captions?.[i] ||
-                          `Section ${i + 1} — ${article.headline}`
-                        }
+                        alt={caption || `Section ${i + 1} — ${article.headline}`}
                         className="h-[160px] w-full rounded-lg object-cover"
                       />
-                      {article.captions?.[i] && (
+                      {caption && (
                         <p className="mt-1.5 [font-family:'Inter',Helvetica] text-[11px] italic text-[#6b6b6b]">
-                          {article.captions[i]}
+                          {caption}
                         </p>
                       )}
                     </div>
@@ -1002,6 +1002,9 @@ function ArticlePreviewModal({
                         [&_ul]:mt-4 [&_ul]:space-y-2 [&_ul]:pl-5 [&_ul]:list-disc
                         [&_ol]:mt-4 [&_ol]:space-y-2 [&_ol]:pl-5 [&_ol]:list-decimal
                         [&_li]:text-[16px] [&_li]:leading-[28px] [&_li]:text-[#1e1e1e]
+                        [&_figure]:my-8 [&_figure]:text-center
+                        [&_figure_img]:max-w-full [&_figure_img]:w-full [&_figure_img]:h-auto [&_figure_img]:rounded-lg [&_figure_img]:object-cover
+                        [&_figcaption]:mt-2 [&_figcaption]:text-[13px] [&_figcaption]:italic [&_figcaption]:text-[#6b6b6b]
                         [&_table]:mt-8 [&_table]:w-full [&_table]:border-collapse [&_table]:text-[14px]
                         [&_th]:border [&_th]:border-[#1e1e1e1a] [&_th]:bg-[#2e4a3f] [&_th]:text-white [&_th]:px-4 [&_th]:py-3 [&_th]:text-left [&_th]:[font-family:'Inter',Helvetica] [&_th]:text-[11px] [&_th]:tracking-[0.8px] [&_th]:font-medium
                         [&_td]:border [&_td]:border-[#1e1e1e1a] [&_td]:px-4 [&_td]:py-3 [&_td]:align-top [&_td]:leading-[22px]
@@ -1119,7 +1122,7 @@ function ArticlePreviewModal({
                         </div>
                       </div>
 
-                      {(article.best_for?.length ||
+                      {!!(article.best_for?.length ||
                         article.not_ideal_for?.length) && (
                         <div className="bg-white p-6 shadow-sm">
                           {article.best_for && article.best_for.length > 0 && (
@@ -1510,7 +1513,7 @@ function ArticleCard({ article }: { article: Article }) {
 
                 {(article.hero_image_url ||
                   (article.section_image_urls &&
-                    article.section_image_urls.length > 0)) && (
+                    article.section_image_urls.some(Boolean))) && (
                   <div>
                     <div className="grid gap-3 sm:grid-cols-3">
                       {article.hero_image_url && (
@@ -1526,6 +1529,7 @@ function ArticleCard({ article }: { article: Article }) {
                         </div>
                       )}
                       {(article.section_image_urls ?? [])
+                        .filter(Boolean)
                         .slice(0, 2)
                         .map((url, i) => (
                           <div key={i} className="sm:col-span-1">
@@ -1551,7 +1555,7 @@ function ArticleCard({ article }: { article: Article }) {
                   />
                 </div>
 
-                {(article.best_for?.length || article.not_ideal_for?.length) && (
+                {!!(article.best_for?.length || article.not_ideal_for?.length) && (
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div>
                       <SectionLabel>BEST FOR</SectionLabel>
