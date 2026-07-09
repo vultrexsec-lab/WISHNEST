@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
-from app.routers import approve, articles, auth, newsletter, research
+from app.routers import approve, articles, auth, image_proxy, newsletter, research
 from app.routers import scheduler as scheduler_router
 
 logging.basicConfig(
@@ -69,6 +69,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(research.router)
 app.include_router(articles.router)
+app.include_router(image_proxy.router)
 app.include_router(approve.router)
 app.include_router(newsletter.router)
 app.include_router(scheduler_router.router)

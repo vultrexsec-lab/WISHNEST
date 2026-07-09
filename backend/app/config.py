@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     )
     firecrawl_api_key: str = os.environ.get("FIRECRAWL_API_KEY", "")
 
+    # --- Image providers (fallback chain: DDG -> Pexels -> Unsplash -> Picsum) ---
+    pexels_api_key: str = os.environ.get("PEXELS_API_KEY", "")
+    unsplash_access_key: str = os.environ.get("UNSPLASH_ACCESS_KEY", "")
+
     # --- Auth ---
     admin_username: str = os.environ.get("ADMIN_USERNAME", "")
     admin_password: str = os.environ.get("ADMIN_PASSWORD", "")

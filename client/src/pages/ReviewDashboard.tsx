@@ -1227,13 +1227,13 @@ function ArticlePreviewModal({
                       ) : (
                         <Trash2 className="h-3.5 w-3.5" />
                       )}
-                      <span className="ml-1.5">DELETE DRAFT</span>
+                      <span className="ml-1.5">DELETE</span>
                     </Button>
                   </div>
                 </>
               )}
               {article.status !== "draft" && (
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                   {article.status === "approved" && (
                     <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-4 py-2 [font-family:'Inter',Helvetica] text-[11px] font-medium text-emerald-700">
                       <CheckCircle2 className="h-3.5 w-3.5" /> Approved
@@ -1255,6 +1255,19 @@ function ArticlePreviewModal({
                       Open live page <ExternalLink className="h-3 w-3" />
                     </span>
                   </Link>
+                  <Button
+                    variant="outline"
+                    onClick={onDelete}
+                    disabled={isApproving || isDeleting}
+                    className="h-9 rounded-xl border-red-300 bg-transparent px-4 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-red-500 hover:bg-red-50"
+                  >
+                    {isDeleting ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-3.5 w-3.5" />
+                    )}
+                    <span className="ml-1.5">DELETE ARTICLE</span>
+                  </Button>
                 </div>
               )}
             </div>
@@ -1369,7 +1382,7 @@ function ArticleCard({ article }: { article: Article }) {
       queryClient.invalidateQueries({ queryKey: ["/api/articles"] });
       setShowPreview(false);
       toast({
-        title: "Draft deleted",
+        title: "Article deleted",
         description: `"${article.headline}" has been removed.`,
       });
     },
@@ -1501,6 +1514,22 @@ function ArticleCard({ article }: { article: Article }) {
                 Live preview <ExternalLink className="h-3 w-3" />
               </span>
             </Link>
+            {article.status !== "draft" && (
+              <Button
+                variant="outline"
+                onClick={() => deleteMutation.mutate()}
+                disabled={approveMutation.isPending || deleteMutation.isPending}
+                className="h-8 rounded-xl border-red-500/30 bg-transparent px-3 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-red-400 hover:bg-red-500/10"
+                data-testid={`button-delete-${article.id}`}
+              >
+                {deleteMutation.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="h-3.5 w-3.5" />
+                )}
+                <span className="ml-1.5">DELETE</span>
+              </Button>
+            )}
           </div>
         </div>
 
