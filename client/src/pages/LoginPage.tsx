@@ -1,9 +1,12 @@
-import { useState, FormEvent } from "react";
+import { useState, FormEvent, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2 } from "lucide-react";
+import { warmUpBackend } from "@/lib/fetchWithTimeout";
+
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -12,11 +15,24 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showWakingHint, setShowWakingHint] = useState(false);
+  const hintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Ping the backend as soon as the login page mounts so a sleeping Render
+  // instance starts spinning up before the user even finishes typing their
+  // credentials — by the time they submit, the cold start may already be done.
+  useEffect(() => {
+    warmUpBackend(API_BASE_URL);
+  }, []);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
+    setShowWakingHint(false);
+    // Only show the "waking up" hint if login is still in flight after a
+    // couple of seconds — avoids flashing it on normal, already-warm logins.
+    hintTimerRef.current = setTimeout(() => setShowWakingHint(true), 2500);
     try {
       await login(username, password);
       // Clear stale cache so dashboard re-fetches with the new auth token.
@@ -26,6 +42,8 @@ export function LoginPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
+      if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
+      setShowWakingHint(false);
       setLoading(false);
     }
   };
@@ -69,6 +87,13 @@ export function LoginPage() {
               required
             />
           </div>
+
+          {showWakingHint && !error && (
+            <p className="[font-family:'Inter',Helvetica] text-[12px] text-[#6b6b6b]">
+              Waking up the server — this can take up to a minute on the
+              first login. Hang tight, it will retry automatically.
+            </p>
+          )}
 
           {error && (
             <p className="[font-family:'Inter',Helvetica] text-[12px] text-red-600">

@@ -211,13 +211,23 @@ function GeneratePanel({ onGenerated }: { onGenerated: () => void }) {
         stopArticlesPolling();
         setResearchActive(false);
       }
-    }, 8000);
+    }, 5000);
   };
 
   const startStatusPolling = (jobId: string) => {
     stopStatusPolling();
     const deadline = Date.now() + 3 * 60 * 1000;
-    statusPollRef.current = setInterval(async () => {
+    // Guard against overlapping requests: if the backend is slow to respond
+    // (e.g. still finishing a Render cold start), the interval below could
+    // otherwise fire several more times before the first request resolves,
+    // piling up concurrent polls against a server that's already struggling
+    // to keep up — which is what made the UI look "stuck" until an unrelated
+    // second request happened to land after the cold start finished.
+    let requestInFlight = false;
+
+    const poll = async () => {
+      if (requestInFlight) return;
+      requestInFlight = true;
       try {
         const res = await apiRequest("GET", `/api/research/status/${jobId}`);
         const data = await res.json();
@@ -249,13 +259,22 @@ function GeneratePanel({ onGenerated }: { onGenerated: () => void }) {
           return;
         }
       } catch {
-        stopStatusPolling();
+        // Transient failure (e.g. still waking up) — keep polling rather
+        // than giving up on the first hiccup; the fetchWithTimeout retry
+        // and the next interval tick will pick it back up.
+      } finally {
+        requestInFlight = false;
       }
 
       if (Date.now() > deadline) {
         stopStatusPolling();
       }
-    }, 2000);
+    };
+
+    // Fire immediately instead of waiting for the first interval tick, so
+    // the UI starts reflecting real backend state as soon as possible.
+    poll();
+    statusPollRef.current = setInterval(poll, 2000);
   };
 
   const generateMutation = useMutation({

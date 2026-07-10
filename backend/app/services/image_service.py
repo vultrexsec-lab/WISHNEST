@@ -92,6 +92,36 @@ def _proxied_url(original_url: str) -> str:
 # Query building — force strict geographic/landmark relevance
 # ---------------------------------------------------------------------------
 
+# Indian hill stations that generic/western stock photography frequently
+# gets confused with (e.g. "resort with balcony views" pulling Alpine/Bali
+# chalet images). Any subject/location mentioning one of these gets a strict
+# regional lock: forced *region-correct* hill terms plus negative keywords to
+# push DuckDuckGo away from generic interior/stock results. Mapped per-station
+# rather than a single hardcoded "Uttarakhand/Himalayan" pair for all of
+# them — Ooty/Munnar/Coorg are Western Ghats/Nilgiris, not Himalayan, and
+# forcing the wrong region name would itself hurt relevance.
+_HILL_STATION_REGIONS: dict[str, str] = {
+    "mussoorie": "Uttarakhand hills Himalayan resort",
+    "nainital": "Uttarakhand hills Himalayan resort",
+    "almora": "Uttarakhand hills Himalayan resort",
+    "ranikhet": "Uttarakhand hills Himalayan resort",
+    "kausani": "Uttarakhand hills Himalayan resort",
+    "lansdowne": "Uttarakhand hills Himalayan resort",
+    "shimla": "Himachal hills Himalayan resort",
+    "manali": "Himachal hills Himalayan resort",
+    "dalhousie": "Himachal hills Himalayan resort",
+    "kasauli": "Himachal hills Himalayan resort",
+    "chail": "Himachal hills Himalayan resort",
+    "darjeeling": "West Bengal Himalayan hills resort",
+    "gangtok": "Sikkim Himalayan hills resort",
+    "ooty": "Nilgiri hills Western Ghats resort",
+    "kodaikanal": "Palani hills Western Ghats resort",
+    "munnar": "Kerala Western Ghats hills resort",
+    "coorg": "Karnataka Western Ghats hills resort",
+}
+_HILL_STATIONS = set(_HILL_STATION_REGIONS)
+
+
 def _build_query(subject: str, location: str | None) -> str:
     """
     Build a search query that heavily weights the exact landmark/location
@@ -104,10 +134,21 @@ def _build_query(subject: str, location: str | None) -> str:
     since most WishNest destinations are Indian spiritual/cultural sites and
     unqualified queries (e.g. "Ram Jhula") otherwise skew toward generic or
     western results.
+
+    Hardcoded rule: if the subject/location mentions an Indian hill station
+    (e.g. Mussoorie), force explicit regional terms ("Uttarakhand hills",
+    "Himalayan resort") into the query and append DuckDuckGo negative
+    keywords (-interiors -stock -generic) to steer away from generic
+    interior/stock-photo results and toward authentic local geography.
     """
     subject = (subject or "").strip()
     if not subject:
         return location or ""
+
+    haystack = f"{subject} {location or ''}".lower()
+    matched_hill_station = next(
+        (hs for hs in _HILL_STATIONS if hs in haystack), None
+    )
 
     parts = [f'"{subject}"']
     if location:
@@ -116,6 +157,11 @@ def _build_query(subject: str, location: str | None) -> str:
             parts.append(f'"{loc}"')
         if "india" not in subject.lower() and "india" not in loc.lower():
             parts.append("India")
+
+    if matched_hill_station:
+        parts.append(_HILL_STATION_REGIONS[matched_hill_station])
+        parts.append("-interiors -stock -generic")
+
     return " ".join(parts)
 
 

@@ -1,5 +1,6 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import { getStoredToken, removeToken } from "@/contexts/AuthContext";
+import { fetchWithTimeout } from "@/lib/fetchWithTimeout";
 
 // In production static hosts (e.g. Netlify) there's no dev-server proxy for
 // /api/*, so we need an absolute backend URL. Set VITE_API_BASE_URL at build
@@ -45,7 +46,7 @@ export async function apiRequest(
   url: string,
   data?: unknown,
 ): Promise<Response> {
-  const res = await fetch(apiUrl(url), {
+  const res = await fetchWithTimeout(apiUrl(url), {
     method,
     headers: authHeaders(data ? { "Content-Type": "application/json" } : {}),
     body: data ? JSON.stringify(data) : undefined,
@@ -66,7 +67,7 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const res = await fetch(apiUrl(queryKey[0] as string), {
+    const res = await fetchWithTimeout(apiUrl(queryKey[0] as string), {
       headers: authHeaders(),
       credentials: "include",
     });
