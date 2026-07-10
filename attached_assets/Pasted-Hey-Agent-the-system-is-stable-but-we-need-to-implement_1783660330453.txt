@@ -1,0 +1,17 @@
+Hey Agent, the system is stable, but we need to implement the final production polish for two critical features: Strict Keyword-Image Alignment and Full Mobile Responsiveness. Please execute the following fixes right now:
+
+1. Strict Image Scraper Accuracy (Real & Relevant Images Only)
+Right now, searching for specific local landmarks (like 'Har Ki Pauri, Haridwar' or 'Ram Jhula, Rishikesh') sometimes returns generic, irrelevant luxury photos if the exact query fails. We need to force strict relevance:
+
+Query Refinement: Update the backend search query builder so that whenever it sends a request to DuckDuckGo/Pexels/Unsplash, it wraps the exact location/landmark in strict search operators or heavily weights the specific geographical strings (e.g., forcing 'Har Ki Pauri Haridwar Ganga' instead of just 'luxury stay').
+
+Strict Strictness Filtering: In backend/app/services/image_service.py, add a text-matching filter. If an image metadata title or URL contains words completely unrelated to India or the specified spiritual/cultural geography when a landmark is searched, reject it and move to the next fallback. We want real, contextual images, not random western placeholders.
+
+2. Full Mobile Responsiveness (Fix Mobile View Layout)
+The live public page (ArticleDetailPage.tsx) and dashboard look broken or cut off on smaller screens/mobile devices.
+
+Please review the Tailwind CSS grid and flex layouts across the main layout files (client/src/pages/ArticleDetailPage.tsx, ReviewDashboard.tsx, and any global navigation layout).
+
+Ensure all major desktop layout structures use mobile-first responsive classes (e.g., change grid-cols-3 to grid-cols-1 md:grid-cols-3, fix wide padding/margins on mobile, ensure images auto-scale dynamically with w-full h-auto object-cover, and fix container overflows). The entire site must be 100% fluid and beautiful on iPhones and Android screens.
+
+Once both fixes are applied, run npm run deploy:netlify and push to GitHub for the Render backend auto-deploy.
