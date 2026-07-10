@@ -81,7 +81,7 @@ export const ArticleDetailPage = (): JSX.Element => {
         }
       >
         <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(20,20,20,0.95)_0%,rgba(20,20,20,0.6)_60%,rgba(0,0,0,0.3)_100%)]" />
-        <div className="relative mx-auto flex min-h-[380px] w-full max-w-[1166px] flex-col justify-end px-8 pb-16 pt-8">
+        <div className="relative mx-auto flex min-h-[280px] w-full max-w-[1166px] flex-col justify-end px-4 pb-10 pt-8 sm:min-h-[380px] sm:px-8 sm:pb-16">
           <div className="mb-4 inline-flex w-fit items-center gap-3">
             {article.location && (
               <div className="bg-[#2e4a3f] px-3 py-[7px]">
@@ -95,7 +95,7 @@ export const ArticleDetailPage = (): JSX.Element => {
             </span>
           </div>
           <h1
-            className="[font-family:'Playfair_Display',Helvetica] text-[40px] font-normal leading-[1.1] text-white lg:text-[56px]"
+            className="[font-family:'Playfair_Display',Helvetica] text-[28px] font-normal leading-[1.15] text-white sm:text-[40px] lg:text-[56px]"
             data-testid="text-article-headline"
           >
             {article.headline}
@@ -114,8 +114,8 @@ export const ArticleDetailPage = (): JSX.Element => {
       {/* Snapshot stats */}
       {snapshotEntries.length > 0 && (
         <section className="border-b border-[#1e1e1e1a] bg-white">
-          <div className="mx-auto w-full max-w-[1166px] px-8 py-8">
-            <div className="grid grid-cols-2 gap-6 md:grid-cols-4 lg:grid-cols-6">
+          <div className="mx-auto w-full max-w-[1166px] px-4 py-6 sm:px-8 sm:py-8">
+            <div className="grid grid-cols-2 gap-4 gap-y-6 sm:gap-6 md:grid-cols-4 lg:grid-cols-6">
               {snapshotEntries.map(([key, value]) => (
                 <div key={key}>
                   <div className="[font-family:'Inter',Helvetica] text-[9px] font-normal tracking-[1.44px] text-[#6b6b6b]">
@@ -133,8 +133,8 @@ export const ArticleDetailPage = (): JSX.Element => {
 
       {/* Main content */}
       <section className="py-24">
-        <div className="mx-auto w-full max-w-[1166px] px-8">
-          <div className="grid gap-16 lg:grid-cols-[minmax(0,680px)_280px]">
+        <div className="mx-auto w-full max-w-[1166px] px-4 sm:px-8">
+          <div className="grid gap-10 lg:grid-cols-[minmax(0,680px)_280px] lg:gap-16">
             <div>
               {article.executive_summary && (
                 <p className="pb-8 [font-family:'Inter',Helvetica] text-[17px] font-normal italic leading-[30px] text-[#2e4a3f]">
@@ -173,20 +173,26 @@ export const ArticleDetailPage = (): JSX.Element => {
               {article.full_article && (
                 <div
                   data-testid="text-article-body"
-                  className="article-body [font-family:'Inter',Helvetica] text-[17px] font-normal leading-[30px] text-[#1e1e1e]
-                    [&_h2]:mt-12 [&_h2]:[font-family:'Playfair_Display',Helvetica] [&_h2]:text-[26px] [&_h2]:font-normal [&_h2]:text-[#1e1e1e]
-                    [&_h3]:mt-8 [&_h3]:[font-family:'Playfair_Display',Helvetica] [&_h3]:text-[20px] [&_h3]:font-normal [&_h3]:text-[#1e1e1e]
-                    [&_p]:pt-6 [&_p:first-child]:pt-0
+                  className="article-body [font-family:'Inter',Helvetica] text-[15px] font-normal leading-[26px] text-[#1e1e1e] sm:text-[17px] sm:leading-[30px]
+                    [&_h2]:mt-10 [&_h2]:[font-family:'Playfair_Display',Helvetica] [&_h2]:text-[22px] [&_h2]:font-normal [&_h2]:text-[#1e1e1e] sm:[&_h2]:mt-12 sm:[&_h2]:text-[26px]
+                    [&_h3]:mt-6 [&_h3]:[font-family:'Playfair_Display',Helvetica] [&_h3]:text-[18px] [&_h3]:font-normal [&_h3]:text-[#1e1e1e] sm:[&_h3]:mt-8 sm:[&_h3]:text-[20px]
+                    [&_p]:pt-5 [&_p:first-child]:pt-0 sm:[&_p]:pt-6
                     [&_ul]:mt-4 [&_ul]:space-y-2 [&_ul]:pl-5 [&_ul]:list-disc
                     [&_ol]:mt-4 [&_ol]:space-y-2 [&_ol]:pl-5 [&_ol]:list-decimal
-                    [&_li]:text-[16px] [&_li]:leading-[28px] [&_li]:text-[#1e1e1e]
-                    [&_table]:mt-8 [&_table]:w-full [&_table]:border-collapse [&_table]:text-[14px]
-                    [&_th]:border [&_th]:border-[#1e1e1e1a] [&_th]:bg-[#2e4a3f] [&_th]:text-white [&_th]:px-4 [&_th]:py-3 [&_th]:text-left [&_th]:[font-family:'Inter',Helvetica] [&_th]:text-[11px] [&_th]:tracking-[0.8px] [&_th]:font-medium
-                    [&_td]:border [&_td]:border-[#1e1e1e1a] [&_td]:px-4 [&_td]:py-3 [&_td]:align-top [&_td]:leading-[22px]
+                    [&_li]:text-[14px] [&_li]:leading-[24px] [&_li]:text-[#1e1e1e] sm:[&_li]:text-[16px] sm:[&_li]:leading-[28px]
+                    [&_img]:h-auto [&_img]:w-full [&_img]:object-cover [&_figure]:!mx-0
+                    [&_table]:mt-8 [&_table]:min-w-[520px] [&_table]:w-full [&_table]:border-collapse [&_table]:text-[13px] sm:[&_table]:min-w-0 sm:[&_table]:text-[14px]
+                    [&_th]:border [&_th]:border-[#1e1e1e1a] [&_th]:bg-[#2e4a3f] [&_th]:text-white [&_th]:px-3 [&_th]:py-2.5 [&_th]:text-left [&_th]:[font-family:'Inter',Helvetica] [&_th]:text-[10px] [&_th]:tracking-[0.8px] [&_th]:font-medium sm:[&_th]:px-4 sm:[&_th]:py-3 sm:[&_th]:text-[11px]
+                    [&_td]:border [&_td]:border-[#1e1e1e1a] [&_td]:px-3 [&_td]:py-2.5 [&_td]:align-top [&_td]:leading-[20px] sm:[&_td]:px-4 sm:[&_td]:py-3 sm:[&_td]:leading-[22px]
                     [&_tr:nth-child(even)_td]:bg-[#f8f7f4]
                     [&_br]:block [&_br]:mt-4"
-                  dangerouslySetInnerHTML={{ __html: article.full_article }}
-                />
+                >
+                  <div className="[&:has(table)]:overflow-x-auto">
+                    <div
+                      dangerouslySetInnerHTML={{ __html: article.full_article }}
+                    />
+                  </div>
+                </div>
               )}
 
               {article.pull_quotes && article.pull_quotes.length > 0 && (

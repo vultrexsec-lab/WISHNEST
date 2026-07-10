@@ -89,6 +89,81 @@ def _proxied_url(original_url: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Query building — force strict geographic/landmark relevance
+# ---------------------------------------------------------------------------
+
+def _build_query(subject: str, location: str | None) -> str:
+    """
+    Build a search query that heavily weights the exact landmark/location
+    string instead of letting generic subject words (e.g. "luxury stay")
+    dominate and pull back unrelated stock photography.
+
+    Wraps the subject and location as quoted phrases (which DuckDuckGo,
+    Pexels, and Unsplash all treat as literal phrase hints) and appends
+    "India" whenever a location is present and India isn't already implied,
+    since most WishNest destinations are Indian spiritual/cultural sites and
+    unqualified queries (e.g. "Ram Jhula") otherwise skew toward generic or
+    western results.
+    """
+    subject = (subject or "").strip()
+    if not subject:
+        return location or ""
+
+    parts = [f'"{subject}"']
+    if location:
+        loc = location.strip()
+        if loc and loc.lower() not in subject.lower():
+            parts.append(f'"{loc}"')
+        if "india" not in subject.lower() and "india" not in loc.lower():
+            parts.append("India")
+    return " ".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Relevance filtering — reject images whose metadata has no overlap with the
+# geographic/landmark subject we actually searched for
+# ---------------------------------------------------------------------------
+
+_STOPWORDS = {
+    "the", "a", "an", "of", "in", "at", "for", "and", "or", "to", "with",
+    "near", "view", "views", "photo", "photos", "image", "images", "best",
+    "top", "stay", "stays", "hotel", "hotels", "resort", "resorts",
+    "luxury", "villa", "villas", "property", "review", "reviews", "india",
+    "exterior", "interior", "ambiance",
+}
+
+
+def _significant_tokens(text: str | None) -> set[str]:
+    if not text:
+        return set()
+    tokens = re.findall(r"[a-zA-Z]{3,}", text.lower())
+    return {t for t in tokens if t not in _STOPWORDS}
+
+
+def _is_relevant(query: str, title: str | None, source_url: str | None) -> bool:
+    """
+    Reject a candidate image if its title/source metadata shares no
+    significant words with the search query (minus "india" and generic
+    filler like "luxury"/"resort"). This stops queries for a specific
+    landmark (e.g. "Har Ki Pauri, Haridwar") from silently accepting a
+    generic/unrelated stock photo when the exact match wasn't the top hit.
+
+    If the provider gives us no title/source metadata to judge at all, we
+    can't strictly filter a bare URL — allow it through rather than
+    starving every slot down to the Picsum placeholder.
+    """
+    query_tokens = _significant_tokens(query)
+    if not query_tokens:
+        return True
+
+    metadata_tokens = _significant_tokens(f"{title or ''} {source_url or ''}")
+    if not metadata_tokens:
+        return True
+
+    return bool(query_tokens & metadata_tokens)
+
+
+# ---------------------------------------------------------------------------
 # Provider 1: DuckDuckGo image search (no API key required)
 # ---------------------------------------------------------------------------
 
@@ -100,6 +175,7 @@ def _ddg_image_search(query: str, max_results: int = 5) -> list[str]:
     try:
         from ddgs import DDGS
         results: list[str] = []
+        rejected = 0
         with DDGS() as ddgs:
             for r in ddgs.images(
                 query,
@@ -108,15 +184,22 @@ def _ddg_image_search(query: str, max_results: int = 5) -> list[str]:
                 size="Large",
                 type_image="photo",
                 layout="Wide",
-                max_results=max_results,
+                max_results=max_results * 3,
             ):
                 raw_url = r.get("image") or r.get("url") or ""
                 safe = _safe_image_url(raw_url)
-                if safe:
-                    results.append(safe)
+                if not safe:
+                    continue
+                if not _is_relevant(query, r.get("title"), r.get("source") or r.get("url")):
+                    rejected += 1
+                    continue
+                results.append(safe)
                 if len(results) >= max_results:
                     break
-        logger.debug("DDG images for %r -> %d results", query[:60], len(results))
+        logger.debug(
+            "DDG images for %r -> %d results (%d rejected as irrelevant)",
+            query[:60], len(results), rejected,
+        )
         return results
     except Exception as exc:  # noqa: BLE001
         logger.warning("DDG image search failed for %r: %s", query[:60], exc)
@@ -141,12 +224,22 @@ def _pexels_image_search(query: str, max_results: int = 5) -> list[str]:
         resp.raise_for_status()
         data = resp.json()
         results: list[str] = []
+        rejected = 0
         for photo in data.get("photos", []):
             src = (photo.get("src") or {}).get("large2x") or (photo.get("src") or {}).get("large")
             safe = _safe_image_url(src)
-            if safe:
-                results.append(safe)
-        logger.debug("Pexels images for %r -> %d results", query[:60], len(results))
+            if not safe:
+                continue
+            title = photo.get("alt")
+            source_url = photo.get("url")
+            if not _is_relevant(query, title, source_url):
+                rejected += 1
+                continue
+            results.append(safe)
+        logger.debug(
+            "Pexels images for %r -> %d results (%d rejected as irrelevant)",
+            query[:60], len(results), rejected,
+        )
         return results
     except Exception as exc:  # noqa: BLE001
         logger.warning("Pexels image search failed for %r: %s", query[:60], exc)
@@ -171,12 +264,22 @@ def _unsplash_image_search(query: str, max_results: int = 5) -> list[str]:
         resp.raise_for_status()
         data = resp.json()
         results: list[str] = []
+        rejected = 0
         for photo in data.get("results", []):
             src = (photo.get("urls") or {}).get("regular") or (photo.get("urls") or {}).get("full")
             safe = _safe_image_url(src)
-            if safe:
-                results.append(safe)
-        logger.debug("Unsplash images for %r -> %d results", query[:60], len(results))
+            if not safe:
+                continue
+            title = photo.get("alt_description") or photo.get("description")
+            source_url = (photo.get("links") or {}).get("html")
+            if not _is_relevant(query, title, source_url):
+                rejected += 1
+                continue
+            results.append(safe)
+        logger.debug(
+            "Unsplash images for %r -> %d results (%d rejected as irrelevant)",
+            query[:60], len(results), rejected,
+        )
         return results
     except Exception as exc:  # noqa: BLE001
         logger.warning("Unsplash image search failed for %r: %s", query[:60], exc)
@@ -347,17 +450,10 @@ def generate_article_images(
     as a last resort, a deterministic placeholder image is used so the slot
     is never left empty.
     """
-    context_parts: list[str] = []
-    if location:
-        context_parts.append(location)
-    if focus_keyword:
-        context_parts.append(focus_keyword)
-    context = " ".join(context_parts)
-
     # -- Hero image (always guaranteed) --------------------------------------
-    hero_query = f"{headline} {context}".strip()
+    hero_query = _build_query(headline, location)
     hero_url = _best_image(hero_query, guarantee=True)
-    logger.info("Hero image resolved for %r", headline[:60])
+    logger.info("Hero image resolved for %r (query=%r)", headline[:60], hero_query[:80])
 
     # -- Section images -- one per heading in document order -----------------
     section_urls: list[str] = []
@@ -369,16 +465,17 @@ def generate_article_images(
 
         for heading in headings:
             time.sleep(0.3)
-            query = f"{heading} {context}".strip()
+            query = _build_query(heading, location)
             url = _best_image(query, guarantee=True)
             section_urls.append(url)
             heading_images.append((heading, url))
-            logger.info("Section image for heading %r -> resolved", heading[:50])
+            logger.info("Section image for heading %r -> resolved (query=%r)", heading[:50], query[:80])
 
     else:
         for suffix in ["exterior view", "interior ambiance"]:
             time.sleep(0.2)
-            query = f"{focus_keyword or headline} {suffix} {context}".strip()
+            subject = f"{focus_keyword or headline} {suffix}"
+            query = _build_query(subject, location)
             url = _best_image(query, guarantee=True)
             section_urls.append(url)
 

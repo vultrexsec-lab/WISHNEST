@@ -623,10 +623,10 @@ function ArticlePreviewModal({
       </div>
 
       {/* ── Split body ── */}
-      <div className="flex min-h-0 flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
         {/* ── LEFT: SEO & Socials ── */}
-        <div className="flex w-[380px] shrink-0 flex-col overflow-y-auto border-r border-white/10 bg-[#0d1512]">
-          <div className="p-6">
+        <div className="flex w-full shrink-0 flex-col border-b border-white/10 bg-[#0d1512] lg:w-[380px] lg:overflow-y-auto lg:border-b-0 lg:border-r">
+          <div className="p-4 sm:p-6">
             <p className="mb-5 [font-family:'Inter',Helvetica] text-[9px] font-semibold tracking-[1.8px] text-emerald-400">
               SEO &amp; SOCIAL MEDIA PACKAGE
             </p>
@@ -914,7 +914,7 @@ function ArticlePreviewModal({
         </div>
 
         {/* ── RIGHT: Full live article preview ── */}
-        <div className="min-w-0 flex-1 overflow-y-auto bg-[#f8f7f4] text-[#1e1e1e]">
+        <div className="min-w-0 flex-1 bg-[#f8f7f4] text-[#1e1e1e] lg:overflow-y-auto">
           {/* Hero */}
           <div
             className="relative overflow-hidden bg-[#1a1a1a]"
@@ -929,7 +929,7 @@ function ArticlePreviewModal({
             }
           >
             <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(20,20,20,0.95)_0%,rgba(20,20,20,0.6)_60%,rgba(0,0,0,0.3)_100%)]" />
-            <div className="relative flex min-h-[320px] flex-col justify-end px-10 pb-12 pt-10">
+            <div className="relative flex min-h-[220px] flex-col justify-end px-5 pb-8 pt-8 sm:min-h-[320px] sm:px-10 sm:pb-12 sm:pt-10">
               <div className="mb-3 inline-flex w-fit items-center gap-3">
                 {article.location && (
                   <div className="bg-[#2e4a3f] px-3 py-[7px]">
@@ -942,11 +942,11 @@ function ArticlePreviewModal({
                   {isReview ? "PROPERTY REVIEW" : "EDITORIAL"}
                 </span>
               </div>
-              <h1 className="[font-family:'Playfair_Display',Helvetica] text-[36px] font-normal leading-[1.1] text-white lg:text-[48px]">
+              <h1 className="[font-family:'Playfair_Display',Helvetica] text-[26px] font-normal leading-[1.15] text-white sm:text-[36px] lg:text-[48px]">
                 {article.headline}
               </h1>
               {article.subtitle && (
-                <p className="max-w-[600px] pt-4 [font-family:'Inter',Helvetica] text-[15px] leading-[26px] text-[#ffffffb2]">
+                <p className="max-w-[600px] pt-4 [font-family:'Inter',Helvetica] text-[14px] leading-[24px] text-[#ffffffb2] sm:text-[15px] sm:leading-[26px]">
                   {article.subtitle}
                 </p>
               )}
@@ -959,8 +959,8 @@ function ArticlePreviewModal({
           {/* Snapshot stats */}
           {snapshotEntries.length > 0 && (
             <div className="border-b border-[#1e1e1e1a] bg-white">
-              <div className="px-10 py-7">
-                <div className="grid grid-cols-2 gap-6 md:grid-cols-4">
+              <div className="px-5 py-6 sm:px-10 sm:py-7">
+                <div className="grid grid-cols-2 gap-4 gap-y-5 sm:gap-6 md:grid-cols-4">
                   {snapshotEntries.map(([key, value]) => (
                     <div key={key}>
                       <div className="[font-family:'Inter',Helvetica] text-[9px] font-normal tracking-[1.44px] text-[#6b6b6b]">
@@ -979,8 +979,8 @@ function ArticlePreviewModal({
           {/* Section images strip (before body) */}
           {article.section_image_urls &&
             article.section_image_urls.some(Boolean) && (
-              <div className="border-b border-[#1e1e1e1a] bg-white px-10 py-6">
-                <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+              <div className="border-b border-[#1e1e1e1a] bg-white px-5 py-6 sm:px-10">
+                <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
                   {article.section_image_urls
                     .map((url, originalIdx) => ({ url, caption: article.captions?.[originalIdx] }))
                     .filter(({ url }) => !!url)
@@ -989,7 +989,7 @@ function ArticlePreviewModal({
                       <img
                         src={url}
                         alt={caption || `Section ${i + 1} — ${article.headline}`}
-                        className="h-[160px] w-full rounded-lg object-cover"
+                        className="h-[120px] w-full rounded-lg object-cover sm:h-[160px]"
                       />
                       {caption && (
                         <p className="mt-1.5 [font-family:'Inter',Helvetica] text-[11px] italic text-[#6b6b6b]">
@@ -1003,10 +1003,10 @@ function ArticlePreviewModal({
             )}
 
           {/* Main article body */}
-          <div className="px-10 py-14">
+          <div className="px-5 py-10 sm:px-10 sm:py-14">
             <div className="mx-auto max-w-[780px]">
               {/* ABCDE sidebar + body two-column */}
-              <div className="grid gap-12 lg:grid-cols-[minmax(0,540px)_200px]">
+              <div className="grid gap-10 lg:grid-cols-[minmax(0,540px)_200px] lg:gap-12">
                 <div>
                   {article.executive_summary && (
                     <p className="pb-8 [font-family:'Inter',Helvetica] text-[17px] font-normal italic leading-[30px] text-[#2e4a3f]">
@@ -1192,7 +1192,7 @@ function ArticlePreviewModal({
           </div>
 
           {/* ── Sticky action bar at bottom of RIGHT panel ── */}
-          <div className="sticky bottom-0 left-0 right-0 border-t border-[#1e1e1e15] bg-white/95 px-10 py-5 backdrop-blur-sm">
+          <div className="sticky bottom-0 left-0 right-0 border-t border-[#1e1e1e15] bg-white/95 px-4 py-4 backdrop-blur-sm sm:px-10 sm:py-5">
             <div className="mx-auto flex max-w-[780px] flex-wrap items-center gap-3">
               {article.status === "draft" && (
                 <>
@@ -1213,7 +1213,7 @@ function ArticlePreviewModal({
                       type="datetime-local"
                       value={scheduleDate}
                       onChange={(e) => setScheduleDate(e.target.value)}
-                      className="h-10 w-[200px] rounded-xl border-[#1e1e1e20] bg-white text-[11px] text-[#1e1e1e]"
+                      className="h-10 w-[160px] rounded-xl border-[#1e1e1e20] bg-white text-[11px] text-[#1e1e1e] sm:w-[200px]"
                     />
                     <Button
                       variant="outline"
@@ -1530,7 +1530,7 @@ function ArticleCard({ article }: { article: Article }) {
                     type="datetime-local"
                     value={scheduleDate}
                     onChange={(e) => setScheduleDate(e.target.value)}
-                    className="h-9 w-[190px] rounded-xl border-white/10 bg-white/[0.03] text-[11px] text-white focus-visible:border-emerald-500/50 focus-visible:ring-2 focus-visible:ring-emerald-600/40"
+                    className="h-9 w-[150px] rounded-xl border-white/10 bg-white/[0.03] text-[11px] text-white focus-visible:border-emerald-500/50 focus-visible:ring-2 focus-visible:ring-emerald-600/40 sm:w-[190px]"
                     data-testid={`input-schedule-${article.id}`}
                   />
                   <Button
