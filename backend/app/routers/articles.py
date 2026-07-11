@@ -56,7 +56,15 @@ def list_articles(
             )
         )
 
-    return query.order_by(Article.created_at.desc()).all()
+    articles = query.order_by(Article.created_at.desc()).all()
+    # Sanitise legacy rows: ARRAY columns may contain NULL entries written
+    # before the image-service None-filter was added. Strip them in-place so
+    # Pydantic never sees a None inside list[str] even if the schema validator
+    # somehow doesn't fire (e.g. response_model bypass paths).
+    for a in articles:
+        if a.section_image_urls:
+            a.section_image_urls = [u for u in a.section_image_urls if u is not None]
+    return articles
 
 
 @router.get("/api/articles/{article_id}", response_model=ArticleOut)

@@ -57,6 +57,19 @@ class ArticleBase(BaseModel):
     section_image_urls: Optional[list[str]] = None
     internal_links: Optional[list[InternalLink]] = None
 
+    @field_validator("section_image_urls", mode="before")
+    @classmethod
+    def strip_null_image_urls(cls, v: object) -> object:
+        """
+        Existing DB rows may have NULL entries inside the ARRAY column
+        (written before the image-service None-filter was added).  Strip
+        them here so Pydantic never sees a None inside list[str] and
+        raises a ResponseValidationError on GET /api/articles.
+        """
+        if isinstance(v, list):
+            return [u for u in v if u is not None]
+        return v
+
     # Review-only fields
     property_snapshot: Optional[dict[str, Any]] = None
     best_for: Optional[list[str]] = None
