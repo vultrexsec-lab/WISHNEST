@@ -262,15 +262,18 @@ export const ArticleDetailPage = (): JSX.Element => {
                         return (
                           <div
                             key={g.key}
-                            className="flex items-center justify-between"
+                            className="flex items-center gap-2"
                           >
-                            <span className="[font-family:'Inter',Helvetica] text-xs font-bold text-[#2e4a3f]">
+                            {/* Letter — fixed width so all letters stack flush left */}
+                            <span className="w-3 flex-shrink-0 [font-family:'Inter',Helvetica] text-xs font-bold text-[#2e4a3f]">
                               {g.letter}
                             </span>
-                            <span className="[font-family:'Inter',Helvetica] text-[10px] text-[#6b6b6b]">
+                            {/* Title — takes remaining space, truncates if very long */}
+                            <span className="min-w-0 flex-1 truncate [font-family:'Inter',Helvetica] text-[10px] text-[#6b6b6b]">
                               {g.title}
                             </span>
-                            <span className="[font-family:'Inter',Helvetica] text-xs text-[#6b6b6b]">
+                            {/* Grade value — fixed width, always right-aligned so all grades stack flush right */}
+                            <span className="w-7 flex-shrink-0 text-right [font-family:'Inter',Helvetica] text-xs font-medium text-[#2e4a3f]">
                               {value}
                             </span>
                           </div>

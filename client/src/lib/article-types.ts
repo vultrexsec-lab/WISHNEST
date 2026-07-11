@@ -91,7 +91,7 @@ export interface Article {
 
 export const ABCDE_GRADES: { key: keyof Article; letter: string; title: string }[] = [
   { key: "architecture_grade", letter: "A", title: "Architecture" },
-  { key: "landscape_grade", letter: "B", title: "Biophilic & Landscape" },
+  { key: "landscape_grade", letter: "B", title: "Biophilic & Landscape & Sustainability" },
   { key: "connectivity_grade", letter: "C", title: "Connectivity & Access" },
   { key: "delight_grade", letter: "D", title: "Delight / Guest Experience" },
   { key: "eat_explore_grade", letter: "E", title: "Eat & Explore" },
@@ -105,7 +105,7 @@ export const ABCDE_SCORES: {
   title: string;
 }[] = [
   { scoreKey: "architecture_score", gradeKey: "architecture_grade", letter: "A", title: "Architecture" },
-  { scoreKey: "landscape_score",    gradeKey: "landscape_grade",    letter: "B", title: "Biophilic & Landscape" },
+  { scoreKey: "landscape_score",    gradeKey: "landscape_grade",    letter: "B", title: "Biophilic & Landscape & Sustainability" },
   { scoreKey: "connectivity_score", gradeKey: "connectivity_grade", letter: "C", title: "Connectivity & Access" },
   { scoreKey: "delight_score",      gradeKey: "delight_grade",      letter: "D", title: "Delight / Guest Experience" },
   { scoreKey: "eat_explore_score",  gradeKey: "eat_explore_grade",  letter: "E", title: "Eat & Explore" },

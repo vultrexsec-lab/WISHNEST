@@ -886,11 +886,29 @@ def generate_article_images(
     elif full_article:
         enriched_html = full_article
 
-    # Strip any None entries before returning — _best_image returns None when
-    # no real image is found, but the declared return type is list[str] and
-    # Pydantic's ArticleOut schema (section_image_urls: list[str]) will raise
-    # a validation error serialising any row that has NULL entries in the
-    # ARRAY column, causing GET /api/articles to 500.
+    # used_urls is a single set initialised at the top of this function and
+    # passed into every _best_image / _pick_static_fallback call for both the
+    # hero slot and all section/heading slots.  This guarantees that no image
+    # URL is reused anywhere within a single article generation pass.
+
+    # Strip any None entries — _best_image returns None when no real image is
+    # found; Pydantic's list[str] schema rejects None entries in the ARRAY col.
     section_urls_clean: list[str] = [u for u in section_urls if u is not None]
+
+    # Final hero-URL sanity check: must be our own proxy path or an absolute
+    # http(s) URL.  Anything else (empty string, log-line fragments, etc.) is
+    # discarded so the frontend never receives a non-image string as a src.
+    if hero_url is not None:
+        valid = (
+            hero_url.startswith("/api/image-proxy?url=")
+            or hero_url.startswith("https://")
+            or hero_url.startswith("http://")
+        )
+        if not valid:
+            logger.warning(
+                "Hero URL discarded — failed final format validation: %r",
+                hero_url[:120],
+            )
+            hero_url = None
 
     return hero_url, section_urls_clean, enriched_html
