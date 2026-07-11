@@ -133,6 +133,141 @@ _HILL_STATION_REGIONS: dict[str, str] = {
 _HILL_STATIONS = set(_HILL_STATION_REGIONS)
 
 
+# ---------------------------------------------------------------------------
+# Static fallback image map — guaranteed authentic Indian travel images
+# Used as a last resort when every provider + degradation-chain level returns
+# nothing (e.g. strict relevance filter clears all candidates).
+#
+# Each bucket holds multiple verified Unsplash photo URLs so deduplication
+# can skip already-used entries and assign a different image to every slot
+# within the same article.  Append `?w=1600&q=80` for consistent sizing.
+# ---------------------------------------------------------------------------
+
+_STATIC_FALLBACK_IMAGES: dict[str, list[str]] = {
+    # Ganga ghats, Haridwar, Rishikesh, Varanasi pilgrimage circuit
+    "ganges_pilgrimage": [
+        "https://images.unsplash.com/photo-1561484042-c63f0dc77bab?w=1600&q=80",
+        "https://images.unsplash.com/photo-1568730317895-83f9a0f2e3e9?w=1600&q=80",
+        "https://images.unsplash.com/photo-1605649487212-47bdab064df7?w=1600&q=80",
+        "https://images.unsplash.com/photo-1593693397690-362cb9666fc2?w=1600&q=80",
+        "https://images.unsplash.com/photo-1626015365107-823994fbac4b?w=1600&q=80",
+    ],
+    # Himalayan hill stations: Mussoorie, Nainital, Shimla, Manali, Darjeeling…
+    "himalayan_hills": [
+        "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1600&q=80",
+        "https://images.unsplash.com/photo-1589308078059-be1415eab4c3?w=1600&q=80",
+        "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=1600&q=80",
+        "https://images.unsplash.com/photo-1518002054494-3a6f94352e68?w=1600&q=80",
+        "https://images.unsplash.com/photo-1516912481808-3406841bd33c?w=1600&q=80",
+    ],
+    # Rajasthan forts, palaces, desert — Jaipur, Jodhpur, Udaipur, Jaisalmer
+    "rajasthan_heritage": [
+        "https://images.unsplash.com/photo-1477587458883-47145ed6979e?w=1600&q=80",
+        "https://images.unsplash.com/photo-1599661046289-e31897846e41?w=1600&q=80",
+        "https://images.unsplash.com/photo-1548013146-72479768bada?w=1600&q=80",
+        "https://images.unsplash.com/photo-1587135941948-670b381f08ce?w=1600&q=80",
+        "https://images.unsplash.com/photo-1567157577867-05ccb1388e66?w=1600&q=80",
+    ],
+    # Kerala backwaters, Goa beaches, Andaman coast
+    "kerala_coastal": [
+        "https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=1600&q=80",
+        "https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=1600&q=80",
+        "https://images.unsplash.com/photo-1544535830-9df3f56fff6a?w=1600&q=80",
+        "https://images.unsplash.com/photo-1590650153855-d9e808231d41?w=1600&q=80",
+    ],
+    # Taj Mahal / Agra / Mughal heritage
+    "taj_agra": [
+        "https://images.unsplash.com/photo-1524492412937-b28074a5d7da?w=1600&q=80",
+        "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1600&q=80",
+        "https://images.unsplash.com/photo-1548013146-72479768bada?w=1600&q=80",
+    ],
+    # Broad India travel — used when no region keyword matches
+    "india_generic": [
+        "https://images.unsplash.com/photo-1524492412937-b28074a5d7da?w=1600&q=80",
+        "https://images.unsplash.com/photo-1477587458883-47145ed6979e?w=1600&q=80",
+        "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1600&q=80",
+        "https://images.unsplash.com/photo-1561484042-c63f0dc77bab?w=1600&q=80",
+        "https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=1600&q=80",
+        "https://images.unsplash.com/photo-1548013146-72479768bada?w=1600&q=80",
+        "https://images.unsplash.com/photo-1599661046289-e31897846e41?w=1600&q=80",
+    ],
+}
+
+# Keyword → bucket routing: first match wins.
+# Uses substring matching against the combined "subject location" haystack.
+_FALLBACK_KEYWORD_ROUTES: list[tuple[list[str], str]] = [
+    (
+        ["haridwar", "rishikesh", "ganga", "ganges", "varanasi", "kashi",
+         "pauri", "ghat", "jhula", "aarti", "triveni", "devprayag"],
+        "ganges_pilgrimage",
+    ),
+    (
+        ["mussoorie", "nainital", "shimla", "manali", "darjeeling", "ooty",
+         "kodaikanal", "munnar", "coorg", "kasauli", "lansdowne", "ranikhet",
+         "almora", "kausani", "dalhousie", "chail", "gangtok",
+         "himalay", "hill station", "mountain", "trek", "valley", "waterfall"],
+        "himalayan_hills",
+    ),
+    (
+        ["rajasthan", "jaipur", "jodhpur", "udaipur", "jaisalmer", "bikaner",
+         "pushkar", "fort", "palace", "haveli", "heritage", "desert", "thar"],
+        "rajasthan_heritage",
+    ),
+    (
+        ["kerala", "goa", "andaman", "lakshadweep",
+         "beach", "coast", "backwater", "houseboat", "sea", "ocean"],
+        "kerala_coastal",
+    ),
+    (
+        ["agra", "taj mahal", "taj", "mughal"],
+        "taj_agra",
+    ),
+]
+
+
+def _pick_static_fallback(haystack: str, used_urls: set[str]) -> str | None:
+    """
+    Return a verified static fallback image URL (proxied) that hasn't already
+    been used in this article.
+
+    Routes to the most relevant regional bucket using keyword matching on
+    *haystack* (typically the combined query + location string).  Falls through
+    to the broader ``india_generic`` pool if the primary bucket is exhausted.
+    Returns None only when every candidate across every bucket has been used —
+    practically impossible for a single article.
+    """
+    bucket_key = "india_generic"
+    lower = haystack.lower()
+    for keywords, key in _FALLBACK_KEYWORD_ROUTES:
+        if any(kw in lower for kw in keywords):
+            bucket_key = key
+            break
+
+    # Primary bucket first, then generic pool as overflow
+    candidates: list[str] = list(_STATIC_FALLBACK_IMAGES.get(bucket_key, []))
+    if bucket_key != "india_generic":
+        for url in _STATIC_FALLBACK_IMAGES["india_generic"]:
+            if url not in candidates:
+                candidates.append(url)
+
+    for raw_url in candidates:
+        proxied = _proxied_url(raw_url)
+        if proxied not in used_urls:
+            used_urls.add(proxied)
+            logger.info(
+                "Static fallback image selected (bucket=%r) for %r",
+                bucket_key,
+                haystack[:70],
+            )
+            return proxied
+
+    logger.warning(
+        "Static fallback pool exhausted for haystack %r — slot left blank.",
+        haystack[:70],
+    )
+    return None
+
+
 def _build_query(subject: str, location: str | None) -> str:
     """
     Build a targeted image-search query for the given subject + location.
@@ -634,6 +769,11 @@ def generate_article_images(
     # -- Hero image ----------------------------------------------------------
     hero_query = _build_query(headline, location)
     hero_url = _best_image(hero_query, location=location, used_urls=used_urls)
+    if hero_url is None:
+        hero_url = _pick_static_fallback(
+            f"{hero_query} {location or ''}",
+            used_urls,
+        )
     logger.info("Hero image resolved for %r (query=%r)", headline[:60], hero_query[:80])
 
     # -- Section images -- one per heading in document order -----------------
@@ -648,6 +788,11 @@ def generate_article_images(
             time.sleep(0.3)
             query = _build_query(heading, location)
             url = _best_image(query, location=location, used_urls=used_urls)
+            if url is None:
+                url = _pick_static_fallback(
+                    f"{query} {location or ''}",
+                    used_urls,
+                )
             section_urls.append(url)
             heading_images.append((heading, url))
             logger.info("Section image for heading %r -> resolved (query=%r)", heading[:50], query[:80])
@@ -658,6 +803,11 @@ def generate_article_images(
             subject = f"{focus_keyword or headline} {suffix}"
             query = _build_query(subject, location)
             url = _best_image(query, location=location, used_urls=used_urls)
+            if url is None:
+                url = _pick_static_fallback(
+                    f"{query} {location or ''}",
+                    used_urls,
+                )
             section_urls.append(url)
 
     injected_count = sum(1 for _, u in heading_images if u)
