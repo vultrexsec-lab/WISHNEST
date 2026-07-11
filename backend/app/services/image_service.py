@@ -1,15 +1,26 @@
 """
 Real image search for WishNest articles.
 
-Multi-provider fallback chain so an article NEVER publishes without images:
+Three-provider search chain with a structured query-degradation fallback:
 
   1. DuckDuckGo Images (free, no API key) — primary source.
   2. Pexels API (free, requires PEXELS_API_KEY) — used when DDG returns nothing
      or errors (rate limit, network blip, library issue).
   3. Unsplash API (free, requires UNSPLASH_ACCESS_KEY) — used when both of the
      above fail.
-  4. Picsum (https://picsum.photos, no key, deterministic per-query seed) —
-     absolute last resort so a slot is never left empty.
+
+If all three providers return nothing for the exact query, we do NOT fall back
+to a random placeholder (Picsum or similar) — that produces foreign, completely
+unrelated images (Statue of Liberty, vintage cars, Hollywood hills).
+
+Instead we apply a query-degradation chain that stays geographically relevant:
+  - Level 0: exact landmark query  e.g. "Har Ki Pauri Haridwar India"
+  - Level 1: bare location          e.g. "Haridwar India"
+  - Level 2: thematic regional      e.g. "Ganges River ghats India"
+  - Level 3: broad India travel     e.g. "India spiritual river pilgrimage"
+
+If every level of the chain exhausts every provider, the slot is left blank
+(returns None) rather than publishing a misleading foreign image.
 
 All returned URLs are rewritten to go through our own `/api/image-proxy`
 route so that:
@@ -25,8 +36,8 @@ Strategy:
   4. Also populate hero_image_url (wide search on the headline + location) and
      section_image_urls (list of fetched URLs) for backward-compatible rendering.
 
-Never raises — any per-image failure silently falls through to the next
-provider, and the final provider (Picsum) never fails.
+Never raises — provider failures fall through the degradation chain; a blank
+slot is preferable to a foreign placeholder.
 """
 import hashlib
 import html
@@ -356,20 +367,7 @@ def _unsplash_image_search(query: str, max_results: int = 5) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Provider 4: Picsum — deterministic, keyless, never fails. Absolute last resort.
-# ---------------------------------------------------------------------------
-
-def _picsum_fallback_url(query: str) -> str:
-    """
-    A deterministic (same query -> same image) placeholder photo. Not
-    contextually relevant, but guarantees a slot is never left blank.
-    """
-    seed = hashlib.sha1(query.encode("utf-8")).hexdigest()[:16]
-    return f"https://picsum.photos/seed/{seed}/1200/800"
-
-
-# ---------------------------------------------------------------------------
-# Fallback chain
+# Provider chain — try all three real providers before giving up
 # ---------------------------------------------------------------------------
 
 def _search_all_providers(query: str, max_results: int = 5) -> list[str]:
@@ -385,45 +383,127 @@ def _search_all_providers(query: str, max_results: int = 5) -> list[str]:
     return []
 
 
+# ---------------------------------------------------------------------------
+# Query-degradation chain — stays geographically/thematically relevant even
+# when the exact landmark query returns nothing from any provider.
+# Picsum is intentionally ABSENT — it returns random unrelated foreign photos.
+# ---------------------------------------------------------------------------
+
+def _degraded_query_chain(query: str, location: str | None) -> list[str]:
+    """
+    Build a list of progressively broader queries that are all contextually
+    appropriate for an Indian travel article.  The caller tries them in order
+    until one produces a real, non-duplicate image URL.
+
+    Levels
+    ------
+    0  Exact query (already constructed by _build_query)
+       e.g. "Har Ki Pauri Haridwar India"
+
+    1  Bare location + India
+       e.g. "Haridwar India"
+
+    2  Thematic regional query derived from the subject/location keywords
+       e.g. "Ganges River ghats India"  (for ghat/river/aarti subjects)
+            "Himalayan mountains India" (for hill-station subjects)
+            "Hindu temple India"        (for temple/spiritual subjects)
+
+    3  Broad India travel safety net — always contextually relevant for a
+       travel website even if very generic
+       e.g. "India travel scenic landscape"
+    """
+    chain: list[str] = [query]
+
+    loc = (location or "").strip()
+    haystack = f"{query} {loc}".lower()
+
+    # Level 1 — bare location
+    if loc and loc.lower() not in query.lower():
+        chain.append(f"{loc} India")
+    elif loc:
+        # location already in query; try a shorter cut
+        chain.append(f"{loc}")
+
+    # Level 2 — thematic regional, based on detectable subject keywords
+    if any(w in haystack for w in [
+        "jhula", "ghat", "pauri", "aarti", "ganges", "ganga",
+        "haridwar", "rishikesh", "varanasi", "kashi", "triveni",
+    ]):
+        chain.append("Ganges River ghats India pilgrimage")
+        chain.append("Haridwar Rishikesh spiritual India")
+    elif any(w in haystack for w in [
+        "temple", "mandir", "shrine", "puja", "aarti", "spiritual",
+        "ashram", "yoga", "meditation", "devi", "shiva", "vishnu",
+    ]):
+        chain.append("Hindu temple India spiritual")
+        chain.append("Indian pilgrimage site India")
+    elif any(w in haystack for w in [
+        "mussoorie", "nainital", "shimla", "manali", "darjeeling", "ooty",
+        "hill station", "trek", "himalay", "mountain", "valley", "waterfall",
+    ]):
+        chain.append("Himalayan mountains India landscape")
+        chain.append("Indian hill station scenic India")
+    elif any(w in haystack for w in ["beach", "sea", "ocean", "coast", "goa", "kerala", "andaman"]):
+        chain.append("India beach coastline travel")
+    elif any(w in haystack for w in [
+        "fort", "palace", "rajasthan", "jaipur", "udaipur", "jodhpur",
+        "heritage", "monument", "haveli",
+    ]):
+        chain.append("Rajasthan heritage India palace")
+        chain.append("India historical monument heritage")
+    elif any(w in haystack for w in ["agra", "taj mahal", "mughal"]):
+        chain.append("Taj Mahal Agra India")
+    else:
+        chain.append("India travel scenic landscape tourism")
+
+    # Level 3 — broadest safe fallback (still India-specific, never random)
+    chain.append("India travel landscape scenic")
+
+    # Deduplicate while preserving order
+    seen: set[str] = set()
+    unique: list[str] = []
+    for q in chain:
+        if q not in seen:
+            seen.add(q)
+            unique.append(q)
+    return unique
+
+
 def _best_image(
     query: str,
-    guarantee: bool = True,
+    location: str | None = None,
     used_urls: set[str] | None = None,
 ) -> str | None:
     """
     Return the best validated (and proxied) image URL for *query* that has
     not already been used in the current article.
 
-    `used_urls` is a mutable set shared across every image slot in one
-    article generation run.  We fetch more candidates (8) than we need so
-    there is almost always a fresh URL available even after several slots have
-    been filled.  The chosen URL is added to `used_urls` before returning so
-    subsequent calls see it as taken.
+    Tries the exact query first, then progressively broader but always
+    India-relevant fallback queries (see `_degraded_query_chain`).  Fetches
+    8 candidates per query level so there is room to skip duplicates.
 
-    If `guarantee` is True (default), falls back to a deterministic Picsum
-    placeholder rather than returning None — but Picsum URLs are also
-    deduplicated when possible by using a query-derived seed.
+    Returns None only when every query level across every provider is
+    exhausted — a blank slot is always preferable to a random foreign image.
+    Picsum is intentionally never used.
     """
-    # Fetch enough candidates to have room to skip duplicates
-    urls = _search_all_providers(query, max_results=8)
+    for attempt_query in _degraded_query_chain(query, location):
+        urls = _search_all_providers(attempt_query, max_results=8)
+        for raw_url in urls:
+            proxied = _proxied_url(raw_url)
+            if used_urls is None or proxied not in used_urls:
+                if used_urls is not None:
+                    used_urls.add(proxied)
+                if attempt_query != query:
+                    logger.info(
+                        "Image degraded fallback used: %r -> %r",
+                        query[:50], attempt_query[:50],
+                    )
+                return proxied
 
-    for raw_url in urls:
-        proxied = _proxied_url(raw_url)
-        if used_urls is None or proxied not in used_urls:
-            if used_urls is not None:
-                used_urls.add(proxied)
-            return proxied
-
-    # Every candidate was already used — fall back to Picsum
-    if guarantee:
-        fallback = _proxied_url(_picsum_fallback_url(query))
-        logger.warning(
-            "All %d image candidates already used for %r — Picsum fallback.",
-            len(urls), query[:60],
-        )
-        if used_urls is not None:
-            used_urls.add(fallback)
-        return fallback
+    logger.warning(
+        "No relevant image found for %r after full degradation chain — slot left blank.",
+        query[:60],
+    )
     return None
 
 
@@ -529,31 +609,31 @@ def generate_article_images(
     full_article: str | None = None,
 ) -> tuple[str | None, list[str], str | None]:
     """
-    Search for real images (with automatic provider fallback) and inject
-    them into the article. Guarantees every slot gets a real, working image
-    URL — no article should ever publish completely blank.
+    Search for real images (with query-degradation fallback) and inject
+    them into the article.
 
     Returns:
         (hero_image_url, section_image_urls, enriched_full_article)
 
     - hero_image_url:        URL of the best wide shot for the article header
-                              (proxied through /api/image-proxy).
-    - section_image_urls:    One URL per extracted heading (for gallery widgets).
+                              (proxied through /api/image-proxy). May be None
+                              if no real image was found at any fallback level.
+    - section_image_urls:    One URL per extracted heading (None entries for
+                              headings where no real image was found).
     - enriched_full_article: full_article HTML with <figure> blocks injected after
                               each h2/h3 heading. None if full_article was not provided.
 
-    Never raises; individual provider failures fall through the chain and,
-    as a last resort, a deterministic placeholder image is used so the slot
-    is never left empty.
+    Never raises; per-image failures walk the degradation chain and leave the
+    slot as None rather than publishing a random foreign placeholder.
     """
     # Shared dedup set — every image URL chosen for this article is recorded
     # here so that no two slots (hero, sections, injected figures) ever get
     # the same photo.  Passed into every _best_image call below.
     used_urls: set[str] = set()
 
-    # -- Hero image (always guaranteed) --------------------------------------
+    # -- Hero image ----------------------------------------------------------
     hero_query = _build_query(headline, location)
-    hero_url = _best_image(hero_query, guarantee=True, used_urls=used_urls)
+    hero_url = _best_image(hero_query, location=location, used_urls=used_urls)
     logger.info("Hero image resolved for %r (query=%r)", headline[:60], hero_query[:80])
 
     # -- Section images -- one per heading in document order -----------------
@@ -567,7 +647,7 @@ def generate_article_images(
         for heading in headings:
             time.sleep(0.3)
             query = _build_query(heading, location)
-            url = _best_image(query, guarantee=True, used_urls=used_urls)
+            url = _best_image(query, location=location, used_urls=used_urls)
             section_urls.append(url)
             heading_images.append((heading, url))
             logger.info("Section image for heading %r -> resolved (query=%r)", heading[:50], query[:80])
@@ -577,7 +657,7 @@ def generate_article_images(
             time.sleep(0.2)
             subject = f"{focus_keyword or headline} {suffix}"
             query = _build_query(subject, location)
-            url = _best_image(query, guarantee=True, used_urls=used_urls)
+            url = _best_image(query, location=location, used_urls=used_urls)
             section_urls.append(url)
 
     injected_count = sum(1 for _, u in heading_images if u)
