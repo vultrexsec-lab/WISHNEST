@@ -71,6 +71,14 @@ class ArticleBase(BaseModel):
     connectivity_grade: Optional[Grade] = None
     delight_grade: Optional[Grade] = None
     eat_explore_grade: Optional[Grade] = None
+    # Numeric scores 1.0–10.0 produced by the LLM; drive the public score-card UI
+    architecture_score: Optional[float] = None
+    landscape_score: Optional[float] = None
+    connectivity_score: Optional[float] = None
+    delight_score: Optional[float] = None
+    eat_explore_score: Optional[float] = None
+    # Computed overall grade string (e.g. "A", "B+") derived server-side from scores
+    abcde_overall: Optional[str] = None
     developer_lessons: Optional[list[str]] = None
     key_takeaways: Optional[list[str]] = None
     wishnest_verdict: Optional[str] = None

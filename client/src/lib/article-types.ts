@@ -64,6 +64,14 @@ export interface Article {
   connectivity_grade: Grade | null;
   delight_grade: Grade | null;
   eat_explore_grade: Grade | null;
+  // Numeric scores 1.0–10.0 (LLM-generated; power the public score-card UI)
+  architecture_score: number | null;
+  landscape_score: number | null;
+  connectivity_score: number | null;
+  delight_score: number | null;
+  eat_explore_score: number | null;
+  // Server-computed overall ABCDE™ grade (e.g. "A", "B+")
+  abcde_overall: string | null;
   developer_lessons: string[] | null;
   key_takeaways: string[] | null;
   wishnest_verdict: string | null;
@@ -87,6 +95,20 @@ export const ABCDE_GRADES: { key: keyof Article; letter: string; title: string }
   { key: "connectivity_grade", letter: "C", title: "Connectivity & Access" },
   { key: "delight_grade", letter: "D", title: "Delight / Guest Experience" },
   { key: "eat_explore_grade", letter: "E", title: "Eat & Explore" },
+];
+
+/** Numeric score dimensions — power the public progress-bar score card. */
+export const ABCDE_SCORES: {
+  scoreKey: keyof Article;
+  gradeKey: keyof Article;
+  letter: string;
+  title: string;
+}[] = [
+  { scoreKey: "architecture_score", gradeKey: "architecture_grade", letter: "A", title: "Architecture" },
+  { scoreKey: "landscape_score",    gradeKey: "landscape_grade",    letter: "B", title: "Biophilic & Landscape" },
+  { scoreKey: "connectivity_score", gradeKey: "connectivity_grade", letter: "C", title: "Connectivity & Access" },
+  { scoreKey: "delight_score",      gradeKey: "delight_grade",      letter: "D", title: "Delight / Guest Experience" },
+  { scoreKey: "eat_explore_score",  gradeKey: "eat_explore_grade",  letter: "E", title: "Eat & Explore" },
 ];
 
 const GRADE_ORDER: Record<string, number> = {

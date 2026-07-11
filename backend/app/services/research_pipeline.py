@@ -89,6 +89,63 @@ _GRADE_NAME_TO_VALUE: dict[str, str] = {
     "d_plus": "D+", "d": "D",
 }
 
+# Numeric ABCDE score fields (float 1.0–10.0) plus their paired grade field.
+_SCORE_FIELDS = [
+    "architecture_score", "landscape_score", "connectivity_score",
+    "delight_score", "eat_explore_score",
+]
+_SCORE_TO_GRADE: dict[str, str] = {
+    "architecture_score": "architecture_grade",
+    "landscape_score":    "landscape_grade",
+    "connectivity_score": "connectivity_grade",
+    "delight_score":      "delight_grade",
+    "eat_explore_score":  "eat_explore_grade",
+}
+
+
+def _score_to_grade(score: float) -> str:
+    """Convert a 1.0–10.0 numeric score to a WishNest letter grade."""
+    if score >= 9.0:  return "A+"
+    if score >= 8.0:  return "A"
+    if score >= 7.5:  return "A-"
+    if score >= 7.0:  return "B+"
+    if score >= 6.0:  return "B"
+    if score >= 5.5:  return "B-"
+    if score >= 5.0:  return "C+"
+    if score >= 4.0:  return "C"
+    if score >= 3.5:  return "C-"
+    if score >= 3.0:  return "D+"
+    return "D"
+
+
+def _normalise_scores(raw: dict) -> None:
+    """
+    Mutate *raw* in-place:
+    1. Clamp any numeric score to [1.0, 10.0].
+    2. Derive the paired letter grade from the score (overrides whatever the
+       LLM independently returned for that grade field, keeping both in sync).
+    3. Compute abcde_overall from the average of all present scores.
+    """
+    clean_scores: list[float] = []
+    for field in _SCORE_FIELDS:
+        val = raw.get(field)
+        if val is None:
+            continue
+        try:
+            clamped = max(1.0, min(10.0, float(val)))
+        except (TypeError, ValueError):
+            raw[field] = None
+            continue
+        raw[field] = round(clamped, 1)
+        clean_scores.append(clamped)
+        # Derive letter grade from score
+        raw[_SCORE_TO_GRADE[field]] = _score_to_grade(clamped)
+
+    # Compute overall grade from average of all numeric scores
+    if clean_scores:
+        avg = sum(clean_scores) / len(clean_scores)
+        raw["abcde_overall"] = _score_to_grade(avg)
+
 
 def _normalise_grades(raw: dict) -> None:
     """Mutate *raw* in-place: convert any grade field to its canonical value."""
@@ -132,7 +189,8 @@ def run_research_pipeline(brief: str, db: Session, category: str | None = None) 
         if not raw.get("source_urls"):
             raw["source_urls"] = source_urls
 
-        _normalise_grades(raw)
+        _normalise_scores(raw)   # clamp floats, derive letter grades + overall
+        _normalise_grades(raw)   # catch any remaining letter-grade format quirks
         _coerce_seo_fields(raw)  # auto-fix minor SEO length violations
 
         try:

@@ -7,7 +7,7 @@ social media package, and the human-approval workflow status.
 import enum
 import uuid
 
-from sqlalchemy import Column, DateTime, Enum, String, Text
+from sqlalchemy import Column, DateTime, Enum, Float, String, Text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.sql import func
 
@@ -80,11 +80,20 @@ class Article(Base):
     accessibility = Column(Text, nullable=True)
 
     # --- WishNest ABCDE Scoring & Rating Framework ---
+    # Letter-grade enums (legacy / LLM-derived)
     architecture_grade = Column(Enum(Grade, name="grade"), nullable=True)
     landscape_grade = Column(Enum(Grade, name="grade"), nullable=True)
     connectivity_grade = Column(Enum(Grade, name="grade"), nullable=True)
     delight_grade = Column(Enum(Grade, name="grade"), nullable=True)
     eat_explore_grade = Column(Enum(Grade, name="grade"), nullable=True)
+    # Numeric scores 1.0–10.0 (LLM-generated; drive the public score-card UI)
+    architecture_score = Column(Float, nullable=True)
+    landscape_score = Column(Float, nullable=True)
+    connectivity_score = Column(Float, nullable=True)
+    delight_score = Column(Float, nullable=True)
+    eat_explore_score = Column(Float, nullable=True)
+    # Computed overall ABCDE™ grade string (e.g. "A", "B+") derived server-side
+    abcde_overall = Column(String, nullable=True)
     developer_lessons = Column(ARRAY(Text), nullable=True)
     key_takeaways = Column(ARRAY(Text), nullable=True)
     wishnest_verdict = Column(Text, nullable=True)

@@ -181,6 +181,18 @@ REQUIRED JSON SHAPE
       "accessibility": string | null,
 
       ── ABCDE™ SCORING (null for standard articles) ──────────────────────
+      Evaluate each dimension as a precise float from 1.0 to 10.0, grounded
+      in the research sources and location context. Score honestly — not every
+      destination merits a 9+. Use the full range (e.g. poor road access → 3.5
+      for connectivity; exceptional mountain scenery → 9.2 for landscape).
+
+      "architecture_score": float 1.0–10.0 | null,   -- A: built-environment quality, design language, spatial character
+      "landscape_score":    float 1.0–10.0 | null,   -- B: biophilic setting, terrain drama, natural beauty
+      "connectivity_score": float 1.0–10.0 | null,   -- C: road/air access, proximity to hubs, travel time
+      "delight_score":      float 1.0–10.0 | null,   -- D: guest experience, service culture, hospitality warmth
+      "eat_explore_score":  float 1.0–10.0 | null,   -- E: dining quality, local excursions, cultural richness
+
+      Also emit the matching letter grades (derive from your scores):
       "architecture_grade": one of {GRADE_VALUES} | null,
       "landscape_grade": one of {GRADE_VALUES} | null,
       "connectivity_grade": one of {GRADE_VALUES} | null,
@@ -224,7 +236,7 @@ GLOBAL RULES
    No hallucinated property names, prices, distances, or features.
 8. Use "review" article_type only for a specific named property/resort; "standard" for roundups.
 9. Return ONLY valid JSON matching the shape above. No markdown fences. No extra keys.
-10. Grades must be exactly one of {GRADE_VALUES} or null.
+10. Grades must be exactly one of {GRADE_VALUES} or null. Numeric scores (architecture_score etc.) must be floats 1.0–10.0 or null; never omit them for review articles.
 """
 
 
