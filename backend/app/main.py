@@ -22,9 +22,47 @@ logging.basicConfig(
 settings = get_settings()
 
 
+def _sync_schema() -> None:
+    """
+    Force-add every ABCDE score column that might be missing from the articles
+    table using raw SQL (ALTER TABLE … ADD COLUMN IF NOT EXISTS).
+
+    This runs synchronously inside the lifespan handler before uvicorn begins
+    serving requests, so it is guaranteed to execute even if start.sh's
+    apply_columns.py step was skipped or silently failed on the host (Render).
+    It is completely independent of Alembic's version-tracking state.
+    """
+    import logging
+    from sqlalchemy import text
+    from app.database import engine
+
+    REQUIRED_COLS = [
+        ("architecture_score",  "DOUBLE PRECISION"),
+        ("landscape_score",     "DOUBLE PRECISION"),
+        ("connectivity_score",  "DOUBLE PRECISION"),
+        ("delight_score",       "DOUBLE PRECISION"),
+        ("eat_explore_score",   "DOUBLE PRECISION"),
+        ("abcde_overall",       "TEXT"),
+    ]
+    log = logging.getLogger("wishnest.schema")
+    try:
+        with engine.connect() as conn:
+            for col, pg_type in REQUIRED_COLS:
+                conn.execute(
+                    text(f"ALTER TABLE articles ADD COLUMN IF NOT EXISTS {col} {pg_type}")
+                )
+            conn.commit()
+        log.info("Schema sync: all ABCDE columns present.")
+    except Exception as exc:
+        # Log but don't crash — the articles table may not exist yet on a
+        # completely fresh DB; create_tables.py in start.sh handles that case.
+        log.warning("Schema sync skipped: %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Start the weekly scheduler on boot; stop it on shutdown."""
+    """Sync schema, start the weekly scheduler on boot; stop it on shutdown."""
+    _sync_schema()
     from app.services import scheduler_service
     scheduler_service.start_scheduler()
     yield
