@@ -42,6 +42,7 @@ slot is preferable to a foreign placeholder.
 import hashlib
 import html
 import logging
+import random
 import re
 import time
 import urllib.parse
@@ -309,7 +310,12 @@ def _pick_static_fallback(haystack: str, used_urls: set[str]) -> str | None:
             seen_buckets.add(overflow_bucket)
 
     for bucket in ordered_buckets:
-        for raw_url in _STATIC_FALLBACK_IMAGES.get(bucket, []):
+        # Shuffle each bucket's list before iterating so successive article
+        # generations don't always pick the same sequence of fallback images.
+        # list() copies to avoid mutating the module-level constant.
+        bucket_items = list(_STATIC_FALLBACK_IMAGES.get(bucket, []))
+        random.shuffle(bucket_items)
+        for raw_url in bucket_items:
             proxied = _proxied_url(raw_url)
             if proxied not in used_urls:
                 used_urls.add(proxied)

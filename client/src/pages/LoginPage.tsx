@@ -52,7 +52,7 @@ export function LoginPage() {
     <main className="flex min-h-screen items-center justify-center bg-[#f8f7f4]">
       <div className="w-full max-w-sm border border-[#1e1e1e14] bg-white p-10">
         <p className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[2.6px] text-[#2e4a3f]">
-          WISHNEST
+          WestNest
         </p>
         <h1 className="pt-4 [font-family:'Playfair_Display',Helvetica] text-[28px] font-normal text-[#1e1e1e]">
           Editorial Login

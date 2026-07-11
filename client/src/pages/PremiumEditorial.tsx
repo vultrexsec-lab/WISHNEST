@@ -443,7 +443,7 @@ export const PremiumEditorial = (): JSX.Element => {
         <div className="mx-auto flex w-full max-w-[1166px] items-center justify-between gap-4 px-4 py-4 sm:px-8 sm:py-5">
           <div className="flex min-w-0 flex-col">
             <div className="[font-family:'Playfair_Display',Helvetica] text-[22px] font-bold leading-[22px] tracking-[3px] text-[#1e1e1e] sm:text-[26px] sm:leading-[26px] sm:tracking-[3.90px]">
-              WISHNEST
+              WestNest
             </div>
             <div className="hidden pt-0.5 [font-family:'Inter',Helvetica] text-[9px] font-normal leading-[9px] tracking-[1.80px] text-[#6b6b6b] sm:block">
               HOSPITALITY · ARCHITECTURE · SECOND HOME INTELLIGENCE
