@@ -64,7 +64,7 @@ export const ArticleDetailPage = (): JSX.Element => {
   const snapshotEntries = Object.entries(snapshot);
 
   return (
-    <main className="bg-[#f8f7f4] text-[#1e1e1e]">
+    <main className="w-full max-w-full overflow-x-hidden bg-[#f8f7f4] text-[#1e1e1e]">
       <SiteNav />
 
       {/* Hero */}
@@ -132,8 +132,8 @@ export const ArticleDetailPage = (): JSX.Element => {
       )}
 
       {/* Main content */}
-      <section className="py-24">
-        <div className="mx-auto w-full max-w-[1166px] px-4 sm:px-8">
+      <section className="py-10 sm:py-16 md:py-24">
+        <div className="mx-auto w-full max-w-[1166px] px-4 sm:px-6 md:px-8">
           <div className="grid gap-10 lg:grid-cols-[minmax(0,680px)_280px] lg:gap-16">
             <div>
               {article.executive_summary && (
@@ -144,7 +144,7 @@ export const ArticleDetailPage = (): JSX.Element => {
 
               {article.section_image_urls &&
                 article.section_image_urls.some(Boolean) && (
-                  <div className="mb-10 grid grid-cols-2 gap-4 md:grid-cols-3">
+                  <div className="mb-10 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     {article.section_image_urls
                       .map((url, originalIdx) => ({
                         url,
@@ -187,7 +187,7 @@ export const ArticleDetailPage = (): JSX.Element => {
                     [&_tr:nth-child(even)_td]:bg-[#f8f7f4]
                     [&_br]:block [&_br]:mt-4"
                 >
-                  <div className="[&:has(table)]:overflow-x-auto">
+                  <div className="overflow-x-auto">
                     <div
                       dangerouslySetInnerHTML={{ __html: article.full_article }}
                     />
