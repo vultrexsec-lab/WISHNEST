@@ -134,17 +134,31 @@ _HILL_STATIONS = set(_HILL_STATION_REGIONS)
 
 
 # ---------------------------------------------------------------------------
-# Static fallback image map — guaranteed authentic Indian travel images
+# Static fallback image map — guaranteed authentic Indian travel images.
 # Used as a last resort when every provider + degradation-chain level returns
 # nothing (e.g. strict relevance filter clears all candidates).
 #
-# Each bucket holds multiple verified Unsplash photo URLs so deduplication
-# can skip already-used entries and assign a different image to every slot
-# within the same article.  Append `?w=1600&q=80` for consistent sizing.
+# GEOGRAPHIC ISOLATION RULE
+# -------------------------
+# Buckets are grouped into macro-regions.  When a primary bucket is exhausted
+# the overflow is STRICTLY confined to the same macro-region, then to the
+# geo-neutral ``india_generic`` pool.  A northern-context article (Haridwar,
+# Rishikesh, Mussoorie …) will NEVER receive a Kerala houseboat or Taj Mahal
+# image — those belong to entirely different macro-regions.
+#
+# Macro-regions:
+#   NORTHERN  → ganges_pilgrimage, himalayan_hills
+#   WESTERN   → rajasthan_heritage, taj_agra
+#   SOUTHERN  → kerala_coastal
+#   NEUTRAL   → india_generic   ← geo-neutral hospitality shots only;
+#                                  NO specific monuments or regional landmarks
+#
+# Each bucket holds multiple URLs so deduplication can skip already-used
+# entries and assign a unique image to every slot within one article.
 # ---------------------------------------------------------------------------
 
 _STATIC_FALLBACK_IMAGES: dict[str, list[str]] = {
-    # Ganga ghats, Haridwar, Rishikesh, Varanasi pilgrimage circuit
+    # ── NORTHERN: Ganga ghats, Haridwar, Rishikesh, Varanasi ──────────────
     "ganges_pilgrimage": [
         "https://images.unsplash.com/photo-1561484042-c63f0dc77bab?w=1600&q=80",
         "https://images.unsplash.com/photo-1568730317895-83f9a0f2e3e9?w=1600&q=80",
@@ -152,7 +166,7 @@ _STATIC_FALLBACK_IMAGES: dict[str, list[str]] = {
         "https://images.unsplash.com/photo-1593693397690-362cb9666fc2?w=1600&q=80",
         "https://images.unsplash.com/photo-1626015365107-823994fbac4b?w=1600&q=80",
     ],
-    # Himalayan hill stations: Mussoorie, Nainital, Shimla, Manali, Darjeeling…
+    # ── NORTHERN: Himalayan hill stations — Mussoorie, Nainital, Shimla … ─
     "himalayan_hills": [
         "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1600&q=80",
         "https://images.unsplash.com/photo-1589308078059-be1415eab4c3?w=1600&q=80",
@@ -160,67 +174,102 @@ _STATIC_FALLBACK_IMAGES: dict[str, list[str]] = {
         "https://images.unsplash.com/photo-1518002054494-3a6f94352e68?w=1600&q=80",
         "https://images.unsplash.com/photo-1516912481808-3406841bd33c?w=1600&q=80",
     ],
-    # Rajasthan forts, palaces, desert — Jaipur, Jodhpur, Udaipur, Jaisalmer
+    # ── WESTERN: Rajasthan forts, palaces, desert ─────────────────────────
     "rajasthan_heritage": [
         "https://images.unsplash.com/photo-1477587458883-47145ed6979e?w=1600&q=80",
         "https://images.unsplash.com/photo-1599661046289-e31897846e41?w=1600&q=80",
-        "https://images.unsplash.com/photo-1548013146-72479768bada?w=1600&q=80",
         "https://images.unsplash.com/photo-1587135941948-670b381f08ce?w=1600&q=80",
         "https://images.unsplash.com/photo-1567157577867-05ccb1388e66?w=1600&q=80",
     ],
-    # Kerala backwaters, Goa beaches, Andaman coast
+    # ── WESTERN: Taj Mahal / Agra / Mughal heritage ───────────────────────
+    "taj_agra": [
+        "https://images.unsplash.com/photo-1524492412937-b28074a5d7da?w=1600&q=80",
+        "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1600&q=80",
+    ],
+    # ── SOUTHERN: Kerala backwaters, Goa beaches, Andaman coast ──────────
     "kerala_coastal": [
         "https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=1600&q=80",
         "https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=1600&q=80",
         "https://images.unsplash.com/photo-1544535830-9df3f56fff6a?w=1600&q=80",
         "https://images.unsplash.com/photo-1590650153855-d9e808231d41?w=1600&q=80",
     ],
-    # Taj Mahal / Agra / Mughal heritage
-    "taj_agra": [
-        "https://images.unsplash.com/photo-1524492412937-b28074a5d7da?w=1600&q=80",
-        "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1600&q=80",
-        "https://images.unsplash.com/photo-1548013146-72479768bada?w=1600&q=80",
-    ],
-    # Broad India travel — used when no region keyword matches
+    # ── NEUTRAL: geo-neutral luxury hospitality — NO specific landmarks ────
+    # These images must be placeable in any Indian travel article regardless
+    # of region: resort pools, hotel terraces, fine dining, bonfires, spa.
+    # Do NOT add Taj Mahal, Hawa Mahal, Kerala houseboats, or any monument.
     "india_generic": [
-        "https://images.unsplash.com/photo-1524492412937-b28074a5d7da?w=1600&q=80",
-        "https://images.unsplash.com/photo-1477587458883-47145ed6979e?w=1600&q=80",
-        "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1600&q=80",
-        "https://images.unsplash.com/photo-1561484042-c63f0dc77bab?w=1600&q=80",
-        "https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=1600&q=80",
-        "https://images.unsplash.com/photo-1548013146-72479768bada?w=1600&q=80",
-        "https://images.unsplash.com/photo-1599661046289-e31897846e41?w=1600&q=80",
+        "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=1600&q=80",  # resort infinity pool
+        "https://images.unsplash.com/photo-1571896349842-33c89424de2d?w=1600&q=80",  # luxury pool terrace
+        "https://images.unsplash.com/photo-1611892440504-42a792e24d32?w=1600&q=80",  # hotel suite bedroom
+        "https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=1600&q=80",  # spa wellness
+        "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=1600&q=80",  # fine dining table
+        "https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?w=1600&q=80",  # outdoor bonfire
+        "https://images.unsplash.com/photo-1445019980597-93fa8acb246c?w=1600&q=80",  # hotel balcony sunrise
     ],
 }
 
-# Keyword → bucket routing: first match wins.
-# Uses substring matching against the combined "subject location" haystack.
+# ---------------------------------------------------------------------------
+# Macro-region groups — enforce geographic isolation in overflow selection.
+# A bucket's overflow must never cross into a different macro-region.
+# ---------------------------------------------------------------------------
+
+# Ordered overflow chains: primary bucket → same-region siblings → neutral.
+# "india_generic" is always the final safe stop for every chain.
+_BUCKET_OVERFLOW_CHAIN: dict[str, list[str]] = {
+    "ganges_pilgrimage":  ["himalayan_hills",    "india_generic"],
+    "himalayan_hills":    ["ganges_pilgrimage",  "india_generic"],
+    "rajasthan_heritage": ["taj_agra",           "india_generic"],
+    "taj_agra":           ["rajasthan_heritage", "india_generic"],
+    "kerala_coastal":     ["india_generic"],
+    "india_generic":      [],
+}
+
+# Keyword → primary bucket routing.
+# IMPORTANT: higher-specificity routes are listed first so they win over
+# broader geographic terms.  Uttarakhand/Himachal-specific pilgrimage places
+# are checked before generic hill/mountain terms to prevent mis-routing.
 _FALLBACK_KEYWORD_ROUTES: list[tuple[list[str], str]] = [
+    # Northern pilgrimage — checked first; highest specificity
     (
-        ["haridwar", "rishikesh", "ganga", "ganges", "varanasi", "kashi",
-         "pauri", "ghat", "jhula", "aarti", "triveni", "devprayag"],
+        [
+            "haridwar", "rishikesh", "ganga", "ganges", "varanasi", "kashi",
+            "har ki pauri", "ram jhula", "lakshman jhula", "pauri", "ghat",
+            "ghats", "jhula", "aarti", "triveni", "devprayag", "uttarakhand",
+            "uttarkashi", "badrinath", "kedarnath", "char dham",
+        ],
         "ganges_pilgrimage",
     ),
+    # Northern hills — checked before generic mountain/valley terms
     (
-        ["mussoorie", "nainital", "shimla", "manali", "darjeeling", "ooty",
-         "kodaikanal", "munnar", "coorg", "kasauli", "lansdowne", "ranikhet",
-         "almora", "kausani", "dalhousie", "chail", "gangtok",
-         "himalay", "hill station", "mountain", "trek", "valley", "waterfall"],
+        [
+            "mussoorie", "nainital", "shimla", "manali", "darjeeling",
+            "kasauli", "lansdowne", "ranikhet", "almora", "kausani",
+            "dalhousie", "chail", "gangtok", "himachal", "himachal pradesh",
+            "himalay", "hill station", "mountain", "trek", "valley",
+            "waterfall", "ooty", "kodaikanal", "munnar", "coorg",
+        ],
         "himalayan_hills",
     ),
+    # Western heritage
     (
-        ["rajasthan", "jaipur", "jodhpur", "udaipur", "jaisalmer", "bikaner",
-         "pushkar", "fort", "palace", "haveli", "heritage", "desert", "thar"],
+        [
+            "rajasthan", "jaipur", "jodhpur", "udaipur", "jaisalmer",
+            "bikaner", "pushkar", "fort", "palace", "haveli", "thar",
+        ],
         "rajasthan_heritage",
     ),
+    # Western Mughal
     (
-        ["kerala", "goa", "andaman", "lakshadweep",
-         "beach", "coast", "backwater", "houseboat", "sea", "ocean"],
-        "kerala_coastal",
-    ),
-    (
-        ["agra", "taj mahal", "taj", "mughal"],
+        ["agra", "taj mahal", "taj", "mughal", "fatehpur sikri"],
         "taj_agra",
+    ),
+    # Southern / coastal
+    (
+        [
+            "kerala", "goa", "andaman", "lakshadweep", "alappuzha",
+            "beach", "coast", "backwater", "houseboat", "sea", "ocean",
+        ],
+        "kerala_coastal",
     ),
 ]
 
@@ -230,39 +279,51 @@ def _pick_static_fallback(haystack: str, used_urls: set[str]) -> str | None:
     Return a verified static fallback image URL (proxied) that hasn't already
     been used in this article.
 
-    Routes to the most relevant regional bucket using keyword matching on
-    *haystack* (typically the combined query + location string).  Falls through
-    to the broader ``india_generic`` pool if the primary bucket is exhausted.
-    Returns None only when every candidate across every bucket has been used —
-    practically impossible for a single article.
+    Geographic isolation guarantee
+    --------------------------------
+    Routing is keyword-driven with highest-specificity rules first.  Once a
+    primary bucket is identified, overflow follows ``_BUCKET_OVERFLOW_CHAIN``
+    which is strictly confined to the same macro-region before touching the
+    geo-neutral ``india_generic`` pool.  A northern-context query will never
+    receive a southern or Mughal-heritage image.
+
+    Returns None only when every candidate across the full overflow chain has
+    already been used — practically impossible within a single article.
     """
-    bucket_key = "india_generic"
     lower = haystack.lower()
-    for keywords, key in _FALLBACK_KEYWORD_ROUTES:
+
+    # Determine primary bucket — first keyword route that matches wins
+    primary = "india_generic"
+    for keywords, bucket in _FALLBACK_KEYWORD_ROUTES:
         if any(kw in lower for kw in keywords):
-            bucket_key = key
+            primary = bucket
             break
 
-    # Primary bucket first, then generic pool as overflow
-    candidates: list[str] = list(_STATIC_FALLBACK_IMAGES.get(bucket_key, []))
-    if bucket_key != "india_generic":
-        for url in _STATIC_FALLBACK_IMAGES["india_generic"]:
-            if url not in candidates:
-                candidates.append(url)
+    # Build ordered candidate list: primary → overflow chain (no duplicates)
+    seen_buckets: set[str] = set()
+    ordered_buckets: list[str] = [primary]
+    seen_buckets.add(primary)
+    for overflow_bucket in _BUCKET_OVERFLOW_CHAIN.get(primary, []):
+        if overflow_bucket not in seen_buckets:
+            ordered_buckets.append(overflow_bucket)
+            seen_buckets.add(overflow_bucket)
 
-    for raw_url in candidates:
-        proxied = _proxied_url(raw_url)
-        if proxied not in used_urls:
-            used_urls.add(proxied)
-            logger.info(
-                "Static fallback image selected (bucket=%r) for %r",
-                bucket_key,
-                haystack[:70],
-            )
-            return proxied
+    for bucket in ordered_buckets:
+        for raw_url in _STATIC_FALLBACK_IMAGES.get(bucket, []):
+            proxied = _proxied_url(raw_url)
+            if proxied not in used_urls:
+                used_urls.add(proxied)
+                logger.info(
+                    "Static fallback selected (primary=%r, served_from=%r) for %r",
+                    primary,
+                    bucket,
+                    haystack[:70],
+                )
+                return proxied
 
     logger.warning(
-        "Static fallback pool exhausted for haystack %r — slot left blank.",
+        "Static fallback pool fully exhausted (primary=%r) for %r — slot left blank.",
+        primary,
         haystack[:70],
     )
     return None
