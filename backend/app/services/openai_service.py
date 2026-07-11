@@ -180,24 +180,31 @@ REQUIRED JSON SHAPE
       "location": string | null,
       "accessibility": string | null,
 
-      ── ABCDE™ SCORING (null for standard articles) ──────────────────────
+      ── ABCDE™ SCORING (REQUIRED for ALL article types) ─────────────────
       Evaluate each dimension as a precise float from 1.0 to 10.0, grounded
-      in the research sources and location context. Score honestly — not every
-      destination merits a 9+. Use the full range (e.g. poor road access → 3.5
-      for connectivity; exceptional mountain scenery → 9.2 for landscape).
+      in the research sources and location context. Score the destination /
+      region / properties covered by this article — never return null.
+      Score honestly — not every destination merits a 9+. Use the full range
+      (e.g. poor road access → 3.5 for connectivity; exceptional mountain
+      scenery → 9.2 for landscape).
 
-      "architecture_score": float 1.0–10.0 | null,   -- A: built-environment quality, design language, spatial character
-      "landscape_score":    float 1.0–10.0 | null,   -- B: biophilic setting, terrain drama, natural beauty
-      "connectivity_score": float 1.0–10.0 | null,   -- C: road/air access, proximity to hubs, travel time
-      "delight_score":      float 1.0–10.0 | null,   -- D: guest experience, service culture, hospitality warmth
-      "eat_explore_score":  float 1.0–10.0 | null,   -- E: dining quality, local excursions, cultural richness
+      For roundup / "Top N" articles: score the destination or region as a
+      whole (e.g. Nainital as a homestay destination, not one property).
+      For single-property reviews: score that specific property.
 
-      Also emit the matching letter grades (derive from your scores):
-      "architecture_grade": one of {GRADE_VALUES} | null,
-      "landscape_grade": one of {GRADE_VALUES} | null,
-      "connectivity_grade": one of {GRADE_VALUES} | null,
-      "delight_grade": one of {GRADE_VALUES} | null,
-      "eat_explore_grade": one of {GRADE_VALUES} | null,
+      "architecture_score": float 1.0–10.0,   -- A: built-environment quality, design language, spatial character
+      "landscape_score":    float 1.0–10.0,   -- B: biophilic setting, terrain drama, natural beauty
+      "connectivity_score": float 1.0–10.0,   -- C: road/air access, proximity to hubs, travel time
+      "delight_score":      float 1.0–10.0,   -- D: guest experience, service culture, hospitality warmth
+      "eat_explore_score":  float 1.0–10.0,   -- E: dining quality, local excursions, cultural richness
+
+      Also emit the matching letter grades (derive from your scores — do NOT
+      invent grades independently; they must reflect the numeric scores above):
+      "architecture_grade": one of {GRADE_VALUES},
+      "landscape_grade": one of {GRADE_VALUES},
+      "connectivity_grade": one of {GRADE_VALUES},
+      "delight_grade": one of {GRADE_VALUES},
+      "eat_explore_grade": one of {GRADE_VALUES},
       "developer_lessons": [string, ...]   (2-4 items, review only),
       "key_takeaways": [string, ...]       (3-5 items),
       "wishnest_verdict": string | null    (2-4 sentences, review only),
@@ -236,7 +243,11 @@ GLOBAL RULES
    No hallucinated property names, prices, distances, or features.
 8. Use "review" article_type only for a specific named property/resort; "standard" for roundups.
 9. Return ONLY valid JSON matching the shape above. No markdown fences. No extra keys.
-10. Grades must be exactly one of {GRADE_VALUES} or null. Numeric scores (architecture_score etc.) must be floats 1.0–10.0 or null; never omit them for review articles.
+10. ABCDE scores are MANDATORY for every article — never null, never omitted.
+    "architecture_score", "landscape_score", "connectivity_score", "delight_score",
+    "eat_explore_score" must each be a float 1.0–10.0.
+    Grades ("architecture_grade" etc.) must each be exactly one of {GRADE_VALUES},
+    derived from the numeric score (do not invent them independently).
 """
 
 
