@@ -1,0 +1,20 @@
+Agent, we need a comprehensive, single-shot fix across the frontend and backend to address severe regression bugs with image repetition, broken layout components, and branding updates. Please strictly execute the following 4 structural changes:
+
+RESTORING THE ABCDE BREAKDOWN PANEL (ArticleDetailPage.tsx):
+In your previous edit for alignment, you accidentally broke the rendering logic, causing the entire ABCDE score breakdown panel/grid to completely disappear from the published article page view. Audit the component return block in ArticleDetailPage.tsx. Use a solid, unbreakable layout (like a standard HTML grid or table flex row structure) that restores the scores visually and ensures the letter grades (A+, A, B, etc.) are perfectly lined up flush on the right edge.
+
+TEXT UPDATE SPECIFICATION:
+Ensure the score label for 'B' strictly reads: 'B · Biophilic & Landscape & Sustainability' everywhere across both the dashboard view and the published article detail templates.
+
+GLOBAL ROTATIONAL FALLBACK ENGINE & LANDMARK BAN (image_service.py):
+
+The system is currently leaking the Taj Mahal and generic landmarks into completely unrelated geographic contexts (like generic India searches or North India spiritual stays). Permanently purge all historic landmarks, Taj Mahal, and regional specific photos from the global fallback array.
+
+Replace them only with premium, geo-neutral luxury hospitality/resort interior and exterior shots (e.g., luxury pools, premium bedroom suites, neutral fine dining setups, resort balcony views).
+
+Fix global repetition across articles: In _pick_static_fallback, implement a random shuffle or index rotational offset (random.shuffle or random indexing) on the bucket items before selecting. This ensures that creating two different articles doesn't result in the exact same sequence of fallback image URLs.
+
+MAIN HOME & LANDING PAGE LOGO UPDATE:
+Search the entire repository codebase for the string 'Discover Better Places To Stay' to find the main landing page/home component template. Change the navigation header logo text there from 'WISHNEST' to exactly 'WestNest' so that the main landing page, footer, and admin dashboard match seamlessly in production.
+
+Review all 4 tasks carefully, verify that the frontend compiles perfectly without data structure crashes, and push the verified changes directly to the main branch.
