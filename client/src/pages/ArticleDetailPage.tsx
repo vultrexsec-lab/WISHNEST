@@ -136,7 +136,9 @@ export const ArticleDetailPage = (): JSX.Element => {
       <section className="py-10 sm:py-16 md:py-24">
         <div className="mx-auto w-full max-w-[1166px] px-4 sm:px-6 md:px-8">
           <div className="grid gap-10 lg:grid-cols-[minmax(0,680px)_280px] lg:gap-16">
-            <div>
+            {/* min-w-0 is critical: without it, CSS grid children keep min-width:auto
+                and overflow their column boundary, pushing content off-screen on mobile */}
+            <div className="min-w-0">
               {article.executive_summary && (
                 <p className="pb-8 [font-family:'Inter',Helvetica] text-[17px] font-normal italic leading-[30px] text-[#2e4a3f]">
                   {article.executive_summary}
@@ -188,8 +190,12 @@ export const ArticleDetailPage = (): JSX.Element => {
                     [&_tr:nth-child(even)_td]:bg-[#f8f7f4]
                     [&_br]:block [&_br]:mt-4"
                 >
-                  <div className="overflow-x-auto">
+                  {/* overflow-x-auto scopes table scroll; the outer article-body
+                      div inherits min-w-0 from the grid child so long prose
+                      lines wrap instead of forcing the column wider */}
+                  <div className="min-w-0 overflow-x-auto">
                     <div
+                      className="min-w-0"
                       dangerouslySetInnerHTML={{ __html: article.full_article }}
                     />
                   </div>
@@ -239,7 +245,7 @@ export const ArticleDetailPage = (): JSX.Element => {
             </div>
 
             {/* Sidebar */}
-            <aside className="lg:pt-2">
+            <aside className="min-w-0 lg:pt-2">
               <div className="sticky top-24 space-y-8">
                 {grade && (
                   <div className="bg-white p-8">
