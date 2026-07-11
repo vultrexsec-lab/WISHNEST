@@ -124,22 +124,28 @@ _HILL_STATIONS = set(_HILL_STATION_REGIONS)
 
 def _build_query(subject: str, location: str | None) -> str:
     """
-    Build a search query that heavily weights the exact landmark/location
-    string instead of letting generic subject words (e.g. "luxury stay")
-    dominate and pull back unrelated stock photography.
+    Build a targeted image-search query for the given subject + location.
 
-    Wraps the subject and location as quoted phrases (which DuckDuckGo,
-    Pexels, and Unsplash all treat as literal phrase hints) and appends
-    "India" whenever a location is present and India isn't already implied,
-    since most WishNest destinations are Indian spiritual/cultural sites and
-    unqualified queries (e.g. "Ram Jhula") otherwise skew toward generic or
-    western results.
+    Strategy
+    --------
+    Short subjects (≤ 3 words) are almost always specific landmark or place
+    names (e.g. "Ram Jhula", "Har Ki Pauri", "Ganga Aarti").  Quoting them
+    as two independent phrase-tokens ("Ram Jhula" "Rishikesh") frequently
+    returns zero results from image APIs because the providers try to match
+    both quoted phrases independently, falling through to Picsum.
 
-    Hardcoded rule: if the subject/location mentions an Indian hill station
-    (e.g. Mussoorie), force explicit regional terms ("Uttarakhand hills",
-    "Himalayan resort") into the query and append DuckDuckGo negative
-    keywords (-interiors -stock -generic) to steer away from generic
-    interior/stock-photo results and toward authentic local geography.
+    Instead we combine short subject + location into ONE unquoted phrase
+    ("Ram Jhula Rishikesh India") so providers treat it as a single coherent
+    landmark query — which is exactly what returns accurate results.
+
+    Long subjects (> 3 words) are section headings like "Best Homestays with
+    Valley Views".  For those we skip quoting the full heading (too specific)
+    and instead lead with the location so the query is anchored geographically.
+
+    Hill-station lock: any subject/location mentioning a known Indian hill
+    station gets forced regional terms (e.g. "Uttarakhand hills Himalayan
+    resort") plus DDG negative keywords (-interiors -stock -generic) to push
+    away generic Alpine/Bali chalet stock photos.
     """
     subject = (subject or "").strip()
     if not subject:
@@ -150,12 +156,29 @@ def _build_query(subject: str, location: str | None) -> str:
         (hs for hs in _HILL_STATIONS if hs in haystack), None
     )
 
-    parts = [f'"{subject}"']
-    if location:
-        loc = location.strip()
+    words = subject.split()
+    loc = (location or "").strip()
+
+    if len(words) <= 3:
+        # Short landmark name — combine directly into one phrase for maximum
+        # search relevance.  Avoids the two-quoted-token problem.
         if loc and loc.lower() not in subject.lower():
-            parts.append(f'"{loc}"')
-        if "india" not in subject.lower() and "india" not in loc.lower():
+            base = f"{subject} {loc}"
+        else:
+            base = subject
+        parts = [base]
+        if "india" not in base.lower():
+            parts.append("India")
+    else:
+        # Long heading — anchor on location first, then add the subject
+        # without quoting so providers don't over-restrict results.
+        if loc and loc.lower() not in subject.lower():
+            parts = [loc, subject]
+        else:
+            parts = [subject]
+        if loc and "india" not in loc.lower() and "india" not in subject.lower():
+            parts.append("India")
+        elif not loc and "india" not in subject.lower():
             parts.append("India")
 
     if matched_hill_station:
@@ -362,18 +385,45 @@ def _search_all_providers(query: str, max_results: int = 5) -> list[str]:
     return []
 
 
-def _best_image(query: str, guarantee: bool = True) -> str | None:
+def _best_image(
+    query: str,
+    guarantee: bool = True,
+    used_urls: set[str] | None = None,
+) -> str | None:
     """
-    Return the single best validated (and proxied) image URL for *query*.
-    If `guarantee` is True (default), always returns a URL — falling back to
-    a deterministic Picsum placeholder when every real provider fails.
+    Return the best validated (and proxied) image URL for *query* that has
+    not already been used in the current article.
+
+    `used_urls` is a mutable set shared across every image slot in one
+    article generation run.  We fetch more candidates (8) than we need so
+    there is almost always a fresh URL available even after several slots have
+    been filled.  The chosen URL is added to `used_urls` before returning so
+    subsequent calls see it as taken.
+
+    If `guarantee` is True (default), falls back to a deterministic Picsum
+    placeholder rather than returning None — but Picsum URLs are also
+    deduplicated when possible by using a query-derived seed.
     """
-    urls = _search_all_providers(query, max_results=5)
-    if urls:
-        return _proxied_url(urls[0])
+    # Fetch enough candidates to have room to skip duplicates
+    urls = _search_all_providers(query, max_results=8)
+
+    for raw_url in urls:
+        proxied = _proxied_url(raw_url)
+        if used_urls is None or proxied not in used_urls:
+            if used_urls is not None:
+                used_urls.add(proxied)
+            return proxied
+
+    # Every candidate was already used — fall back to Picsum
     if guarantee:
-        logger.warning("All image providers failed for %r — using Picsum fallback.", query[:60])
-        return _proxied_url(_picsum_fallback_url(query))
+        fallback = _proxied_url(_picsum_fallback_url(query))
+        logger.warning(
+            "All %d image candidates already used for %r — Picsum fallback.",
+            len(urls), query[:60],
+        )
+        if used_urls is not None:
+            used_urls.add(fallback)
+        return fallback
     return None
 
 
@@ -496,9 +546,14 @@ def generate_article_images(
     as a last resort, a deterministic placeholder image is used so the slot
     is never left empty.
     """
+    # Shared dedup set — every image URL chosen for this article is recorded
+    # here so that no two slots (hero, sections, injected figures) ever get
+    # the same photo.  Passed into every _best_image call below.
+    used_urls: set[str] = set()
+
     # -- Hero image (always guaranteed) --------------------------------------
     hero_query = _build_query(headline, location)
-    hero_url = _best_image(hero_query, guarantee=True)
+    hero_url = _best_image(hero_query, guarantee=True, used_urls=used_urls)
     logger.info("Hero image resolved for %r (query=%r)", headline[:60], hero_query[:80])
 
     # -- Section images -- one per heading in document order -----------------
@@ -512,7 +567,7 @@ def generate_article_images(
         for heading in headings:
             time.sleep(0.3)
             query = _build_query(heading, location)
-            url = _best_image(query, guarantee=True)
+            url = _best_image(query, guarantee=True, used_urls=used_urls)
             section_urls.append(url)
             heading_images.append((heading, url))
             logger.info("Section image for heading %r -> resolved (query=%r)", heading[:50], query[:80])
@@ -522,7 +577,7 @@ def generate_article_images(
             time.sleep(0.2)
             subject = f"{focus_keyword or headline} {suffix}"
             query = _build_query(subject, location)
-            url = _best_image(query, guarantee=True)
+            url = _best_image(query, guarantee=True, used_urls=used_urls)
             section_urls.append(url)
 
     injected_count = sum(1 for _, u in heading_images if u)
