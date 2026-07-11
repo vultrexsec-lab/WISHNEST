@@ -675,4 +675,11 @@ def generate_article_images(
     elif full_article:
         enriched_html = full_article
 
-    return hero_url, section_urls, enriched_html
+    # Strip any None entries before returning — _best_image returns None when
+    # no real image is found, but the declared return type is list[str] and
+    # Pydantic's ArticleOut schema (section_image_urls: list[str]) will raise
+    # a validation error serialising any row that has NULL entries in the
+    # ARRAY column, causing GET /api/articles to 500.
+    section_urls_clean: list[str] = [u for u in section_urls if u is not None]
+
+    return hero_url, section_urls_clean, enriched_html
