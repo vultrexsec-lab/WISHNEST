@@ -136,17 +136,27 @@ _HILL_STATIONS = set(_HILL_STATION_REGIONS)
 
 # ---------------------------------------------------------------------------
 # PREMIUM_LUXURY_HOTEL_IMAGES — the ONE and ONLY fallback source for every
-# article, regardless of location.  Five verified Unsplash luxury hotel/resort
-# photos: pool, terrace, suite, exterior.  No landscapes, tents, towels, or
-# spa objects.  All other regional pools, location dicts, and dynamic URL
-# builders have been intentionally removed.
+# article, regardless of location.  15 verified Unsplash luxury hotel/resort
+# photos: pools, terraces, suites, exteriors, dining, spa.  No landscapes,
+# tents, towels, or unrelated spa objects.  All 15 IDs are distinct so a
+# single article with 6-8 image slots never triggers a duplicate cycle.
 # ---------------------------------------------------------------------------
 PREMIUM_LUXURY_HOTEL_IMAGES: list[str] = [
-    "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=1600&q=80",  # resort infinity pool
-    "https://images.unsplash.com/photo-1571896349842-33c89424de2d?w=1600&q=80",  # luxury pool terrace
-    "https://images.unsplash.com/photo-1611892440504-42a792e24d32?w=1600&q=80",  # hotel suite bedroom
-    "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=1600&q=80",  # tropical resort pool
-    "https://images.unsplash.com/photo-1551882547-ff40c63fe2fa?w=1600&q=80",     # grand hotel exterior
+    "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=1600&q=80",  # 01 resort infinity pool
+    "https://images.unsplash.com/photo-1571896349842-33c89424de2d?w=1600&q=80",  # 02 luxury pool terrace
+    "https://images.unsplash.com/photo-1611892440504-42a792e24d32?w=1600&q=80",  # 03 hotel suite bedroom
+    "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=1600&q=80",  # 04 tropical resort pool
+    "https://images.unsplash.com/photo-1551882547-ff40c63fe2fa?w=1600&q=80",     # 05 grand hotel exterior
+    "https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=1600&q=80",  # 06 resort pool at dusk
+    "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=1600&q=80",  # 07 fine dining restaurant
+    "https://images.unsplash.com/photo-1445019980597-93fa8acb246c?w=1600&q=80",  # 08 hotel balcony sunrise
+    "https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?w=1600&q=80",  # 09 outdoor luxury terrace
+    "https://images.unsplash.com/photo-1564501049412-61c2a3083791?w=1600&q=80",  # 10 cliffside infinity pool
+    "https://images.unsplash.com/photo-1571003123894-1f0594d2b5d9?w=1600&q=80",  # 11 hotel room panoramic view
+    "https://images.unsplash.com/photo-1578683619899-6e4b9614c946?w=1600&q=80",  # 12 resort spa interior
+    "https://images.unsplash.com/photo-1631049307264-da0ec9d70304?w=1600&q=80",  # 13 luxury resort lobby
+    "https://images.unsplash.com/photo-1549294413-26f195200dcd?w=1600&q=80",     # 14 boutique hotel corridor
+    "https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=1600&q=80",     # 15 luxury hotel pool deck
 ]
 
 
