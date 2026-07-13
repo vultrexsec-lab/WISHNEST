@@ -68,6 +68,62 @@ def _log_missing_key_notice() -> None:
     )
 
 
+def _resolve_google_photo_url(photo_ref: str, api_key: str) -> str | None:
+    """
+    Resolve a Google Place Photo reference to the final CDN URL (typically
+    `lh3.googleusercontent.com/...`) WITHOUT ever returning a URL that embeds
+    our API key.
+
+    The Places Photo endpoint itself requires `key=<api_key>` as a query
+    param, but it immediately 302s to a key-free googleusercontent.com URL.
+    We follow that redirect server-side and hand back only the `Location`
+    header — never the request URL that carried the key. If the response is
+    a direct 200 (no redirect) we discard it rather than risk leaking the
+    key-bearing URL to callers, since every other slot has none of this risk.
+    """
+    request_url = (
+        "https://maps.googleapis.com/maps/api/place/photo"
+        f"?maxwidth=1600&photoreference={urllib.parse.quote(photo_ref)}"
+        f"&key={api_key}"
+    )
+    try:
+        resp = requests.get(
+            request_url, timeout=_REQUEST_TIMEOUT, allow_redirects=False, stream=True,
+        )
+        location = resp.headers.get("Location")
+        if location and "key=" not in location:
+            return location
+        logger.warning(
+            "Google Places photo endpoint did not redirect to a key-free URL "
+            "(status=%s) — dropping this photo rather than leaking the API key.",
+            resp.status_code,
+        )
+        return None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to resolve Google Places photo URL: %s", exc)
+        return None
+
+
+def _coerce_rating(value) -> float | None:
+    """Best-effort numeric coercion — providers occasionally return ratings
+    as strings or omit them; never let a malformed value blow up scoring."""
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _coerce_review_count(value) -> int | None:
+    try:
+        if value is None:
+            return None
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
 def _google_places_search(location: str, limit: int) -> list[PropertyListing]:
     api_key = get_settings().google_places_api_key
     if not api_key:
@@ -100,18 +156,20 @@ def _google_places_search(location: str, limit: int) -> list[PropertyListing]:
             photo_ref = photos[0].get("photo_reference")
             if not photo_ref:
                 continue
-            photo_url = (
-                "https://maps.googleapis.com/maps/api/place/photo"
-                f"?maxwidth=1600&photoreference={urllib.parse.quote(photo_ref)}"
-                f"&key={api_key}"
-            )
+            # Never store/return the maxwidth=...&key=<api_key> request URL —
+            # resolve it server-side to the key-free CDN URL Google redirects
+            # to. Skip the listing entirely if that resolution fails, rather
+            # than risk leaking the API key to article HTML/JSON.
+            photo_url = _resolve_google_photo_url(photo_ref, api_key)
+            if not photo_url:
+                continue
             place_id = place.get("place_id")
             listings.append(
                 PropertyListing(
                     name=place.get("name") or "",
                     photo_url=photo_url,
-                    rating=place.get("rating"),
-                    review_count=place.get("user_ratings_total"),
+                    rating=_coerce_rating(place.get("rating")),
+                    review_count=_coerce_review_count(place.get("user_ratings_total")),
                     address=place.get("formatted_address"),
                     maps_url=(
                         f"https://www.google.com/maps/place/?q=place_id:{place_id}"
@@ -159,8 +217,8 @@ def _serpapi_maps_search(location: str, limit: int) -> list[PropertyListing]:
                 PropertyListing(
                     name=place.get("title") or "",
                     photo_url=thumbnail,
-                    rating=place.get("rating"),
-                    review_count=place.get("reviews"),
+                    rating=_coerce_rating(place.get("rating")),
+                    review_count=_coerce_review_count(place.get("reviews")),
                     address=place.get("address"),
                     maps_url=place.get("link"),
                 )
