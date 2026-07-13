@@ -136,11 +136,45 @@ _HILL_STATIONS = set(_HILL_STATION_REGIONS)
 
 
 # ---------------------------------------------------------------------------
-# Live property listings (Google Places / SerpApi) — replaces the old static
-# hardcoded Unsplash pool entirely.  Every image handed out below belongs to
-# a real, named business listing with a genuine Google star rating; nothing
-# here is a stock photo or a mock placeholder.
+# Live property listings (Google Places / SerpApi) are the PRIMARY image
+# source — every image handed out preferentially belongs to a real, named
+# business listing with a genuine Google star rating, never a stock photo.
+#
+# PREMIUM_LUXURY_HOTEL_IMAGES below is a last-resort SAFETY NET only. It
+# exists purely so a slow/erroring/quota-exhausted live provider (or a
+# location with no dynamic-search results) can never leave a published
+# article with a blank image slot. It is deliberately checked LAST, after
+# the live pool and the dynamic search chain have both been exhausted.
 # ---------------------------------------------------------------------------
+PREMIUM_LUXURY_HOTEL_IMAGES: list[str] = [
+    "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=1600&q=80",  # 01 resort infinity pool
+    "https://images.unsplash.com/photo-1571896349842-33c89424de2d?w=1600&q=80",  # 02 luxury pool terrace
+    "https://images.unsplash.com/photo-1611892440504-42a792e24d32?w=1600&q=80",  # 03 hotel suite bedroom
+    "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=1600&q=80",  # 04 tropical resort pool
+    "https://images.unsplash.com/photo-1551882547-ff40c63fe2fa?w=1600&q=80",     # 05 grand hotel exterior
+]
+
+
+def _static_fallback_url(index: int, used_urls: set[str]) -> str:
+    """
+    Sequentially pick from PREMIUM_LUXURY_HOTEL_IMAGES by *index*, wrapping
+    around if an article needs more images than the array has. Only skips
+    to the next entry if the proxied URL is already used elsewhere in this
+    article; if every entry is somehow already used, repeats are accepted
+    over leaving the slot blank. Never raises, never returns empty/None —
+    this is the guaranteed last line of defense against a blank image slot.
+    """
+    n = len(PREMIUM_LUXURY_HOTEL_IMAGES)
+    for offset in range(n):
+        raw_url = PREMIUM_LUXURY_HOTEL_IMAGES[(index + offset) % n]
+        proxied = _proxied_url(raw_url)
+        if proxied not in used_urls:
+            used_urls.add(proxied)
+            return proxied
+    # Every static image already used in this article — repeat rather than
+    # ever return an empty slot.
+    return _proxied_url(PREMIUM_LUXURY_HOTEL_IMAGES[index % n])
+
 
 class _LivePropertyPool:
     """
@@ -150,7 +184,15 @@ class _LivePropertyPool:
     """
 
     def __init__(self, location: str | None, limit: int = 10):
-        self.listings: list[PropertyListing] = fetch_premium_stays(location, limit=limit)
+        try:
+            self.listings: list[PropertyListing] = fetch_premium_stays(location, limit=limit)
+        except Exception as exc:  # noqa: BLE001
+            # fetch_premium_stays is documented to never raise, but this call
+            # site must be bulletproof regardless — a live-provider outage or
+            # unexpected exception must never take down article generation
+            # or leave the image grid blank.
+            logger.warning("Live property fetch raised unexpectedly for %r: %s", location, exc)
+            self.listings = []
         self._next_index = 0
         self.used: list[PropertyListing] = []
 
@@ -696,8 +738,16 @@ def generate_article_images(
         }
 
     # -- Hero image ----------------------------------------------------------
-    hero_query = _build_query(headline, location)
-    hero_live = live_pool.take_next(used_urls)
+    # Safe routing: live pool -> dynamic search chain -> static safety net.
+    # Every layer is wrapped so a provider error never bubbles up and never
+    # leaves this slot empty.
+    static_fallback_index = 0
+    hero_url: str | None = None
+    try:
+        hero_live = live_pool.take_next(used_urls)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Live pool lookup raised for hero slot (%r): %s", headline[:60], exc)
+        hero_live = None
     if hero_live is not None:
         hero_url, hero_listing = hero_live
         logger.info(
@@ -705,8 +755,18 @@ def generate_article_images(
             hero_listing.name, hero_listing.rating or 0.0, headline[:60],
         )
     else:
-        hero_url = _best_image(hero_query, location=location, used_urls=used_urls)
-        logger.info("Hero image resolved via search fallback for %r (query=%r)", headline[:60], hero_query[:80])
+        hero_query = _build_query(headline, location)
+        try:
+            hero_url = _best_image(hero_query, location=location, used_urls=used_urls)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Dynamic search raised for hero slot (%r): %s", headline[:60], exc)
+            hero_url = None
+        if hero_url is not None:
+            logger.info("Hero image resolved via search fallback for %r (query=%r)", headline[:60], hero_query[:80])
+    if hero_url is None:
+        hero_url = _static_fallback_url(static_fallback_index, used_urls)
+        static_fallback_index += 1
+        logger.warning("Hero image fell back to the static safety-net pool for %r", headline[:60])
 
     # -- Section images -- one per heading in document order -----------------
     section_urls: list[str] = []
@@ -717,7 +777,11 @@ def generate_article_images(
         logger.info("Extracted %d headings from article %r", len(headings), headline[:50])
 
         for heading in headings:
-            live_next = live_pool.take_next(used_urls)
+            try:
+                live_next = live_pool.take_next(used_urls)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Live pool lookup raised for heading %r: %s", heading[:50], exc)
+                live_next = None
             if live_next is not None:
                 url, listing = live_next
                 logger.info(
@@ -727,21 +791,42 @@ def generate_article_images(
             else:
                 time.sleep(0.3)
                 query = _build_query(heading, location)
-                url = _best_image(query, location=location, used_urls=used_urls)
-                logger.info("Section image for heading %r -> search fallback (query=%r)", heading[:50], query[:80])
+                try:
+                    url = _best_image(query, location=location, used_urls=used_urls)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Dynamic search raised for heading %r: %s", heading[:50], exc)
+                    url = None
+                if url is not None:
+                    logger.info("Section image for heading %r -> search fallback (query=%r)", heading[:50], query[:80])
+            if url is None:
+                url = _static_fallback_url(static_fallback_index, used_urls)
+                static_fallback_index += 1
+                logger.warning("Section image for heading %r fell back to the static safety-net pool", heading[:50])
             section_urls.append(url)
             heading_images.append((heading, url))
 
     else:
         for suffix in ["exterior view", "interior ambiance"]:
-            live_next = live_pool.take_next(used_urls)
+            try:
+                live_next = live_pool.take_next(used_urls)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Live pool lookup raised for slot %r: %s", suffix, exc)
+                live_next = None
             if live_next is not None:
                 url, _listing = live_next
             else:
                 time.sleep(0.2)
                 subject = f"{focus_keyword or headline} {suffix}"
                 query = _build_query(subject, location)
-                url = _best_image(query, location=location, used_urls=used_urls)
+                try:
+                    url = _best_image(query, location=location, used_urls=used_urls)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Dynamic search raised for slot %r: %s", suffix, exc)
+                    url = None
+            if url is None:
+                url = _static_fallback_url(static_fallback_index, used_urls)
+                static_fallback_index += 1
+                logger.warning("Section image for slot %r fell back to the static safety-net pool", suffix)
             section_urls.append(url)
 
     property_matches = [_property_match_dict(l) for l in live_pool.used]
