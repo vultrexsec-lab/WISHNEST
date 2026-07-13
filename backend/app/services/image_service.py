@@ -157,7 +157,9 @@ PREMIUM_LUXURY_HOTEL_IMAGES: list[str] = [
 
 def _static_fallback_url(index: int, used_urls: set[str]) -> str:
     """
-    Sequentially pick from PREMIUM_LUXURY_HOTEL_IMAGES by *index*, wrapping
+    Pick from PREMIUM_LUXURY_HOTEL_IMAGES starting at a randomised offset
+    (so repeated total-provider-outage articles don't all show the exact
+    same first entry), then walk forward sequentially from there, wrapping
     around if an article needs more images than the array has. Only skips
     to the next entry if the proxied URL is already used elsewhere in this
     article; if every entry is somehow already used, repeats are accepted
@@ -165,6 +167,7 @@ def _static_fallback_url(index: int, used_urls: set[str]) -> str:
     this is the guaranteed last line of defense against a blank image slot.
     """
     n = len(PREMIUM_LUXURY_HOTEL_IMAGES)
+    index = (index + random.randint(0, n - 1)) % n
     for offset in range(n):
         raw_url = PREMIUM_LUXURY_HOTEL_IMAGES[(index + offset) % n]
         proxied = _proxied_url(raw_url)
