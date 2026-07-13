@@ -482,6 +482,10 @@ def _pick_static_fallback(
     lower = haystack.lower()
 
     # ── Step 0: location-specific curated pool (highest priority) ────────────
+    # When the location matches a named destination, we ONLY return images from
+    # that curated pool — never from the generic hotel/spa/india_generic bucket.
+    # If all specific images are already used, we cycle back rather than falling
+    # through to unrelated placeholders (towels, bottles, resort pools, etc.).
     if location_name:
         loc_lower = location_name.lower().strip()
         matched_key = next(
@@ -491,6 +495,7 @@ def _pick_static_fallback(
         if matched_key:
             loc_items = list(_LOCATION_SPECIFIC_IMAGES[matched_key])
             random.shuffle(loc_items)
+            # First pass: find an unused image
             for raw_url in loc_items:
                 proxied = _proxied_url(raw_url)
                 if proxied not in used_urls:
@@ -502,6 +507,17 @@ def _pick_static_fallback(
                         haystack[:70],
                     )
                     return proxied
+            # All location-specific images exhausted — cycle back to first rather
+            # than serving a generic spa/hotel image that is geographically wrong.
+            raw_url = loc_items[0]
+            proxied = _proxied_url(raw_url)
+            used_urls.add(proxied)
+            logger.info(
+                "Location-specific pool exhausted; cycling first image (location=%r, key=%r)",
+                location_name,
+                matched_key,
+            )
+            return proxied
 
     # ── Step 1: regional bucket routing ──────────────────────────────────────
     # Determine primary bucket — first keyword route that matches wins

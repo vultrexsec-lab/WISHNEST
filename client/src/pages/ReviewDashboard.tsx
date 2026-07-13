@@ -1154,7 +1154,7 @@ function ArticlePreviewModal({
                                 <span className="[font-family:'Inter',Helvetica] text-[10px] text-[#6b6b6b]">
                                   {g.title}
                                 </span>
-                                <span className="[font-family:'Inter',Helvetica] text-[11px] font-semibold text-[#1e1e1e]">
+                                <span className="w-12 min-w-[3rem] shrink-0 text-right [font-family:'Inter',Helvetica] text-[11px] font-semibold text-[#1e1e1e]">
                                   {value}
                                 </span>
                               </div>
@@ -1688,7 +1688,7 @@ function ArticleCard({ article }: { article: Article }) {
                           <span className="[font-family:'Inter',Helvetica] text-[12px] text-white/50">
                             {g.letter} · {g.title}
                           </span>
-                          <span className="[font-family:'Playfair_Display',Helvetica] text-[15px] text-emerald-300">
+                          <span className="w-12 min-w-[3rem] shrink-0 text-right [font-family:'Playfair_Display',Helvetica] text-[15px] text-emerald-300">
                             {value ?? "—"}
                           </span>
                         </div>
