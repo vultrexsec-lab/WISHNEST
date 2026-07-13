@@ -24,9 +24,15 @@ class Settings(BaseSettings):
     )
     firecrawl_api_key: str = os.environ.get("FIRECRAWL_API_KEY", "")
 
-    # --- Image providers (fallback chain: DDG -> Pexels -> Unsplash -> Picsum) ---
+    # --- Image providers (fallback chain: DDG -> Pexels -> Unsplash) ---
     pexels_api_key: str = os.environ.get("PEXELS_API_KEY", "")
     unsplash_access_key: str = os.environ.get("UNSPLASH_ACCESS_KEY", "")
+
+    # --- Live property data (photos + ratings) for the image pipeline and
+    # the scorecard calculator. Google Places is tried first; SerpApi's
+    # Google Maps engine is the fallback when only that key is configured. ---
+    google_places_api_key: str = os.environ.get("GOOGLE_PLACES_API_KEY", "")
+    serpapi_key: str = os.environ.get("SERPAPI_KEY", "")
 
     # --- Auth ---
     admin_username: str = os.environ.get("ADMIN_USERNAME", "")

@@ -50,6 +50,7 @@ import urllib.parse
 import requests
 
 from app.config import get_settings
+from app.services.places_service import PropertyListing, fetch_premium_stays
 
 logger = logging.getLogger("wishnest.image_service")
 
@@ -135,54 +136,42 @@ _HILL_STATIONS = set(_HILL_STATION_REGIONS)
 
 
 # ---------------------------------------------------------------------------
-# PREMIUM_LUXURY_HOTEL_IMAGES — the ONE and ONLY fallback source for every
-# article, regardless of location.  15 verified Unsplash luxury hotel/resort
-# photos: pools, terraces, suites, exteriors, dining, spa.  No landscapes,
-# tents, towels, or unrelated spa objects.  All 15 IDs are distinct so a
-# single article with 6-8 image slots never triggers a duplicate cycle.
+# Live property listings (Google Places / SerpApi) — replaces the old static
+# hardcoded Unsplash pool entirely.  Every image handed out below belongs to
+# a real, named business listing with a genuine Google star rating; nothing
+# here is a stock photo or a mock placeholder.
 # ---------------------------------------------------------------------------
-PREMIUM_LUXURY_HOTEL_IMAGES: list[str] = [
-    "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=1600&q=80",  # 01 resort infinity pool
-    "https://images.unsplash.com/photo-1571896349842-33c89424de2d?w=1600&q=80",  # 02 luxury pool terrace
-    "https://images.unsplash.com/photo-1611892440504-42a792e24d32?w=1600&q=80",  # 03 hotel suite bedroom
-    "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=1600&q=80",  # 04 tropical resort pool
-    "https://images.unsplash.com/photo-1551882547-ff40c63fe2fa?w=1600&q=80",     # 05 grand hotel exterior
-    "https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=1600&q=80",  # 06 resort pool at dusk
-    "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=1600&q=80",  # 07 fine dining restaurant
-    "https://images.unsplash.com/photo-1445019980597-93fa8acb246c?w=1600&q=80",  # 08 hotel balcony sunrise
-    "https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?w=1600&q=80",  # 09 outdoor luxury terrace
-    "https://images.unsplash.com/photo-1564501049412-61c2a3083791?w=1600&q=80",  # 10 cliffside infinity pool
-    "https://images.unsplash.com/photo-1571003123894-1f0594d2b5d9?w=1600&q=80",  # 11 hotel room panoramic view
-    "https://images.unsplash.com/photo-1578683619899-6e4b9614c946?w=1600&q=80",  # 12 resort spa interior
-    "https://images.unsplash.com/photo-1631049307264-da0ec9d70304?w=1600&q=80",  # 13 luxury resort lobby
-    "https://images.unsplash.com/photo-1549294413-26f195200dcd?w=1600&q=80",     # 14 boutique hotel corridor
-    "https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=1600&q=80",     # 15 luxury hotel pool deck
-]
 
-
-def _pick_static_fallback(
-    haystack: str,
-    used_urls: set[str],
-    location_name: str | None = None,
-) -> str | None:
+class _LivePropertyPool:
     """
-    Return a premium luxury hotel image URL (proxied).
-
-    Picks sequentially from PREMIUM_LUXURY_HOTEL_IMAGES.  If all five have
-    already been used in this article, cycles back to index 0.  No regional
-    routing, no dynamic search, no generic or location-specific pools.
+    Wraps a list of `PropertyListing`s fetched once per article and hands
+    them out sequentially so every section of the grid shows a different
+    real property — zero repeats within a single article.
     """
-    for raw_url in PREMIUM_LUXURY_HOTEL_IMAGES:
-        proxied = _proxied_url(raw_url)
-        if proxied not in used_urls:
+
+    def __init__(self, location: str | None, limit: int = 10):
+        self.listings: list[PropertyListing] = fetch_premium_stays(location, limit=limit)
+        self._next_index = 0
+        self.used: list[PropertyListing] = []
+
+    @property
+    def available(self) -> bool:
+        return self._next_index < len(self.listings)
+
+    def take_next(self, used_urls: set[str]) -> tuple[str, PropertyListing] | None:
+        """Return (proxied_url, listing) for the next unused live property, or None."""
+        while self._next_index < len(self.listings):
+            listing = self.listings[self._next_index]
+            self._next_index += 1
+            if not listing.photo_url:
+                continue
+            proxied = _proxied_url(listing.photo_url)
+            if proxied in used_urls:
+                continue
             used_urls.add(proxied)
-            logger.info("Premium hotel fallback selected for %r", haystack[:70])
-            return proxied
-    # All five used — cycle back to first rather than returning None
-    proxied = _proxied_url(PREMIUM_LUXURY_HOTEL_IMAGES[0])
-    used_urls.add(proxied)
-    logger.info("Premium hotel fallback cycled (all 5 used) for %r", haystack[:70])
-    return proxied
+            self.used.append(listing)
+            return proxied, listing
+        return None
 
 
 def _build_query(subject: str, location: str | None) -> str:
@@ -659,13 +648,15 @@ def generate_article_images(
     location: str | None = None,
     article_type: str = "standard",
     full_article: str | None = None,
-) -> tuple[str | None, list[str], str | None]:
+) -> tuple[str | None, list[str], str | None, list[dict]]:
     """
-    Search for real images (with query-degradation fallback) and inject
-    them into the article.
+    Fill every image slot for the article, preferring LIVE, real Google Maps
+    property listings for the given location, and fall back to the dynamic
+    (still real, never static) image-search chain only when no live listing
+    is available for a given slot.
 
     Returns:
-        (hero_image_url, section_image_urls, enriched_full_article)
+        (hero_image_url, section_image_urls, enriched_full_article, property_matches)
 
     - hero_image_url:        URL of the best wide shot for the article header
                               (proxied through /api/image-proxy). May be None
@@ -674,61 +665,86 @@ def generate_article_images(
                               headings where no real image was found).
     - enriched_full_article: full_article HTML with <figure> blocks injected after
                               each h2/h3 heading. None if full_article was not provided.
+    - property_matches:      [{"name", "rating", "review_count", "maps_url"}, ...]
+                              for every live Google Maps listing actually used in
+                              this article, in the order they were assigned. Empty
+                              when no live provider is configured or none matched —
+                              callers must treat that as "no live rating data".
 
     Never raises; per-image failures walk the degradation chain and leave the
-    slot as None rather than publishing a random foreign placeholder.
+    slot as None rather than publishing a random foreign placeholder. No image
+    URL is ever reused within the same article.
     """
     # Shared dedup set — every image URL chosen for this article is recorded
     # here so that no two slots (hero, sections, injected figures) ever get
-    # the same photo.  Passed into every _best_image call below.
+    # the same photo.  Passed into every _best_image / live-pool call below.
     used_urls: set[str] = set()
+
+    # -- Live property pool: one Google Places/SerpApi lookup per article,
+    # sized to cover the hero slot plus every heading we expect to fill.
+    # Extra headroom (+3) absorbs listings that fail the photo check.
+    full_article_headings = _extract_headings(full_article) if full_article else []
+    expected_slots = 1 + (len(full_article_headings) if full_article_headings else 2)
+    live_pool = _LivePropertyPool(location, limit=expected_slots + 3)
+
+    def _property_match_dict(listing: PropertyListing) -> dict:
+        return {
+            "name": listing.name,
+            "rating": listing.rating,
+            "review_count": listing.review_count,
+            "maps_url": listing.maps_url,
+        }
 
     # -- Hero image ----------------------------------------------------------
     hero_query = _build_query(headline, location)
-    hero_url = _best_image(hero_query, location=location, used_urls=used_urls)
-    if hero_url is None:
-        hero_url = _pick_static_fallback(
-            f"{hero_query} {location or ''}",
-            used_urls,
-            location_name=location,
+    hero_live = live_pool.take_next(used_urls)
+    if hero_live is not None:
+        hero_url, hero_listing = hero_live
+        logger.info(
+            "Hero image resolved from live listing %r (%.1f★) for %r",
+            hero_listing.name, hero_listing.rating or 0.0, headline[:60],
         )
-    logger.info("Hero image resolved for %r (query=%r)", headline[:60], hero_query[:80])
+    else:
+        hero_url = _best_image(hero_query, location=location, used_urls=used_urls)
+        logger.info("Hero image resolved via search fallback for %r (query=%r)", headline[:60], hero_query[:80])
 
     # -- Section images -- one per heading in document order -----------------
     section_urls: list[str] = []
     heading_images: list[tuple[str, str]] = []
 
-    if full_article:
-        headings = _extract_headings(full_article)
+    if full_article_headings:
+        headings = full_article_headings
         logger.info("Extracted %d headings from article %r", len(headings), headline[:50])
 
         for heading in headings:
-            time.sleep(0.3)
-            query = _build_query(heading, location)
-            url = _best_image(query, location=location, used_urls=used_urls)
-            if url is None:
-                url = _pick_static_fallback(
-                    f"{query} {location or ''}",
-                    used_urls,
-                    location_name=location,
+            live_next = live_pool.take_next(used_urls)
+            if live_next is not None:
+                url, listing = live_next
+                logger.info(
+                    "Section image for heading %r -> live listing %r (%.1f★)",
+                    heading[:50], listing.name, listing.rating or 0.0,
                 )
+            else:
+                time.sleep(0.3)
+                query = _build_query(heading, location)
+                url = _best_image(query, location=location, used_urls=used_urls)
+                logger.info("Section image for heading %r -> search fallback (query=%r)", heading[:50], query[:80])
             section_urls.append(url)
             heading_images.append((heading, url))
-            logger.info("Section image for heading %r -> resolved (query=%r)", heading[:50], query[:80])
 
     else:
         for suffix in ["exterior view", "interior ambiance"]:
-            time.sleep(0.2)
-            subject = f"{focus_keyword or headline} {suffix}"
-            query = _build_query(subject, location)
-            url = _best_image(query, location=location, used_urls=used_urls)
-            if url is None:
-                url = _pick_static_fallback(
-                    f"{query} {location or ''}",
-                    used_urls,
-                    location_name=location,
-                )
+            live_next = live_pool.take_next(used_urls)
+            if live_next is not None:
+                url, _listing = live_next
+            else:
+                time.sleep(0.2)
+                subject = f"{focus_keyword or headline} {suffix}"
+                query = _build_query(subject, location)
+                url = _best_image(query, location=location, used_urls=used_urls)
             section_urls.append(url)
+
+    property_matches = [_property_match_dict(l) for l in live_pool.used]
 
     injected_count = sum(1 for _, u in heading_images if u)
     enriched_html: str | None = None
@@ -770,4 +786,4 @@ def generate_article_images(
             )
             hero_url = None
 
-    return hero_url, section_urls_clean, enriched_html
+    return hero_url, section_urls_clean, enriched_html, property_matches

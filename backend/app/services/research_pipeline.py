@@ -160,6 +160,68 @@ def _normalise_grades(raw: dict) -> None:
             raw[field] = val.upper()
 
 
+def _apply_live_ratings(article: Article, property_matches: list[dict]) -> bool:
+    """
+    Blend genuine Google Maps ratings for the live properties featured in
+    this article into the WishNest ABCDE scorecard, so the published grades
+    reflect real user consensus rather than a purely LLM-estimated score.
+
+    property_matches: [{"name", "rating", "review_count", "maps_url"}, ...]
+    as returned by `generate_article_images`. Ratings are on Google's native
+    1.0-5.0 scale; WishNest scores are 1.0-10.0, so we scale by 2x.
+
+    Blend, not override: each dimension score keeps 40% of the LLM's original
+    editorial judgement and takes 60% from the live rating, so a strong photo
+    gallery of well-reviewed properties visibly lifts the grade without
+    completely discarding the qualitative analysis. Also writes the raw
+    Google metrics into `property_snapshot` for transparency.
+
+    Returns True if the article's scores/snapshot were modified.
+    """
+    ratings = [m["rating"] for m in property_matches if m.get("rating")]
+    if not ratings:
+        return False
+
+    avg_google_rating = sum(ratings) / len(ratings)  # 1.0-5.0
+    live_score = avg_google_rating * 2.0             # scale to 1.0-10.0
+
+    changed = False
+    for field, grade_field in _SCORE_TO_GRADE.items():
+        existing = getattr(article, field)
+        if existing is not None:
+            blended = existing * 0.4 + live_score * 0.6
+        else:
+            blended = live_score
+        blended = round(max(1.0, min(10.0, blended)), 1)
+        if blended != existing:
+            setattr(article, field, blended)
+            setattr(article, grade_field, _score_to_grade(blended))
+            changed = True
+
+    if changed:
+        new_scores = [getattr(article, f) for f in _SCORE_TO_GRADE if getattr(article, f) is not None]
+        if new_scores:
+            article.abcde_overall = _score_to_grade(sum(new_scores) / len(new_scores))
+
+    snapshot = dict(article.property_snapshot or {})
+    snapshot["google_live_rating"] = round(avg_google_rating, 1)
+    snapshot["google_live_review_count"] = sum(m.get("review_count") or 0 for m in property_matches) or None
+    snapshot["google_live_sources"] = [
+        {"name": m.get("name"), "rating": m.get("rating"), "maps_url": m.get("maps_url")}
+        for m in property_matches
+        if m.get("name")
+    ]
+    article.property_snapshot = snapshot
+    changed = True
+
+    logger.info(
+        "Applied live Google ratings to %r: avg %.1f★ across %d propert%s -> abcde_overall=%s",
+        article.headline[:50], avg_google_rating, len(ratings),
+        "y" if len(ratings) == 1 else "ies", article.abcde_overall,
+    )
+    return changed
+
+
 class ResearchPipelineError(RuntimeError):
     pass
 
@@ -235,7 +297,7 @@ def run_research_pipeline(brief: str, db: Session, category: str | None = None) 
     # where enriched_full_article has <figure> blocks injected after each heading.
     for article in created:
         try:
-            hero_url, section_urls, enriched_html = generate_article_images(
+            hero_url, section_urls, enriched_html, property_matches = generate_article_images(
                 headline=article.headline,
                 focus_keyword=article.focus_keyword,
                 location=article.location,
@@ -243,7 +305,8 @@ def run_research_pipeline(brief: str, db: Session, category: str | None = None) 
                 full_article=article.full_article,
             )
             html_changed = bool(enriched_html and enriched_html != article.full_article)
-            patched_any = bool(hero_url or section_urls or html_changed)
+            ratings_changed = _apply_live_ratings(article, property_matches)
+            patched_any = bool(hero_url or section_urls or html_changed or ratings_changed)
             if hero_url or section_urls:
                 article.hero_image_url = hero_url
                 article.section_image_urls = section_urls or None

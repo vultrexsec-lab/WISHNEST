@@ -22,6 +22,9 @@ The previous Node/Express backend (and Drizzle ORM setup) was fully removed in f
 - `routers/articles.py` — `GET /api/articles` (list, supports `?category=` and `?status=` filters) and `GET /api/articles/{id}`.
 - `routers/newsletter.py` — `POST /api/newsletter/subscribe` and `POST /api/newsletter/unsubscribe` (both idempotent, enumeration-safe).
 - `routers/approve.py` — `PUT /api/approve-article/{id}`: human approval endpoint; moves an article to `approved` or `scheduled` (with `scheduled_at`). Fully functional DB-only endpoint (no AI logic).
+- `services/places_service.py` — live property-data provider chain: Google Places API (`GOOGLE_PLACES_API_KEY`, preferred) or SerpApi's Google Maps engine (`SERPAPI_KEY`, fallback). Returns real, named hotel/villa/boutique-stay listings for a location, each with a live photo URL and a genuine Google star rating. Returns `[]` (never raises) and logs a one-time console setup notice when neither key is configured.
+- `services/image_service.py` — image pipeline now sources every article image from `places_service.fetch_premium_stays()` first (one real, distinct business per section — zero repeats), falling back to the existing DDG → Pexels → Unsplash dynamic search chain only for slots with no live listing available. The old static hardcoded Unsplash pool has been removed entirely.
+- `services/research_pipeline.py` — `_apply_live_ratings()` blends each live property's genuine Google rating (scaled 1-5 → 1-10, 60% weight) into the WishNest ABCDE scorecard alongside the LLM's estimate (40% weight), so published grades reflect real user consensus. Raw Google metrics (average rating, review count, per-property sources) are also written into `property_snapshot` for transparency.
 - `create_tables.py` — one-off script for **fresh** databases (`python backend/create_tables.py`). Creates all tables via SQLAlchemy metadata.
 - `migrations/` — Alembic migration history. **For existing databases**, run `cd backend && alembic upgrade head` to safely add any missing columns/tables without touching existing data.
 
@@ -39,8 +42,13 @@ Both workflows must be running for the app to work end-to-end.
 | `DATABASE_URL` | Backend — SQLAlchemy PostgreSQL connection |
 | `OPENAI_API_KEY` / `CHATGPT_API_KEY` | Backend — AI article drafting pipeline |
 | `FIRECRAWL_API_KEY` | Backend — web research/scraping |
+| `GOOGLE_PLACES_API_KEY` | Backend — live hotel/villa photos + Google ratings (preferred provider) |
+| `SERPAPI_KEY` | Backend — live hotel/villa photos + Google ratings (fallback provider, used only if the Places key is absent) |
+| `PEXELS_API_KEY` / `UNSPLASH_ACCESS_KEY` | Backend — dynamic image-search fallback for slots with no live Google Maps listing |
 | `ADMIN_USERNAME` | Backend — admin auth |
 | `SESSION_SECRET` | Backend — session signing |
+
+Without `GOOGLE_PLACES_API_KEY` or `SERPAPI_KEY`, the backend logs a one-time console setup notice and falls back to the dynamic image-search chain and LLM-only scores — it never breaks article generation.
 
 ## Deployment notes (Vercel + Render)
 
