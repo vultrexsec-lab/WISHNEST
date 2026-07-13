@@ -196,16 +196,17 @@ _STATIC_FALLBACK_IMAGES: dict[str, list[str]] = {
     ],
     # ── NEUTRAL: geo-neutral luxury hospitality — NO specific landmarks ────
     # These images must be placeable in any Indian travel article regardless
-    # of region: resort pools, hotel terraces, fine dining, bonfires, spa.
-    # Do NOT add Taj Mahal, Hawa Mahal, Kerala houseboats, or any monument.
+    # of region: resort pools, hotel terraces, fine dining.
+    # Do NOT add spa-towel/bottle images, Taj Mahal, Hawa Mahal, Kerala houseboats, or any monument.
     "india_generic": [
         "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=1600&q=80",  # resort infinity pool
         "https://images.unsplash.com/photo-1571896349842-33c89424de2d?w=1600&q=80",  # luxury pool terrace
         "https://images.unsplash.com/photo-1611892440504-42a792e24d32?w=1600&q=80",  # hotel suite bedroom
-        "https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=1600&q=80",  # spa wellness
         "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=1600&q=80",  # fine dining table
-        "https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?w=1600&q=80",  # outdoor bonfire
+        "https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?w=1600&q=80",  # outdoor bonfire terrace
         "https://images.unsplash.com/photo-1445019980597-93fa8acb246c?w=1600&q=80",  # hotel balcony sunrise
+        "https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=1600&q=80",  # luxury resort pool evening
+        "https://images.unsplash.com/photo-1551882547-ff40c63fe2fa?w=1600&q=80",     # luxury resort exterior
     ],
 }
 
@@ -221,29 +222,32 @@ _STATIC_FALLBACK_IMAGES: dict[str, list[str]] = {
 #   • Ordered by visual quality / landmark specificity (best first)
 # ---------------------------------------------------------------------------
 _LOCATION_SPECIFIC_IMAGES: dict[str, list[str]] = {
-    # ── Rishikesh — Ram Jhula, Lakshman Jhula, Ganges, yoga ashrams ──────────
+    # ── Rishikesh — luxury wellness resorts, yoga retreats, Ganges views ─────
+    # 5 distinct premium resort/nature images; none overlap with india_generic.
     "rishikesh": [
-        "https://images.unsplash.com/photo-1561484042-c63f0dc77bab?w=1600&q=80",   # Ganges ghats, Rishikesh
-        "https://images.unsplash.com/photo-1593693397690-362cb9666fc2?w=1600&q=80", # riverside, Rishikesh area
-        "https://images.unsplash.com/photo-1605649487212-47bdab064df7?w=1600&q=80", # Ganges/Rishikesh landscape
-        "https://images.unsplash.com/photo-1626015365107-823994fbac4b?w=1600&q=80", # spiritual India riverside
-        "https://images.unsplash.com/photo-1568730317895-83f9a0f2e3e9?w=1600&q=80", # Uttarakhand river
+        "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=1600&q=80", # luxury resort pool with lush surroundings
+        "https://images.unsplash.com/photo-1564501049412-61c2a3083791?w=1600&q=80", # infinity pool overlooking river valley
+        "https://images.unsplash.com/photo-1571003123894-1f0594d2b5d9?w=1600&q=80", # luxury hotel room mountain view
+        "https://images.unsplash.com/photo-1561484042-c63f0dc77bab?w=1600&q=80",    # Ganges ghats at golden hour
+        "https://images.unsplash.com/photo-1593693397690-362cb9666fc2?w=1600&q=80", # Rishikesh riverside temple ghats
     ],
-    # ── Mussoorie — Kempty Falls, Gun Hill, Queen of Hills, Lal Tibba ────────
+    # ── Mussoorie — luxury mountain resort, Queen of Hills, Lal Tibba ────────
+    # 5 distinct Himalayan/hill-station images exclusive to this destination.
     "mussoorie": [
-        "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1600&q=80", # Himalayan hill landscape
-        "https://images.unsplash.com/photo-1589308078059-be1415eab4c3?w=1600&q=80", # Uttarakhand hill station
-        "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=1600&q=80", # misty mountain valley
-        "https://images.unsplash.com/photo-1516912481808-3406841bd33c?w=1600&q=80", # mountain pine forest
+        "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1600&q=80", # Himalayan ridge panorama
+        "https://images.unsplash.com/photo-1589308078059-be1415eab4c3?w=1600&q=80", # Uttarakhand hill station valley
+        "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=1600&q=80", # misty mountain pine valley
         "https://images.unsplash.com/photo-1586348943529-beaae6c28db9?w=1600&q=80", # colonial hill-town road
+        "https://images.unsplash.com/photo-1516912481808-3406841bd33c?w=1600&q=80", # mountain pine forest sunrise
     ],
-    # ── Nainital — Naini Lake, Snow View, Naina Devi, boat house ─────────────
+    # ── Nainital — Naini Lake luxury, Snow View resort, boathouse ────────────
+    # 5 distinct lake / hill images exclusive to this destination.
     "nainital": [
-        "https://images.unsplash.com/photo-1518002054494-3a6f94352e68?w=1600&q=80", # mountain lake, hills
-        "https://images.unsplash.com/photo-1533130061792-64b345e4a833?w=1600&q=80", # lake with mountain reflection
-        "https://images.unsplash.com/photo-1516912481808-3406841bd33c?w=1600&q=80", # pine forest hills
-        "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1600&q=80", # Himalayan panorama
-        "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=1600&q=80", # valley mist
+        "https://images.unsplash.com/photo-1518002054494-3a6f94352e68?w=1600&q=80", # mountain lake with forested hills
+        "https://images.unsplash.com/photo-1533130061792-64b345e4a833?w=1600&q=80", # serene lake mountain reflection
+        "https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=1600&q=80",    # luxury lake resort terrace
+        "https://images.unsplash.com/photo-1470770841072-f978cf4d019e?w=1600&q=80", # mountain lake cabin resort
+        "https://images.unsplash.com/photo-1501854140801-50d01698950b?w=1600&q=80", # aerial lush green valley lake
     ],
     # ── Haridwar — Har Ki Pauri, Ganga Aarti, ghats ──────────────────────────
     "haridwar": [
