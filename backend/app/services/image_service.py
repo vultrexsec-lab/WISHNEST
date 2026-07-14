@@ -149,9 +149,9 @@ _HILL_STATIONS = set(_HILL_STATION_REGIONS)
 PREMIUM_LUXURY_HOTEL_IMAGES: list[str] = [
     "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=1600&q=80",  # 01 resort infinity pool
     "https://images.unsplash.com/photo-1571896349842-33c89424de2d?w=1600&q=80",  # 02 luxury pool terrace
-    "https://images.unsplash.com/photo-1611892440504-42a792e24d32?w=1600&q=80",  # 03 hotel suite bedroom
+    "https://images.unsplash.com/photo-1590490360182-c33d57733427?w=1600&q=80",  # 03 hotel suite bedroom
     "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=1600&q=80",  # 04 tropical resort pool
-    "https://images.unsplash.com/photo-1551882547-ff40c63fe2fa?w=1600&q=80",     # 05 grand hotel exterior
+    "https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=1600&q=80",  # 05 grand hotel exterior
 ]
 
 
