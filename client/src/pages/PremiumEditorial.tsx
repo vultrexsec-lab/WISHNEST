@@ -443,9 +443,8 @@ export const PremiumEditorial = (): JSX.Element => {
         <div className="mx-auto flex w-full max-w-[1166px] items-center justify-between gap-4 px-4 py-4 sm:px-8 sm:py-5">
           <div className="flex min-w-0 flex-shrink-0 flex-col">
             <div className="[font-family:'Playfair_Display',Helvetica] text-[22px] font-bold leading-[22px] tracking-[3px] text-[#1e1e1e] sm:text-[26px] sm:leading-[26px] sm:tracking-[3.90px]">WishNest</div>
-            <div className="hidden overflow-hidden whitespace-nowrap pt-0.5 [font-family:'Inter',Helvetica] text-[7px] font-normal leading-[9px] tracking-[1.10px] text-[#6b6b6b] sm:block md:text-[8px] md:tracking-[1.40px] lg:text-[9px] lg:tracking-[1.80px]">
-              HOSPITALITY · ARCHITECTURE · SECOND HOME INTELLIGENCE
-            </div>
+            <div className="hidden overflow-hidden whitespace-nowrap pt-0.5 [font-family:'Inter',Helvetica] text-[7px] font-normal leading-[9px] tracking-[1.10px] text-[#6b6b6b] sm:block md:text-[8px] md:tracking-[1.40px] lg:text-[9px] lg:tracking-[1.80px]">HOSPITALITY · ARCHITECTURE · SECOND HOME
+            INTELLIGENCE</div>
           </div>
           <nav className="hidden items-center gap-5 lg:flex" aria-label="Primary">
             {navItems.map((item) => (
