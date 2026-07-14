@@ -442,9 +442,7 @@ export const PremiumEditorial = (): JSX.Element => {
       <header className="sticky top-0 z-50 border-b border-[#1e1e1e14] bg-[#f8f7f4]/95 backdrop-blur">
         <div className="mx-auto flex w-full max-w-[1166px] items-center justify-between gap-4 px-4 py-4 sm:px-8 sm:py-5">
           <div className="flex min-w-0 flex-col">
-            <div className="[font-family:'Playfair_Display',Helvetica] text-[22px] font-bold leading-[22px] tracking-[3px] text-[#1e1e1e] sm:text-[26px] sm:leading-[26px] sm:tracking-[3.90px]">
-              WestNest
-            </div>
+            <div className="[font-family:'Playfair_Display',Helvetica] text-[22px] font-bold leading-[22px] tracking-[3px] text-[#1e1e1e] sm:text-[26px] sm:leading-[26px] sm:tracking-[3.90px]">WishNest</div>
             <div className="hidden pt-0.5 [font-family:'Inter',Helvetica] text-[9px] font-normal leading-[9px] tracking-[1.80px] text-[#6b6b6b] sm:block">
               HOSPITALITY · ARCHITECTURE · SECOND HOME INTELLIGENCE
             </div>
@@ -1132,9 +1130,7 @@ export const PremiumEditorial = (): JSX.Element => {
           <div className="border-b border-[#ffffff14] pb-16">
             <div className="grid gap-12 lg:grid-cols-[240px_minmax(0,1fr)]">
               <div>
-                <div className="[font-family:'Playfair_Display',Helvetica] text-2xl font-bold leading-9 tracking-[3.36px] text-white">
-                  WISHNEST
-                </div>
+                <div className="[font-family:'Playfair_Display',Helvetica] text-2xl font-bold leading-9 tracking-[3.36px] text-white">WishNest</div>
                 <div className="pt-2 [font-family:'Inter',Helvetica] text-[9px] font-normal leading-[13.5px] tracking-[1.62px] text-[#ffffff59]">
                   HOSPITALITY · ARCHITECTURE
                   <br />
