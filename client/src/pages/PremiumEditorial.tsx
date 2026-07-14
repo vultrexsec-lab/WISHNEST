@@ -441,9 +441,9 @@ export const PremiumEditorial = (): JSX.Element => {
       <NewsletterModal open={newsletterOpen} onClose={() => setNewsletterOpen(false)} />
       <header className="sticky top-0 z-50 border-b border-[#1e1e1e14] bg-[#f8f7f4]/95 backdrop-blur">
         <div className="mx-auto flex w-full max-w-[1166px] items-center justify-between gap-4 px-4 py-4 sm:px-8 sm:py-5">
-          <div className="flex min-w-0 flex-col">
+          <div className="flex min-w-0 flex-shrink-0 flex-col">
             <div className="[font-family:'Playfair_Display',Helvetica] text-[22px] font-bold leading-[22px] tracking-[3px] text-[#1e1e1e] sm:text-[26px] sm:leading-[26px] sm:tracking-[3.90px]">WishNest</div>
-            <div className="hidden pt-0.5 [font-family:'Inter',Helvetica] text-[9px] font-normal leading-[9px] tracking-[1.80px] text-[#6b6b6b] sm:block">
+            <div className="hidden overflow-hidden whitespace-nowrap pt-0.5 [font-family:'Inter',Helvetica] text-[7px] font-normal leading-[9px] tracking-[1.10px] text-[#6b6b6b] sm:block md:text-[8px] md:tracking-[1.40px] lg:text-[9px] lg:tracking-[1.80px]">
               HOSPITALITY · ARCHITECTURE · SECOND HOME INTELLIGENCE
             </div>
           </div>
