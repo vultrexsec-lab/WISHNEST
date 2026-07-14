@@ -1544,6 +1544,35 @@ function ArticleCard({
     },
   });
 
+  // Re-fetches hero/section images for an already-saved article (e.g. one
+  // originally generated before a live photo provider was configured, so it
+  // ended up with a thin or duplicated gallery). Leaves the article text
+  // untouched.
+  const regenerateImagesMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("PUT", `/api/articles/${article.id}/regenerate-images`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.detail || "Image regeneration failed");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      invalidateArticleQueries();
+      toast({
+        title: "Images regenerated",
+        description: `"${article.headline}" now has a fresh photo set.`,
+      });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Image regeneration failed",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const grade = overallGrade(article);
   const isReview = article.article_type === "review";
 
@@ -1732,20 +1761,37 @@ function ArticleCard({
                 </Button>
               </div>
             ) : (
-              <Button
-                variant="outline"
-                onClick={requestDelete}
-                disabled={approveMutation.isPending || trashMutation.isPending}
-                className="h-8 rounded-xl border-red-500/30 bg-transparent px-3 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-red-400 hover:bg-red-500/10"
-                data-testid={`button-delete-${article.id}`}
-              >
-                {trashMutation.isPending ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Trash2 className="h-3.5 w-3.5" />
-                )}
-                <span className="ml-1.5">MOVE TO TRASH</span>
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => regenerateImagesMutation.mutate()}
+                  disabled={regenerateImagesMutation.isPending}
+                  className="h-8 rounded-xl border-sky-500/30 bg-transparent px-3 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-sky-300 hover:bg-sky-500/10"
+                  data-testid={`button-regenerate-images-${article.id}`}
+                  title="Re-fetch photos for this article without changing its text"
+                >
+                  {regenerateImagesMutation.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  )}
+                  <span className="ml-1.5">REGENERATE IMAGES</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={requestDelete}
+                  disabled={approveMutation.isPending || trashMutation.isPending}
+                  className="h-8 rounded-xl border-red-500/30 bg-transparent px-3 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-red-400 hover:bg-red-500/10"
+                  data-testid={`button-delete-${article.id}`}
+                >
+                  {trashMutation.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-3.5 w-3.5" />
+                  )}
+                  <span className="ml-1.5">MOVE TO TRASH</span>
+                </Button>
+              </div>
             )}
           </div>
         </div>
