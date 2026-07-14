@@ -7,9 +7,9 @@ social media package, and the human-approval workflow status.
 import enum
 import uuid
 
-from sqlalchemy import Column, DateTime, Enum, Float, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Enum, Float, String, Text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
-from sqlalchemy.sql import func
+from sqlalchemy.sql import func, expression
 
 from app.database import Base
 
@@ -48,6 +48,11 @@ class Article(Base):
     # --- Classification / workflow ---
     article_type = Column(Enum(ArticleType, name="article_type"), nullable=False, default=ArticleType.standard)
     status = Column(Enum(ArticleStatus, name="article_status"), nullable=False, default=ArticleStatus.draft, index=True)
+    # Recycle Bin: trashed articles are hidden from both the admin dashboard's
+    # active views and the public site, without losing their data. They only
+    # reappear via "Restore" (admin) or are permanently removed via
+    # "Delete Permanently" (admin). Never toggled by any public endpoint.
+    is_trash = Column(Boolean, nullable=False, default=False, server_default=expression.false(), index=True)
 
     # --- Core editorial content ---
     headline = Column(String, nullable=False)

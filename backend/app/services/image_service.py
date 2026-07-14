@@ -50,7 +50,7 @@ import urllib.parse
 import requests
 
 from app.config import get_settings
-from app.services.places_service import PropertyListing, fetch_premium_stays
+from app.services.places_service import PropertyListing, fetch_premium_stays, fetch_property_by_name
 
 logger = logging.getLogger("wishnest.image_service")
 
@@ -217,6 +217,44 @@ class _LivePropertyPool:
             self.used.append(listing)
             return proxied, listing
         return None
+
+
+class _SinglePropertyPhotoPool:
+    """
+    Strict, single-business image source for review articles about ONE named
+    property (e.g. "Hyatt Dehradun"). Every slot cycles through that same
+    property's own verified photo pool — never a different business, never
+    DDG/Pexels/Unsplash, never the static safety-net images. If the property
+    has fewer real photos than the article needs, photos are safely repeated
+    (cycled) rather than padded with anything foreign.
+
+    `available` is True only when at least one real photo for the named
+    property was found; callers must fall back to the broader multi-property
+    pipeline entirely when it's False (there is nothing to strictly filter
+    to).
+    """
+
+    def __init__(self, headline: str, location: str | None):
+        self.listing: PropertyListing | None = None
+        try:
+            self.listing = fetch_property_by_name(headline, location)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Single-property lookup raised for %r: %s", headline[:60], exc)
+            self.listing = None
+        self._photos: list[str] = list(self.listing.photo_urls) if self.listing else []
+        self._cursor = 0
+
+    @property
+    def available(self) -> bool:
+        return bool(self._photos)
+
+    def take_next(self) -> str:
+        """Return the proxied URL for the next photo in this property's own
+        pool, cycling (repeating) once every photo has been used at least
+        once. Only call this when `available` is True."""
+        url = self._photos[self._cursor % len(self._photos)]
+        self._cursor += 1
+        return _proxied_url(url)
 
 
 def _build_query(subject: str, location: str | None) -> str:
@@ -723,14 +761,12 @@ def generate_article_images(
     # Shared dedup set — every image URL chosen for this article is recorded
     # here so that no two slots (hero, sections, injected figures) ever get
     # the same photo.  Passed into every _best_image / live-pool call below.
+    # (Not used at all for the strict single-property path below — repeats
+    # are expected and desired there, since every slot must belong to the
+    # same one hotel.)
     used_urls: set[str] = set()
 
-    # -- Live property pool: one Google Places/SerpApi lookup per article,
-    # sized to cover the hero slot plus every heading we expect to fill.
-    # Extra headroom (+3) absorbs listings that fail the photo check.
     full_article_headings = _extract_headings(full_article) if full_article else []
-    expected_slots = 1 + (len(full_article_headings) if full_article_headings else 2)
-    live_pool = _LivePropertyPool(location, limit=expected_slots + 3)
 
     def _property_match_dict(listing: PropertyListing) -> dict:
         return {
@@ -739,6 +775,73 @@ def generate_article_images(
             "review_count": listing.review_count,
             "maps_url": listing.maps_url,
         }
+
+    # -------------------------------------------------------------------
+    # Strict single-property path — review articles about ONE named place
+    # (e.g. "Hyatt Dehradun"). If we can verify real photos for that exact
+    # business, EVERY slot (hero + every section) is filled strictly from
+    # that business's own photo pool, cycling/repeating as needed. No other
+    # business, no DDG/Pexels/Unsplash, no static safety-net image is ever
+    # mixed in for this article.
+    # -------------------------------------------------------------------
+    single_pool: _SinglePropertyPhotoPool | None = None
+    if article_type == "review":
+        single_pool = _SinglePropertyPhotoPool(headline, location)
+
+    if single_pool is not None and single_pool.available:
+        hero_url = single_pool.take_next()
+        logger.info(
+            "Hero image resolved from strict single-property pool %r (%d photo(s) available) for %r",
+            single_pool.listing.name, len(single_pool.listing.photo_urls), headline[:60],
+        )
+
+        section_urls = []
+        heading_images = []
+        slots = full_article_headings if full_article_headings else ["exterior view", "interior ambiance"]
+        for slot in slots:
+            url = single_pool.take_next()
+            section_urls.append(url)
+            if full_article_headings:
+                heading_images.append((slot, url))
+        logger.info(
+            "Filled %d section slot(s) strictly from %r's own photo pool (cycled, zero foreign images)",
+            len(section_urls), single_pool.listing.name,
+        )
+
+        property_matches = [_property_match_dict(single_pool.listing)]
+
+        # Skip straight to HTML injection / final validation below by
+        # reusing the shared tail of the function.
+        injected_count = sum(1 for _, u in heading_images if u)
+        enriched_html: str | None = None
+        if full_article and heading_images:
+            try:
+                enriched_html = _inject_images_into_html(full_article, heading_images)
+                logger.info(
+                    "Injected %d/%d images into article HTML for %r",
+                    injected_count, len(heading_images), headline[:50],
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("HTML injection failed for %r: %s", headline[:50], exc)
+                enriched_html = full_article
+        elif full_article:
+            enriched_html = full_article
+
+        section_urls_clean = [u for u in section_urls if u is not None]
+        return hero_url, section_urls_clean, enriched_html, property_matches
+
+    # -------------------------------------------------------------------
+    # Broader multi-property path — standard articles (roundups covering
+    # many locations/properties) or reviews where the exact named property
+    # couldn't be verified against a live provider. Falls through live pool
+    # -> dynamic search chain -> static safety net per slot, as before.
+    # -------------------------------------------------------------------
+
+    # -- Live property pool: one Google Places/SerpApi lookup per article,
+    # sized to cover the hero slot plus every heading we expect to fill.
+    # Extra headroom (+3) absorbs listings that fail the photo check.
+    expected_slots = 1 + (len(full_article_headings) if full_article_headings else 2)
+    live_pool = _LivePropertyPool(location, limit=expected_slots + 3)
 
     # -- Hero image ----------------------------------------------------------
     # Safe routing: live pool -> dynamic search chain -> static safety net.

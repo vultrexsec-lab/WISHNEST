@@ -22,6 +22,7 @@ REQUIRED_COLS = [
     ("delight_score",       "DOUBLE PRECISION"),
     ("eat_explore_score",   "DOUBLE PRECISION"),
     ("abcde_overall",       "TEXT"),
+    ("is_trash",            "BOOLEAN NOT NULL DEFAULT false"),
 ]
 
 

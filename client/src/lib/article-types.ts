@@ -31,6 +31,7 @@ export interface Article {
   id: string;
   article_type: ArticleType;
   status: ArticleStatus;
+  is_trash: boolean;
   category: string | null;
 
   headline: string;

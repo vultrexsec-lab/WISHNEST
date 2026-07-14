@@ -583,20 +583,26 @@ function AutoSchedulePanel() {
 // ---------------------------------------------------------------------------
 function ArticlePreviewModal({
   article,
+  isTrash = false,
   onClose,
   onApprove,
   onSchedule,
   onDelete,
+  onRestore,
   isApproving,
   isDeleting,
+  isRestoring = false,
 }: {
   article: Article;
+  isTrash?: boolean;
   onClose: () => void;
   onApprove: () => void;
   onSchedule: (date: string) => void;
   onDelete: () => void;
+  onRestore?: () => void;
   isApproving: boolean;
   isDeleting: boolean;
+  isRestoring?: boolean;
 }) {
   const [scheduleDate, setScheduleDate] = useState("");
   const grade = overallGrade(article);
@@ -1213,81 +1219,28 @@ function ArticlePreviewModal({
           {/* ── Sticky action bar at bottom of RIGHT panel ── */}
           <div className="sticky bottom-0 left-0 right-0 border-t border-[#1e1e1e15] bg-white/95 px-4 py-4 backdrop-blur-sm sm:px-10 sm:py-5">
             <div className="mx-auto flex max-w-[780px] flex-wrap items-center gap-3">
-              {article.status === "draft" && (
-                <>
+              {isTrash ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-[#1e1e1e0a] px-4 py-2 [font-family:'Inter',Helvetica] text-[11px] font-medium text-[#1e1e1e]">
+                    <Trash2 className="h-3.5 w-3.5" /> In Recycle Bin
+                  </span>
                   <Button
-                    onClick={onApprove}
-                    disabled={isApproving || isDeleting}
-                    className="h-auto rounded-xl bg-emerald-600 px-6 py-3 [font-family:'Inter',Helvetica] text-[11px] font-semibold tracking-[1.2px] text-white shadow-[0_6px_18px_rgba(16,185,129,0.3)] hover:bg-emerald-500"
+                    variant="outline"
+                    onClick={onRestore}
+                    disabled={isDeleting || isRestoring}
+                    className="h-9 rounded-xl border-emerald-600/40 bg-transparent px-4 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-emerald-700 hover:bg-emerald-600 hover:text-white"
                   >
-                    {isApproving ? (
+                    {isRestoring ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     ) : (
-                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      <RefreshCw className="h-3.5 w-3.5" />
                     )}
-                    <span className="ml-2">APPROVE & PUBLISH</span>
+                    <span className="ml-1.5">RESTORE</span>
                   </Button>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="datetime-local"
-                      value={scheduleDate}
-                      onChange={(e) => setScheduleDate(e.target.value)}
-                      className="h-10 w-[160px] rounded-xl border-[#1e1e1e20] bg-white text-[11px] text-[#1e1e1e] sm:w-[200px]"
-                    />
-                    <Button
-                      variant="outline"
-                      disabled={!scheduleDate || isApproving || isDeleting}
-                      onClick={() => onSchedule(scheduleDate)}
-                      className="h-10 rounded-xl border-emerald-600/40 bg-transparent px-3 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-emerald-700 hover:bg-emerald-600 hover:text-white"
-                    >
-                      <Calendar className="h-3.5 w-3.5" />
-                      <span className="ml-1.5">SCHEDULE</span>
-                    </Button>
-                  </div>
-                  <div className="ml-auto">
-                    <Button
-                      variant="outline"
-                      onClick={onDelete}
-                      disabled={isApproving || isDeleting}
-                      className="h-10 rounded-xl border-red-300 bg-transparent px-4 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-red-500 hover:bg-red-50"
-                    >
-                      {isDeleting ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Trash2 className="h-3.5 w-3.5" />
-                      )}
-                      <span className="ml-1.5">DELETE</span>
-                    </Button>
-                  </div>
-                </>
-              )}
-              {article.status !== "draft" && (
-                <div className="flex flex-wrap items-center gap-3">
-                  {article.status === "approved" && (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-4 py-2 [font-family:'Inter',Helvetica] text-[11px] font-medium text-emerald-700">
-                      <CheckCircle2 className="h-3.5 w-3.5" /> Approved
-                    </span>
-                  )}
-                  {article.status === "scheduled" && (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-50 px-4 py-2 [font-family:'Inter',Helvetica] text-[11px] font-medium text-sky-700">
-                      <Clock className="h-3.5 w-3.5" /> Scheduled for{" "}
-                      {formatDate(article.scheduled_at)}
-                    </span>
-                  )}
-                  {article.status === "published" && (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-[#1e1e1e0a] px-4 py-2 [font-family:'Inter',Helvetica] text-[11px] font-medium text-[#1e1e1e]">
-                      Published {formatDate(article.published_at)}
-                    </span>
-                  )}
-                  <Link href={`/article/${article.id}`}>
-                    <span className="inline-flex cursor-pointer items-center gap-1 [font-family:'Inter',Helvetica] text-[11px] font-medium text-[#2e4a3f] hover:opacity-70">
-                      Open live page <ExternalLink className="h-3 w-3" />
-                    </span>
-                  </Link>
                   <Button
                     variant="outline"
                     onClick={onDelete}
-                    disabled={isApproving || isDeleting}
+                    disabled={isDeleting || isRestoring}
                     className="h-9 rounded-xl border-red-300 bg-transparent px-4 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-red-500 hover:bg-red-50"
                   >
                     {isDeleting ? (
@@ -1295,9 +1248,98 @@ function ArticlePreviewModal({
                     ) : (
                       <Trash2 className="h-3.5 w-3.5" />
                     )}
-                    <span className="ml-1.5">DELETE ARTICLE</span>
+                    <span className="ml-1.5">DELETE PERMANENTLY</span>
                   </Button>
                 </div>
+              ) : (
+                <>
+                  {article.status === "draft" && (
+                    <>
+                      <Button
+                        onClick={onApprove}
+                        disabled={isApproving || isDeleting}
+                        className="h-auto rounded-xl bg-emerald-600 px-6 py-3 [font-family:'Inter',Helvetica] text-[11px] font-semibold tracking-[1.2px] text-white shadow-[0_6px_18px_rgba(16,185,129,0.3)] hover:bg-emerald-500"
+                      >
+                        {isApproving ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                        )}
+                        <span className="ml-2">APPROVE & PUBLISH</span>
+                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="datetime-local"
+                          value={scheduleDate}
+                          onChange={(e) => setScheduleDate(e.target.value)}
+                          className="h-10 w-[160px] rounded-xl border-[#1e1e1e20] bg-white text-[11px] text-[#1e1e1e] sm:w-[200px]"
+                        />
+                        <Button
+                          variant="outline"
+                          disabled={!scheduleDate || isApproving || isDeleting}
+                          onClick={() => onSchedule(scheduleDate)}
+                          className="h-10 rounded-xl border-emerald-600/40 bg-transparent px-3 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-emerald-700 hover:bg-emerald-600 hover:text-white"
+                        >
+                          <Calendar className="h-3.5 w-3.5" />
+                          <span className="ml-1.5">SCHEDULE</span>
+                        </Button>
+                      </div>
+                      <div className="ml-auto">
+                        <Button
+                          variant="outline"
+                          onClick={onDelete}
+                          disabled={isApproving || isDeleting}
+                          className="h-10 rounded-xl border-red-300 bg-transparent px-4 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-red-500 hover:bg-red-50"
+                        >
+                          {isDeleting ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-3.5 w-3.5" />
+                          )}
+                          <span className="ml-1.5">MOVE TO TRASH</span>
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                  {article.status !== "draft" && (
+                    <div className="flex flex-wrap items-center gap-3">
+                      {article.status === "approved" && (
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-4 py-2 [font-family:'Inter',Helvetica] text-[11px] font-medium text-emerald-700">
+                          <CheckCircle2 className="h-3.5 w-3.5" /> Approved
+                        </span>
+                      )}
+                      {article.status === "scheduled" && (
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-50 px-4 py-2 [font-family:'Inter',Helvetica] text-[11px] font-medium text-sky-700">
+                          <Clock className="h-3.5 w-3.5" /> Scheduled for{" "}
+                          {formatDate(article.scheduled_at)}
+                        </span>
+                      )}
+                      {article.status === "published" && (
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-[#1e1e1e0a] px-4 py-2 [font-family:'Inter',Helvetica] text-[11px] font-medium text-[#1e1e1e]">
+                          Published {formatDate(article.published_at)}
+                        </span>
+                      )}
+                      <Link href={`/article/${article.id}`}>
+                        <span className="inline-flex cursor-pointer items-center gap-1 [font-family:'Inter',Helvetica] text-[11px] font-medium text-[#2e4a3f] hover:opacity-70">
+                          Open live page <ExternalLink className="h-3 w-3" />
+                        </span>
+                      </Link>
+                      <Button
+                        variant="outline"
+                        onClick={onDelete}
+                        disabled={isApproving || isDeleting}
+                        className="h-9 rounded-xl border-red-300 bg-transparent px-4 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-red-500 hover:bg-red-50"
+                      >
+                        {isDeleting ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-3.5 w-3.5" />
+                        )}
+                        <span className="ml-1.5">MOVE TO TRASH</span>
+                      </Button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -1310,12 +1352,15 @@ function ArticlePreviewModal({
 // ---------------------------------------------------------------------------
 // Status tabs
 // ---------------------------------------------------------------------------
-const STATUS_TABS: { label: string; value: ArticleStatus | "all" }[] = [
+type DashboardTab = ArticleStatus | "all" | "trash";
+
+const STATUS_TABS: { label: string; value: DashboardTab }[] = [
   { label: "ALL", value: "all" },
   { label: "PENDING REVIEW", value: "draft" },
   { label: "APPROVED", value: "approved" },
   { label: "SCHEDULED", value: "scheduled" },
   { label: "PUBLISHED", value: "published" },
+  { label: "TRASH", value: "trash" },
 ];
 
 const statusStyles: Record<ArticleStatus, string> = {
@@ -1357,7 +1402,24 @@ function StatusBadge({ status }: { status: ArticleStatus }) {
 // ---------------------------------------------------------------------------
 // Article Card
 // ---------------------------------------------------------------------------
-function ArticleCard({ article }: { article: Article }) {
+/** Invalidate every article list/detail query — both the active dashboard
+ * view and the Trash tab — so an approve/trash/restore/delete action is
+ * reflected everywhere instantly instead of only after a hard refresh. */
+function invalidateArticleQueries() {
+  queryClient.invalidateQueries({
+    predicate: (query) =>
+      typeof query.queryKey[0] === "string" &&
+      (query.queryKey[0] as string).startsWith("/api/articles"),
+  });
+}
+
+function ArticleCard({
+  article,
+  isTrash = false,
+}: {
+  article: Article;
+  isTrash?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [scheduleDate, setScheduleDate] = useState("");
@@ -1399,6 +1461,8 @@ function ArticleCard({ article }: { article: Article }) {
     },
   });
 
+  // Permanent, irreversible delete — only ever exposed from the Trash tab's
+  // "Delete Permanently" action.
   const deleteMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("DELETE", `/api/articles/${article.id}`);
@@ -1409,11 +1473,11 @@ function ArticleCard({ article }: { article: Article }) {
       return res;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/articles"] });
+      invalidateArticleQueries();
       setShowPreview(false);
       toast({
-        title: "Article deleted",
-        description: `"${article.headline}" has been removed.`,
+        title: "Article deleted permanently",
+        description: `"${article.headline}" has been removed for good.`,
       });
     },
     onError: (err: Error) => {
@@ -1425,18 +1489,73 @@ function ArticleCard({ article }: { article: Article }) {
     },
   });
 
+  // Reversible — moves the article into the Recycle Bin. Disappears from the
+  // dashboard and the public site immediately, but can be restored later.
+  const trashMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("PUT", `/api/articles/${article.id}/trash`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.detail || "Move to Trash failed");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      invalidateArticleQueries();
+      setShowPreview(false);
+      toast({
+        title: "Moved to Trash",
+        description: `"${article.headline}" was moved to the Recycle Bin.`,
+      });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Move to Trash failed",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Restores a trashed article back to a draft.
+  const restoreMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("PUT", `/api/articles/${article.id}/restore`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.detail || "Restore failed");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      invalidateArticleQueries();
+      setShowPreview(false);
+      toast({
+        title: "Article restored",
+        description: `"${article.headline}" is back in drafts.`,
+      });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Restore failed",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const grade = overallGrade(article);
   const isReview = article.article_type === "review";
 
-  // Drafts are low-stakes (nothing has shipped yet), so deleting one is
-  // one click. Anything already approved/scheduled/published requires an
-  // explicit confirmation dialog since removing it is destructive and
-  // irreversible from the dashboard.
+  // Outside the Trash tab, "Delete" always just moves the article to the
+  // Recycle Bin — a reversible, one-click action. Permanently destroying an
+  // article is only possible from within the Trash tab, where it goes
+  // through an explicit confirmation dialog since it truly cannot be undone.
   const requestDelete = () => {
-    if (article.status === "draft") {
-      deleteMutation.mutate();
-    } else {
+    if (isTrash) {
       setConfirmDeleteOpen(true);
+    } else {
+      trashMutation.mutate();
     }
   };
 
@@ -1445,13 +1564,11 @@ function ArticleCard({ article }: { article: Article }) {
       <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this article?</AlertDialogTitle>
+            <AlertDialogTitle>Delete this article permanently?</AlertDialogTitle>
             <AlertDialogDescription>
-              "{article.headline}" is currently{" "}
-              <strong>{article.status}</strong>
-              {article.status === "published" ? " and live on the site" : ""}.
-              Deleting it removes it permanently from the database — this
-              cannot be undone.
+              "{article.headline}" will be permanently removed from the
+              database. This cannot be undone — restoring it will no longer
+              be possible.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1469,12 +1586,15 @@ function ArticleCard({ article }: { article: Article }) {
       {showPreview && (
         <ArticlePreviewModal
           article={article}
+          isTrash={isTrash}
           onClose={() => setShowPreview(false)}
           onApprove={() => approveMutation.mutate(undefined)}
           onSchedule={(date) => approveMutation.mutate(date)}
           onDelete={requestDelete}
+          onRestore={() => restoreMutation.mutate()}
           isApproving={approveMutation.isPending}
-          isDeleting={deleteMutation.isPending}
+          isDeleting={deleteMutation.isPending || trashMutation.isPending}
+          isRestoring={restoreMutation.isPending}
         />
       )}
 
@@ -1580,20 +1700,51 @@ function ArticleCard({ article }: { article: Article }) {
                 Live preview <ExternalLink className="h-3 w-3" />
               </span>
             </Link>
-            {article.status !== "draft" && (
+            {isTrash ? (
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => restoreMutation.mutate()}
+                  disabled={restoreMutation.isPending || deleteMutation.isPending}
+                  className="h-8 rounded-xl border-emerald-500/30 bg-transparent px-3 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-emerald-300 hover:bg-emerald-500/10"
+                  data-testid={`button-restore-${article.id}`}
+                >
+                  {restoreMutation.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  )}
+                  <span className="ml-1.5">RESTORE</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={requestDelete}
+                  disabled={restoreMutation.isPending || deleteMutation.isPending}
+                  className="h-8 rounded-xl border-red-500/30 bg-transparent px-3 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-red-400 hover:bg-red-500/10"
+                  data-testid={`button-delete-permanently-${article.id}`}
+                >
+                  {deleteMutation.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-3.5 w-3.5" />
+                  )}
+                  <span className="ml-1.5">DELETE PERMANENTLY</span>
+                </Button>
+              </div>
+            ) : (
               <Button
                 variant="outline"
                 onClick={requestDelete}
-                disabled={approveMutation.isPending || deleteMutation.isPending}
+                disabled={approveMutation.isPending || trashMutation.isPending}
                 className="h-8 rounded-xl border-red-500/30 bg-transparent px-3 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-red-400 hover:bg-red-500/10"
                 data-testid={`button-delete-${article.id}`}
               >
-                {deleteMutation.isPending ? (
+                {trashMutation.isPending ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
                   <Trash2 className="h-3.5 w-3.5" />
                 )}
-                <span className="ml-1.5">DELETE</span>
+                <span className="ml-1.5">MOVE TO TRASH</span>
               </Button>
             )}
           </div>
@@ -2080,7 +2231,7 @@ function ListField({
 // Main page
 // ---------------------------------------------------------------------------
 export const ReviewDashboard = (): JSX.Element => {
-  const [activeTab, setActiveTab] = useState<ArticleStatus | "all">("all");
+  const [activeTab, setActiveTab] = useState<DashboardTab>("all");
   const { logout } = useAuth();
   const [, navigate] = useLocation();
 
@@ -2099,9 +2250,25 @@ export const ReviewDashboard = (): JSX.Element => {
     queryKey: ["/api/articles"],
   });
 
-  const filtered = (articles ?? []).filter(
-    (a) => activeTab === "all" || a.status === activeTab,
-  );
+  // Trashed articles are excluded from the query above by the backend, so
+  // the Recycle Bin gets its own lazily-fetched query — only hit once the
+  // admin actually opens the Trash tab.
+  const {
+    data: trashedArticles,
+    isLoading: isTrashLoading,
+    isError: isTrashError,
+    error: trashError,
+  } = useQuery<Article[]>({
+    queryKey: ["/api/articles?trash=true"],
+    enabled: activeTab === "trash",
+  });
+
+  const isViewingTrash = activeTab === "trash";
+  const filtered = isViewingTrash
+    ? trashedArticles ?? []
+    : (articles ?? []).filter(
+        (a) => activeTab === "all" || a.status === activeTab,
+      );
 
   const counts = (articles ?? []).reduce<Record<string, number>>((acc, a) => {
     acc[a.status] = (acc[a.status] ?? 0) + 1;
@@ -2175,7 +2342,7 @@ export const ReviewDashboard = (): JSX.Element => {
                 }`}
               >
                 {tab.label}
-                {tab.value !== "all" && counts[tab.value] ? (
+                {tab.value !== "all" && tab.value !== "trash" && counts[tab.value] ? (
                   <span className="ml-1.5 opacity-70">
                     ({counts[tab.value]})
                   </span>
@@ -2183,37 +2350,50 @@ export const ReviewDashboard = (): JSX.Element => {
                 {tab.value === "all" && articles?.length ? (
                   <span className="ml-1.5 opacity-70">({articles.length})</span>
                 ) : null}
+                {tab.value === "trash" && trashedArticles?.length ? (
+                  <span className="ml-1.5 opacity-70">
+                    ({trashedArticles.length})
+                  </span>
+                ) : null}
               </button>
             ))}
           </div>
 
-          {isLoading && (
+          {(isViewingTrash ? isTrashLoading : isLoading) && (
             <div className="flex items-center justify-center gap-2 py-24 text-white/50">
               <Loader2 className="h-4 w-4 animate-spin" />
               <span className="[font-family:'Inter',Helvetica] text-[13px]">
-                Loading articles…
+                {isViewingTrash ? "Loading Recycle Bin…" : "Loading articles…"}
               </span>
             </div>
           )}
 
-          {isError && (
+          {(isViewingTrash ? isTrashError : isError) && (
             <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-6 [font-family:'Inter',Helvetica] text-[13px] text-red-300">
-              Failed to load articles: {(error as Error).message}
+              Failed to load articles:{" "}
+              {((isViewingTrash ? trashError : error) as Error).message}
             </div>
           )}
 
-          {!isLoading && !isError && filtered.length === 0 && (
-            <div className="rounded-xl border border-dashed border-white/10 py-24 text-center">
-              <p className="[font-family:'Inter',Helvetica] text-[13px] text-white/40">
-                No articles in this category yet. Run the research pipeline to
-                generate drafts.
-              </p>
-            </div>
-          )}
+          {!(isViewingTrash ? isTrashLoading : isLoading) &&
+            !(isViewingTrash ? isTrashError : isError) &&
+            filtered.length === 0 && (
+              <div className="rounded-xl border border-dashed border-white/10 py-24 text-center">
+                <p className="[font-family:'Inter',Helvetica] text-[13px] text-white/40">
+                  {isViewingTrash
+                    ? "The Recycle Bin is empty."
+                    : "No articles in this category yet. Run the research pipeline to generate drafts."}
+                </p>
+              </div>
+            )}
 
           <div className="space-y-6">
             {filtered.map((article) => (
-              <ArticleCard key={article.id} article={article} />
+              <ArticleCard
+                key={article.id}
+                article={article}
+                isTrash={isViewingTrash}
+              />
             ))}
           </div>
         </div>

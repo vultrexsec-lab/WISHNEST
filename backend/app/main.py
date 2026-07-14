@@ -43,6 +43,7 @@ def _sync_schema() -> None:
         ("delight_score",       "DOUBLE PRECISION"),
         ("eat_explore_score",   "DOUBLE PRECISION"),
         ("abcde_overall",       "TEXT"),
+        ("is_trash",            "BOOLEAN NOT NULL DEFAULT false"),
     ]
     log = logging.getLogger("wishnest.schema")
     try:

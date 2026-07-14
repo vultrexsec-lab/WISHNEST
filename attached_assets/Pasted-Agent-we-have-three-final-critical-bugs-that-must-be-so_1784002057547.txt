@@ -1,0 +1,21 @@
+Agent, we have three final critical bugs that must be solved in a single pass before this project is production-ready. Please read and execute these instructions carefully:
+
+No External Fallback Images (Strict Filter):
+When fetching images for a specific hotel listing (e.g., 'Hyatt Dehradun') via Google Places/SerpApi, you must ONLY use the images returned for that specific hotel. If the listing has fewer images than required for the article, do NOT fetch random/generic mountain/tent placeholders to fill the gap. Instead, safely cycle through the same verified hotel photos pool so that 100% of the images belong strictly to that hotel.
+
+Fix Article Disappearing / Caching Bug (100% Live Visibility):
+Users are reporting that approved articles randomly disappear from the frontend and only show up after logging into the admin dashboard or hard-refreshing.
+
+Ensure that once an article is 'Approved', its database state transitions immediately to a clean, immutable public state (e.g., status: "published").
+
+Force-disable aggressive caching on the frontend fetch request for public articles. Ensure the API endpoint (e.g., /api/articles) always performs a live, dynamic database query with cache: 'no-store' or revalidate: 0 (Next.js/Vercel standard) so that approved articles are 100% visible to public visitors instantly, without requiring admin session authentication.
+
+Implement 'Move to Trash / Recycle Bin' Feature:
+
+Update the backend Article database schema to support an is_trash: boolean (default: false) or status: "TRASH".
+
+On the admin dashboard, change the direct 'Delete' action to a 'Move to Trash' action. Articles in Trash must immediately disappear from both the active dashboard and the public website frontend.
+
+Add a clean 'Recycle Bin / Trash' tab in the admin panel. Inside this tab, show all trashed articles with two clear options: 'Restore' (sets is_trash to false, restoring to draft) and 'Delete Permanently' (which completely wipes the record from the database).
+
+Execute these backend and frontend logic changes now, verify no scorecard layouts are touched, and push to GitHub.

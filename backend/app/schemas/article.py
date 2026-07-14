@@ -152,6 +152,7 @@ class ArticleOut(ArticleBase):
 
     id: uuid.UUID
     status: ArticleStatus
+    is_trash: bool = False
     scheduled_at: Optional[datetime] = None
     published_at: Optional[datetime] = None
     created_at: datetime

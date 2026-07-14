@@ -51,6 +51,9 @@ export async function apiRequest(
     headers: authHeaders(data ? { "Content-Type": "application/json" } : {}),
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
+    // Never let the browser's HTTP cache serve a stale mutation response —
+    // approvals/deletes/trash actions must always hit the live database.
+    cache: "no-store",
   });
 
   if (res.status === 401) {
@@ -70,6 +73,10 @@ export const getQueryFn: <T>(options: {
     const res = await fetchWithTimeout(apiUrl(queryKey[0] as string), {
       headers: authHeaders(),
       credentials: "include",
+      // Force a live, dynamic fetch every time — articles (and their
+      // approval status) must be 100% visible to public visitors instantly,
+      // never served from a stale browser/CDN cache.
+      cache: "no-store",
     });
 
     if (res.status === 401) {
@@ -86,8 +93,13 @@ export const queryClient = new QueryClient({
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
-      refetchOnWindowFocus: false,
-      staleTime: Infinity,
+      // Re-check with the server whenever the user returns to the tab or
+      // remounts a page — with staleTime: Infinity, an approved article
+      // would only ever appear after a full hard refresh, which is exactly
+      // the "articles randomly disappear" bug this fixes.
+      refetchOnWindowFocus: true,
+      refetchOnMount: true,
+      staleTime: 0,
       retry: false,
     },
     mutations: {

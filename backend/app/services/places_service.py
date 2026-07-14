@@ -42,6 +42,16 @@ class PropertyListing:
     review_count: int | None
     address: str | None
     maps_url: str | None
+    # Every other real photo belonging to THIS SAME listing (may be empty if
+    # the provider only ever returns one). Used for review articles about a
+    # single named property, so every image slot in the article can be
+    # strictly filled from this one business's own photo pool instead of
+    # mixing in other businesses or generic stock photos.
+    photo_urls: list[str] = None  # type: ignore[assignment]
+
+    def __post_init__(self):
+        if self.photo_urls is None:
+            self.photo_urls = [self.photo_url] if self.photo_url else []
 
 
 def _log_missing_key_notice() -> None:
@@ -183,6 +193,165 @@ def _google_places_search(location: str, limit: int) -> list[PropertyListing]:
     except Exception as exc:  # noqa: BLE001
         logger.warning("Google Places search failed for %r: %s", location, exc)
         return []
+
+
+def _google_place_details_photos(place_id: str, api_key: str, max_photos: int) -> list[str]:
+    """
+    Fetch up to *max_photos* real photo URLs belonging to ONE specific
+    Google Place (via Place Details), resolved to key-free CDN URLs.
+    Returns [] on any failure — callers must never publish a photo from a
+    different business as a substitute.
+    """
+    try:
+        resp = requests.get(
+            "https://maps.googleapis.com/maps/api/place/details/json",
+            params={"place_id": place_id, "fields": "photo", "key": api_key},
+            timeout=_REQUEST_TIMEOUT,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("status") != "OK":
+            return []
+        photos = (data.get("result") or {}).get("photos") or []
+        urls: list[str] = []
+        for photo in photos[:max_photos]:
+            photo_ref = photo.get("photo_reference")
+            if not photo_ref:
+                continue
+            url = _resolve_google_photo_url(photo_ref, api_key)
+            if url:
+                urls.append(url)
+        return urls
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Google Place Details photo fetch failed for place_id=%r: %s", place_id, exc)
+        return []
+
+
+def fetch_property_by_name(
+    name: str, location: str | None = None, max_photos: int = 10,
+) -> PropertyListing | None:
+    """
+    Look up ONE specific, named business (e.g. "Hyatt Dehradun") and return a
+    PropertyListing carrying every real photo we can find that belongs to
+    THAT SAME business (via Google Place Details, or a single SerpApi
+    thumbnail as a lesser fallback).
+
+    This is the strict, single-property counterpart to `fetch_premium_stays`
+    (which returns MANY DIFFERENT businesses for a location). It exists so a
+    review article about one named property never mixes in another
+    business's photos or a generic stock image — every slot cycles through
+    this one listing's own verified photo pool instead.
+
+    Returns None (never raises) if the property can't be matched or has no
+    real photos at all — callers must treat that as "no strict pool
+    available" and fall back to their own broader/degraded path.
+    """
+    name = (name or "").strip()
+    if not name:
+        return None
+    query = f"{name} {location or ''}".strip()
+
+    settings = get_settings()
+
+    # -- Google Places: Text Search for the exact business, then Place
+    # Details to pull its FULL photo gallery (not just the first photo).
+    if settings.google_places_api_key:
+        api_key = settings.google_places_api_key
+        try:
+            resp = requests.get(
+                "https://maps.googleapis.com/maps/api/place/textsearch/json",
+                params={"query": query, "key": api_key},
+                timeout=_REQUEST_TIMEOUT,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            results = data.get("results") or []
+            if data.get("status") == "OK" and results:
+                place = results[0]
+                place_id = place.get("place_id")
+                photo_urls = (
+                    _google_place_details_photos(place_id, api_key, max_photos)
+                    if place_id else []
+                )
+                if not photo_urls:
+                    # Details lookup failed/empty — fall back to the single
+                    # photo already present on the text-search result, if any.
+                    photos = place.get("photos") or []
+                    if photos and photos[0].get("photo_reference"):
+                        single = _resolve_google_photo_url(photos[0]["photo_reference"], api_key)
+                        if single:
+                            photo_urls = [single]
+                if photo_urls:
+                    logger.info(
+                        "Strict single-property photo pool resolved for %r via Google Places: %d photo(s)",
+                        name, len(photo_urls),
+                    )
+                    return PropertyListing(
+                        name=place.get("name") or name,
+                        photo_url=photo_urls[0],
+                        rating=_coerce_rating(place.get("rating")),
+                        review_count=_coerce_review_count(place.get("user_ratings_total")),
+                        address=place.get("formatted_address"),
+                        maps_url=(
+                            f"https://www.google.com/maps/place/?q=place_id:{place_id}"
+                            if place_id else None
+                        ),
+                        photo_urls=photo_urls,
+                    )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Google Places single-property lookup failed for %r: %s", name, exc)
+
+    # -- SerpApi fallback: usually only a single thumbnail per listing, but
+    # that single real photo is still strictly "this same hotel" — the
+    # caller cycles through it rather than mixing in anything else.
+    if settings.serpapi_key:
+        try:
+            resp = requests.get(
+                "https://serpapi.com/search.json",
+                params={
+                    "engine": "google_maps",
+                    "q": query,
+                    "type": "search",
+                    "api_key": settings.serpapi_key,
+                },
+                timeout=_REQUEST_TIMEOUT,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            results = data.get("local_results") or data.get("place_results") or []
+            if isinstance(results, dict):
+                results = [results]
+            if results:
+                place = results[0]
+                thumbnail = place.get("thumbnail") or place.get("photo") or place.get("serpapi_thumbnail")
+                # Some SerpApi responses include a richer "photos" array.
+                extra = place.get("photos") or []
+                extra_urls = [
+                    p.get("thumbnail") or p.get("image") for p in extra
+                    if isinstance(p, dict) and (p.get("thumbnail") or p.get("image"))
+                ][:max_photos]
+                photo_urls = [u for u in ([thumbnail] + extra_urls) if u]
+                # De-dup while preserving order.
+                seen: set[str] = set()
+                photo_urls = [u for u in photo_urls if not (u in seen or seen.add(u))]
+                if photo_urls:
+                    logger.info(
+                        "Strict single-property photo pool resolved for %r via SerpApi: %d photo(s)",
+                        name, len(photo_urls),
+                    )
+                    return PropertyListing(
+                        name=place.get("title") or name,
+                        photo_url=photo_urls[0],
+                        rating=_coerce_rating(place.get("rating")),
+                        review_count=_coerce_review_count(place.get("reviews")),
+                        address=place.get("address"),
+                        maps_url=place.get("link"),
+                        photo_urls=photo_urls,
+                    )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("SerpApi single-property lookup failed for %r: %s", name, exc)
+
+    return None
 
 
 def _serpapi_maps_search(location: str, limit: int) -> list[PropertyListing]:

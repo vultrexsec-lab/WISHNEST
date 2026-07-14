@@ -1,11 +1,14 @@
 """
-GET  /api/articles              - list articles; optional ?status=, ?category=, ?search=
-GET  /api/articles/{id}         - fetch a single article
-PUT  /api/approve-article/{id}  - human approval + optional scheduling (registered in main.py)
+GET    /api/articles              - list articles; optional ?status=, ?category=, ?search=, ?trash= (admin only)
+GET    /api/articles/{id}         - fetch a single article
+PUT    /api/approve-article/{id}  - human approval + optional scheduling (registered in main.py)
+PUT    /api/articles/{id}/trash   - move an article to the Recycle Bin (admin only)
+PUT    /api/articles/{id}/restore - restore an article out of the Recycle Bin back to draft (admin only)
+DELETE /api/articles/{id}         - permanently delete an article (admin only)
 """
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -18,26 +21,49 @@ router = APIRouter(tags=["articles"])
 
 PUBLIC_STATUSES = [ArticleStatus.approved, ArticleStatus.scheduled, ArticleStatus.published]
 
+# Every response that serves live article data must never be cached by the
+# browser, a CDN, or an intermediate proxy — approved/published articles
+# must be visible instantly everywhere, not just after a hard refresh.
+_NO_STORE_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+}
+
 
 @router.get("/api/articles", response_model=list[ArticleOut])
 def list_articles(
+    response: Response,
     status: ArticleStatus | None = None,
     category: str | None = None,
     search: str | None = None,
+    trash: bool = False,
     db: Session = Depends(get_db),
     admin: str | None = Depends(optional_admin),
 ):
+    response.headers.update(_NO_STORE_HEADERS)
+
     query = db.query(Article)
 
-    # --- Visibility ---
-    if admin:
-        if status is not None:
-            query = query.filter(Article.status == status)
+    # --- Recycle Bin visibility ---
+    # Trashed articles never appear anywhere — public site or admin's normal
+    # tabs — except in the dedicated Trash tab, which only an authenticated
+    # admin may request via ?trash=true.
+    if trash:
+        if not admin:
+            raise HTTPException(status_code=403, detail="Admin access required to view the Recycle Bin.")
+        query = query.filter(Article.is_trash.is_(True))
     else:
-        if status is not None and status in PUBLIC_STATUSES:
-            query = query.filter(Article.status == status)
+        query = query.filter(Article.is_trash.is_(False))
+
+        # --- Status visibility ---
+        if admin:
+            if status is not None:
+                query = query.filter(Article.status == status)
         else:
-            query = query.filter(Article.status.in_(PUBLIC_STATUSES))
+            if status is not None and status in PUBLIC_STATUSES:
+                query = query.filter(Article.status == status)
+            else:
+                query = query.filter(Article.status.in_(PUBLIC_STATUSES))
 
     # --- Category filter ---
     if category:
@@ -70,14 +96,52 @@ def list_articles(
 @router.get("/api/articles/{article_id}", response_model=ArticleOut)
 def get_article(
     article_id: uuid.UUID,
+    response: Response,
     db: Session = Depends(get_db),
     admin: str | None = Depends(optional_admin),
 ):
+    response.headers.update(_NO_STORE_HEADERS)
+
     article = db.query(Article).filter(Article.id == article_id).first()
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
-    if not admin and article.status not in PUBLIC_STATUSES:
+    if not admin and (article.is_trash or article.status not in PUBLIC_STATUSES):
         raise HTTPException(status_code=404, detail="Article not found")
+    return article
+
+
+@router.put("/api/articles/{article_id}/trash", response_model=ArticleOut)
+def trash_article(
+    article_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """Move an article to the Recycle Bin. It immediately disappears from
+    both the active dashboard tabs and the public site, but is not deleted —
+    it can be restored later."""
+    article = db.query(Article).filter(Article.id == article_id).first()
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+    article.is_trash = True
+    db.commit()
+    db.refresh(article)
+    return article
+
+
+@router.put("/api/articles/{article_id}/restore", response_model=ArticleOut)
+def restore_article(
+    article_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """Restore a trashed article back to the active dashboard as a draft."""
+    article = db.query(Article).filter(Article.id == article_id).first()
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+    article.is_trash = False
+    article.status = ArticleStatus.draft
+    db.commit()
+    db.refresh(article)
     return article
 
 
@@ -87,6 +151,8 @@ def delete_article(
     db: Session = Depends(get_db),
     admin: str = Depends(require_admin),
 ):
+    """Permanently wipe an article's record from the database. Irreversible —
+    intended to be called from the Recycle Bin's "Delete Permanently" action."""
     article = db.query(Article).filter(Article.id == article_id).first()
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
