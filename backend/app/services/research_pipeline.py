@@ -226,6 +226,49 @@ class ResearchPipelineError(RuntimeError):
     pass
 
 
+def regenerate_article_images(article: Article, db: Session) -> bool:
+    """
+    Re-run the image pipeline for an ALREADY-SAVED article (as opposed to the
+    creation-time pass in `run_research_pipeline`). Used by the admin
+    "regenerate images" action so a review article that was originally
+    published with a thin/duplicated photo set (e.g. because no live
+    provider was configured yet) can be refreshed once real data is
+    available, without re-running the (expensive, non-idempotent) research +
+    drafting steps.
+
+    Returns True if the article row was changed and committed.
+    """
+    hero_url, section_urls, enriched_html, property_matches = generate_article_images(
+        headline=article.headline,
+        focus_keyword=article.focus_keyword,
+        location=article.location,
+        article_type=article.article_type.value,
+        full_article=article.full_article,
+    )
+    html_changed = bool(enriched_html and enriched_html != article.full_article)
+    ratings_changed = _apply_live_ratings(article, property_matches)
+    patched_any = bool(hero_url or section_urls or html_changed or ratings_changed)
+    if hero_url or section_urls:
+        article.hero_image_url = hero_url
+        article.section_image_urls = section_urls or None
+    if html_changed:
+        article.full_article = enriched_html
+    if patched_any:
+        db.add(article)
+        db.commit()
+        db.refresh(article)
+        logger.info(
+            "Regenerated images for %r — hero: %s, sections: %d, html_enriched: %s",
+            article.headline[:50],
+            "yes" if hero_url else "no",
+            len(section_urls),
+            "yes" if html_changed else "no",
+        )
+    else:
+        logger.info("Image regeneration found nothing new for %r.", article.headline[:50])
+    return patched_any
+
+
 def run_research_pipeline(brief: str, db: Session, category: str | None = None) -> list[Article]:
     # ── 1. Research sources via Firecrawl ────────────────────────────────────
     try:

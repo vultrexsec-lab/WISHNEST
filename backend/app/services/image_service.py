@@ -248,10 +248,23 @@ class _SinglePropertyPhotoPool:
     def available(self) -> bool:
         return bool(self._photos)
 
+    @property
+    def has_unused(self) -> bool:
+        """True while at least one of this property's real photos has never
+        been handed out yet — callers should prefer topping up from a
+        different source (a themed search for the specific slot, e.g.
+        "pool"/"dining"/"room") over calling `take_next()` and silently
+        repeating a photo the reader already saw under a different caption."""
+        return self._cursor < len(self._photos)
+
     def take_next(self) -> str:
-        """Return the proxied URL for the next photo in this property's own
-        pool, cycling (repeating) once every photo has been used at least
-        once. Only call this when `available` is True."""
+        """Return the proxied URL for the next UNUSED photo in this
+        property's own pool. Only repeats (cycles) once every real photo has
+        already been handed out at least once — callers should check
+        `has_unused` first and prefer a themed search fallback instead of
+        forcing a repeat when there's a richer source available (e.g. Google
+        Places not configured but DDG/Pexels/Unsplash are). Only call this
+        when `available` is True."""
         url = self._photos[self._cursor % len(self._photos)]
         self._cursor += 1
         return _proxied_url(url)
@@ -789,23 +802,53 @@ def generate_article_images(
         single_pool = _SinglePropertyPhotoPool(headline, location)
 
     if single_pool is not None and single_pool.available:
+        property_name = single_pool.listing.name
         hero_url = single_pool.take_next()
+        used_urls.add(hero_url)
         logger.info(
             "Hero image resolved from strict single-property pool %r (%d photo(s) available) for %r",
-            single_pool.listing.name, len(single_pool.listing.photo_urls), headline[:60],
+            property_name, len(single_pool.listing.photo_urls), headline[:60],
         )
 
         section_urls = []
         heading_images = []
         slots = full_article_headings if full_article_headings else ["exterior view", "interior ambiance"]
+        themed_fill_count = 0
         for slot in slots:
-            url = single_pool.take_next()
+            if single_pool.has_unused:
+                # A real, never-shown-yet photo of THIS property is still
+                # available — always prefer it over a themed search so we
+                # exhaust the property's own gallery before touching anything
+                # else.
+                url = single_pool.take_next()
+            else:
+                # Every real photo of this property has already been used
+                # once. Rather than silently repeating one under a new
+                # caption (e.g. the same exterior shot captioned "the
+                # infinity pool"), try a themed search anchored on the
+                # property's own name + this specific slot (pool/dining/
+                # room view/etc) so the reader sees a distinct, on-topic
+                # image instead of an obvious duplicate.
+                time.sleep(0.2)
+                themed_query = _build_query(f"{property_name} {slot}", location)
+                try:
+                    url = _best_image(themed_query, location=location, used_urls=used_urls)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Themed search raised for slot %r on %r: %s", slot[:50], property_name, exc)
+                    url = None
+                if url is not None:
+                    themed_fill_count += 1
+                    used_urls.add(url)
+                else:
+                    # No distinct image found anywhere — cycling a repeat is
+                    # still preferable to leaving the slot blank.
+                    url = single_pool.take_next()
             section_urls.append(url)
             if full_article_headings:
                 heading_images.append((slot, url))
         logger.info(
-            "Filled %d section slot(s) strictly from %r's own photo pool (cycled, zero foreign images)",
-            len(section_urls), single_pool.listing.name,
+            "Filled %d section slot(s) for %r: %d from the property's own gallery, %d via themed search top-up",
+            len(section_urls), property_name, len(section_urls) - themed_fill_count, themed_fill_count,
         )
 
         property_matches = [_property_match_dict(single_pool.listing)]

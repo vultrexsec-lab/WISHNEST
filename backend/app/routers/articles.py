@@ -1,10 +1,11 @@
 """
-GET    /api/articles              - list articles; optional ?status=, ?category=, ?search=, ?trash= (admin only)
-GET    /api/articles/{id}         - fetch a single article
-PUT    /api/approve-article/{id}  - human approval + optional scheduling (registered in main.py)
-PUT    /api/articles/{id}/trash   - move an article to the Recycle Bin (admin only)
-PUT    /api/articles/{id}/restore - restore an article out of the Recycle Bin back to draft (admin only)
-DELETE /api/articles/{id}         - permanently delete an article (admin only)
+GET    /api/articles                       - list articles; optional ?status=, ?category=, ?search=, ?trash= (admin only)
+GET    /api/articles/{id}                  - fetch a single article
+PUT    /api/approve-article/{id}           - human approval + optional scheduling (registered in main.py)
+PUT    /api/articles/{id}/trash            - move an article to the Recycle Bin (admin only)
+PUT    /api/articles/{id}/restore          - restore an article out of the Recycle Bin back to draft (admin only)
+PUT    /api/articles/{id}/regenerate-images - re-fetch hero/section images for an existing article (admin only)
+DELETE /api/articles/{id}                  - permanently delete an article (admin only)
 """
 import uuid
 
@@ -16,6 +17,7 @@ from app.database import get_db
 from app.dependencies import optional_admin, require_admin
 from app.models.article import Article, ArticleStatus
 from app.schemas.article import ArticleOut
+from app.services.research_pipeline import regenerate_article_images
 
 router = APIRouter(tags=["articles"])
 
@@ -141,6 +143,28 @@ def restore_article(
     article.is_trash = False
     article.status = ArticleStatus.draft
     db.commit()
+    db.refresh(article)
+    return article
+
+
+@router.put("/api/articles/{article_id}/regenerate-images", response_model=ArticleOut)
+def regenerate_images(
+    article_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """
+    Re-run the live photo pipeline for one existing article (e.g. because it
+    was originally generated before a live photo provider was configured, or
+    ended up with a thin/duplicated gallery). Does not touch the article
+    text — only hero_image_url, section_image_urls, the injected <figure>
+    blocks in full_article, and (if live ratings are available) the ABCDE
+    scores.
+    """
+    article = db.query(Article).filter(Article.id == article_id).first()
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+    regenerate_article_images(article, db)
     db.refresh(article)
     return article
 
