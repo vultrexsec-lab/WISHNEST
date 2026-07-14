@@ -237,7 +237,10 @@ class _SinglePropertyPhotoPool:
     def __init__(self, headline: str, location: str | None):
         self.listing: PropertyListing | None = None
         try:
-            self.listing = fetch_property_by_name(headline, location)
+            # 15 (not the bare minimum 10) gives enough headroom for the
+            # hero slot + at least MIN_SINGLE_PROPERTY_IMAGES section slots
+            # even after a couple of photos get skipped as duplicates.
+            self.listing = fetch_property_by_name(headline, location, max_photos=15)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Single-property lookup raised for %r: %s", headline[:60], exc)
             self.listing = None
@@ -256,6 +259,13 @@ class _SinglePropertyPhotoPool:
         "pool"/"dining"/"room") over calling `take_next()` and silently
         repeating a photo the reader already saw under a different caption."""
         return self._cursor < len(self._photos)
+
+    @property
+    def unused_count(self) -> int:
+        """How many of this property's real photos have never been handed
+        out yet. Used to pad the section-image grid with extra real photos
+        (beyond one per heading) up to the article's minimum image target."""
+        return max(0, len(self._photos) - self._cursor)
 
     def take_next(self) -> str:
         """Return the proxied URL for the next UNUSED photo in this
@@ -655,6 +665,13 @@ _HEADING_RE = re.compile(
 
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
 
+# Minimum total real photos (hero + sections combined) a strict single-
+# property review article should carry. Short articles have fewer headings
+# than this, so extra real photos from the property's own gallery are
+# appended as un-captioned/extra section slots to reach the floor rather
+# than under-using an otherwise rich photo pool.
+MIN_SINGLE_PROPERTY_IMAGES = 10
+
 
 def _strip_tags(markup: str) -> str:
     """Remove all HTML tags from *markup* and collapse whitespace."""
@@ -850,6 +867,27 @@ def generate_article_images(
             "Filled %d section slot(s) for %r: %d from the property's own gallery, %d via themed search top-up",
             len(section_urls), property_name, len(section_urls) - themed_fill_count, themed_fill_count,
         )
+
+        # -- Pad with extra real photos up to MIN_SINGLE_PROPERTY_IMAGES --
+        # Short articles (few headings) would otherwise under-use a rich
+        # gallery — e.g. a property with 15 verified photos but only 4
+        # headings previously surfaced just 5 images total (hero + 4). These
+        # extra slots have no associated heading, so they are appended to
+        # section_urls only (no <figure> injection into the article body,
+        # since there's no heading position to inject after) and still
+        # strictly belong to this same verified property.
+        total_so_far = 1 + len(section_urls)  # hero + sections filled above
+        padded_count = 0
+        while total_so_far < MIN_SINGLE_PROPERTY_IMAGES and single_pool.has_unused:
+            section_urls.append(single_pool.take_next())
+            total_so_far += 1
+            padded_count += 1
+        if padded_count:
+            logger.info(
+                "Padded %r with %d extra real photo(s) from its own gallery to reach the %d-image floor "
+                "(final total: %d).",
+                property_name, padded_count, MIN_SINGLE_PROPERTY_IMAGES, total_so_far,
+            )
 
         property_matches = [_property_match_dict(single_pool.listing)]
 

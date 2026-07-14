@@ -20,6 +20,7 @@ Provider chain
      this module never raises and never fabricates a listing.
 """
 import logging
+import re
 import urllib.parse
 from dataclasses import dataclass
 
@@ -31,6 +32,44 @@ logger = logging.getLogger("wishnest.places_service")
 
 _REQUEST_TIMEOUT = 10
 _warned_missing_key = False
+
+# Minimum pixel dimension we ask for on every property photo — applies to
+# both the Google Places Photo endpoint (`maxwidth`/`maxheight` params) and
+# SerpApi/lh3.googleusercontent.com URLs (rewritten `=wNNN-hNNN-...` size
+# suffix). 1600px matches the Google Places Photo call already used in
+# `_resolve_google_photo_url` and is large enough for full-width hero/section
+# images without visible upscaling artifacts.
+_TARGET_PHOTO_SIZE = 1600
+
+# lh3.googleusercontent.com (and other googleusercontent.com) photo URLs encode
+# the requested size as a trailing "=wNNN-hNNN-<flags>" (or "=sNNN-<flags>")
+# segment. SerpApi's google_maps_photos / google_maps thumbnails come back
+# hardcoded to small sizes (e.g. "=w203-h135-k-no") — rewriting just the
+# numeric width/height to our target size returns the SAME real photo at full
+# resolution instead of a thumbnail crop, with no extra API calls.
+_LH3_SIZE_RE = re.compile(r"=w\d+-h\d+(-[a-zA-Z0-9-]+)?$")
+_LH3_SIZE_RE_S = re.compile(r"=s\d+(-[a-zA-Z0-9-]+)?$")
+
+
+def _upscale_lh3_photo_url(url: str | None, size: int = _TARGET_PHOTO_SIZE) -> str | None:
+    """
+    Rewrite a googleusercontent.com (lh3/lh5/...) photo URL's trailing size
+    segment to request *size* pixels instead of whatever (often tiny)
+    thumbnail dimensions the provider hardcoded. Leaves non-googleusercontent
+    URLs and URLs with no recognizable size suffix untouched — this is a
+    best-effort quality upgrade, never a correctness requirement.
+    """
+    if not url or "googleusercontent.com" not in url:
+        return url
+    if _LH3_SIZE_RE.search(url):
+        return _LH3_SIZE_RE.sub(f"=w{size}-h{size}-k-no", url)
+    if _LH3_SIZE_RE_S.search(url):
+        return _LH3_SIZE_RE_S.sub(f"=s{size}", url)
+    # No recognizable size suffix at all — append one rather than leaving the
+    # provider's implicit (often small) default in place.
+    if "=" not in url.rsplit("/", 1)[-1]:
+        return f"{url}=w{size}-h{size}-k-no"
+    return url
 
 
 @dataclass
@@ -253,7 +292,7 @@ def _serpapi_maps_photos_gallery(data_id: str, api_key: str, max_photos: int) ->
         for photo in photos[:max_photos]:
             url = photo.get("thumbnail") or photo.get("image")
             if url:
-                urls.append(url)
+                urls.append(_upscale_lh3_photo_url(url) or url)
         return urls
     except Exception as exc:  # noqa: BLE001
         logger.warning("SerpApi google_maps_photos lookup failed for data_id=%r: %s", data_id, exc)
@@ -261,7 +300,7 @@ def _serpapi_maps_photos_gallery(data_id: str, api_key: str, max_photos: int) ->
 
 
 def fetch_property_by_name(
-    name: str, location: str | None = None, max_photos: int = 10,
+    name: str, location: str | None = None, max_photos: int = 15,
 ) -> PropertyListing | None:
     """
     Look up ONE specific, named business (e.g. "Hyatt Dehradun") and return a
@@ -360,7 +399,9 @@ def fetch_property_by_name(
                 results = [results]
             if results:
                 place = results[0]
-                thumbnail = place.get("thumbnail") or place.get("photo") or place.get("serpapi_thumbnail")
+                thumbnail = _upscale_lh3_photo_url(
+                    place.get("thumbnail") or place.get("photo") or place.get("serpapi_thumbnail")
+                )
                 data_id = place.get("data_id")
 
                 photo_urls: list[str] = []
@@ -375,7 +416,8 @@ def fetch_property_by_name(
                     # carried, still strictly belonging to this business.
                     extra = place.get("photos") or []
                     extra_urls = [
-                        p.get("thumbnail") or p.get("image") for p in extra
+                        _upscale_lh3_photo_url(p.get("thumbnail") or p.get("image"))
+                        for p in extra
                         if isinstance(p, dict) and (p.get("thumbnail") or p.get("image"))
                     ][:max_photos]
                     photo_urls = [u for u in ([thumbnail] + extra_urls) if u]
@@ -428,7 +470,9 @@ def _serpapi_maps_search(location: str, limit: int) -> list[PropertyListing]:
 
         listings: list[PropertyListing] = []
         for place in results:
-            thumbnail = place.get("thumbnail") or place.get("photo") or place.get("serpapi_thumbnail")
+            thumbnail = _upscale_lh3_photo_url(
+                place.get("thumbnail") or place.get("photo") or place.get("serpapi_thumbnail")
+            )
             if not thumbnail:
                 continue
             listings.append(
