@@ -227,6 +227,39 @@ def _google_place_details_photos(place_id: str, api_key: str, max_photos: int) -
         return []
 
 
+def _serpapi_maps_photos_gallery(data_id: str, api_key: str, max_photos: int) -> list[str]:
+    """
+    Fetch up to *max_photos* real photo URLs from SerpApi's dedicated
+    `google_maps_photos` engine for the business identified by *data_id* —
+    the same public photo gallery a user sees scrolling through that
+    business's own Google Maps listing (exteriors, rooms, pool, dining,
+    etc), not just the single search-result thumbnail. Returns [] on any
+    failure or empty response; never raises.
+    """
+    try:
+        resp = requests.get(
+            "https://serpapi.com/search.json",
+            params={
+                "engine": "google_maps_photos",
+                "data_id": data_id,
+                "api_key": api_key,
+            },
+            timeout=_REQUEST_TIMEOUT,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        photos = data.get("photos") or []
+        urls: list[str] = []
+        for photo in photos[:max_photos]:
+            url = photo.get("thumbnail") or photo.get("image")
+            if url:
+                urls.append(url)
+        return urls
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("SerpApi google_maps_photos lookup failed for data_id=%r: %s", data_id, exc)
+        return []
+
+
 def fetch_property_by_name(
     name: str, location: str | None = None, max_photos: int = 10,
 ) -> PropertyListing | None:
@@ -301,9 +334,13 @@ def fetch_property_by_name(
         except Exception as exc:  # noqa: BLE001
             logger.warning("Google Places single-property lookup failed for %r: %s", name, exc)
 
-    # -- SerpApi fallback: usually only a single thumbnail per listing, but
-    # that single real photo is still strictly "this same hotel" — the
-    # caller cycles through it rather than mixing in anything else.
+    # -- SerpApi fallback: the initial google_maps search result usually
+    # carries only a single thumbnail, but every listing also has a
+    # `data_id` we can feed into SerpApi's dedicated `google_maps_photos`
+    # engine to pull the FULL public photo gallery for that exact business
+    # (the same gallery you'd see scrolling through its Google Maps listing
+    # — pool, rooms, dining, exteriors, etc). We always try that enrichment
+    # step; the single thumbnail is only used as a last-resort if it fails.
     if settings.serpapi_key:
         try:
             resp = requests.get(
@@ -324,13 +361,25 @@ def fetch_property_by_name(
             if results:
                 place = results[0]
                 thumbnail = place.get("thumbnail") or place.get("photo") or place.get("serpapi_thumbnail")
-                # Some SerpApi responses include a richer "photos" array.
-                extra = place.get("photos") or []
-                extra_urls = [
-                    p.get("thumbnail") or p.get("image") for p in extra
-                    if isinstance(p, dict) and (p.get("thumbnail") or p.get("image"))
-                ][:max_photos]
-                photo_urls = [u for u in ([thumbnail] + extra_urls) if u]
+                data_id = place.get("data_id")
+
+                photo_urls: list[str] = []
+                if data_id:
+                    photo_urls = _serpapi_maps_photos_gallery(
+                        data_id, settings.serpapi_key, max_photos,
+                    )
+
+                if not photo_urls:
+                    # Gallery lookup unavailable/empty — fall back to
+                    # whatever single photo(s) the search result itself
+                    # carried, still strictly belonging to this business.
+                    extra = place.get("photos") or []
+                    extra_urls = [
+                        p.get("thumbnail") or p.get("image") for p in extra
+                        if isinstance(p, dict) and (p.get("thumbnail") or p.get("image"))
+                    ][:max_photos]
+                    photo_urls = [u for u in ([thumbnail] + extra_urls) if u]
+
                 # De-dup while preserving order.
                 seen: set[str] = set()
                 photo_urls = [u for u in photo_urls if not (u in seen or seen.add(u))]

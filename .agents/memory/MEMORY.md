@@ -1,1 +1,2 @@
 - [Image search approach](image-search.md) — DDG image search via `ddgs` package replaces Pollinations; positional heading→image injection into full_article HTML.
+- [SerpApi hotel photo galleries](serpapi-hotel-photos.md) — use `google_maps_photos` engine + `data_id` to get a full real gallery for one exact business, not just its search thumbnail.
