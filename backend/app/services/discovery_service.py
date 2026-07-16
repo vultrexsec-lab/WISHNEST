@@ -62,12 +62,20 @@ CATEGORY_QUERIES: dict[str, list[str]] = {
 def get_excluded_place_ids(db: Session) -> set[str]:
     """
     Return the set of Google Places place_ids (and SerpApi data_ids) for all
-    properties that already have a WishNest article. The scheduler uses this
-    as a persistent exclusion list so the same property is never covered twice.
+    properties that already have an **active** (non-trashed) WishNest article.
+
+    Only active articles are checked — is_trash = False — so that a trashed
+    article does not permanently block a place_id from being re-generated.
+    This mirrors the partial unique index (uq_articles_place_id_active) which
+    also only covers non-trashed rows.
     """
-    rows = db.query(Article.place_id).filter(Article.place_id.isnot(None)).all()
+    rows = (
+        db.query(Article.place_id)
+        .filter(Article.place_id.isnot(None), Article.is_trash == False)  # noqa: E712
+        .all()
+    )
     ids = {r[0] for r in rows if r[0]}
-    logger.debug("Exclusion list: %d place_id(s) already in DB", len(ids))
+    logger.info("Exclusion list: %d active place_id(s) already in DB", len(ids))
     return ids
 
 

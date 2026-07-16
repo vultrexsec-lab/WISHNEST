@@ -82,6 +82,17 @@ _started_at: Optional[str] = None
 _PROGRESS_LOCK = threading.Lock()
 _IN_PROGRESS: set[str] = set()
 
+# ── Cross-category place_id lock ──────────────────────────────────────────────
+# Tracks which place_ids are actively being processed by any category run at
+# this moment (including concurrent "Run All Now" threads). Before entering the
+# pipeline for a property, a runner must acquire its place_id slot here.  If
+# the slot is taken, the property is skipped — it is already being handled.
+# This closes the race window where two category runs discover the same
+# place_id in parallel and both enter run_research_pipeline before either
+# has committed, bypassing the DB pre-check and the unique index.
+_ACTIVE_PLACE_IDS_LOCK = threading.Lock()
+_ACTIVE_PLACE_IDS: set[str] = set()
+
 # ── Run history (last 30 runs, newest-first on read) ─────────────────────────
 _HISTORY: list[dict] = []
 _HISTORY_LOCK = threading.Lock()
@@ -126,7 +137,11 @@ def _run_category(item: dict) -> None:
     total_created = 0
     try:
         # ── Live discovery path ──────────────────────────────────────────────
-        from app.services.discovery_service import build_property_brief, discover_fresh_properties
+        from app.services.discovery_service import (
+            build_property_brief,
+            discover_fresh_properties,
+            get_excluded_place_ids,
+        )
 
         logger.info(
             "Scheduler: starting live discovery for category=%r (%s)", category, label
@@ -138,49 +153,84 @@ def _run_category(item: dict) -> None:
 
         if fresh_properties:
             for listing in fresh_properties:
-                brief = build_property_brief(listing, category)
-                logger.info(
-                    "Scheduler: generating article for %r (place_id=%r)",
-                    listing.name, listing.place_id,
-                )
+                pid = listing.place_id or ""
+
+                # ── Cross-category place_id lock ─────────────────────────────
+                # Acquire a process-level slot for this place_id before doing
+                # anything else.  If another category run in the same batch is
+                # already processing this property, skip it immediately — the
+                # twin will produce the article; we must not race it.
+                with _ACTIVE_PLACE_IDS_LOCK:
+                    if pid and pid in _ACTIVE_PLACE_IDS:
+                        logger.warning(
+                            "Scheduler: skipping %r (place_id=%r) — "
+                            "already being processed by a concurrent category run.",
+                            listing.name, pid,
+                        )
+                        continue
+                    if pid:
+                        _ACTIVE_PLACE_IDS.add(pid)
+
                 try:
-                    created = run_research_pipeline(
-                        brief,
-                        db,
-                        category=category,
-                        place_id=listing.place_id,
-                    )
-                    total_created += len(created)
+                    # ── Fresh DB exclusion check ─────────────────────────────
+                    # Re-query the DB right before entering the pipeline so we
+                    # catch articles committed by a concurrent run since the
+                    # initial discovery query ran (the initial query's snapshot
+                    # may already be stale by the time we get here).
+                    if pid:
+                        current_excluded = get_excluded_place_ids(db)
+                        if pid in current_excluded:
+                            logger.warning(
+                                "Scheduler: halting for %r (place_id=%r) — "
+                                "a concurrent run already committed this article.",
+                                listing.name, pid,
+                            )
+                            continue
+
+                    brief = build_property_brief(listing, category)
                     logger.info(
-                        "Scheduler: drafted %d article(s) for %r", len(created), listing.name
+                        "Scheduler: generating article for %r (place_id=%r)",
+                        listing.name, listing.place_id,
                     )
-                except ResearchPipelineError as exc:
-                    logger.error(
-                        "Scheduler: pipeline error for property %r: %s", listing.name, exc
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    logger.exception(
-                        "Scheduler: unexpected error for property %r: %s", listing.name, exc
-                    )
+                    try:
+                        created = run_research_pipeline(
+                            brief,
+                            db,
+                            category=category,
+                            place_id=listing.place_id,
+                        )
+                        total_created += len(created)
+                        logger.info(
+                            "Scheduler: drafted %d article(s) for %r", len(created), listing.name
+                        )
+                    except ResearchPipelineError as exc:
+                        logger.error(
+                            "Scheduler: pipeline error for property %r: %s", listing.name, exc
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        logger.exception(
+                            "Scheduler: unexpected error for property %r: %s", listing.name, exc
+                        )
+                finally:
+                    # Always release the slot so future runs can re-try if
+                    # the pipeline failed before committing.
+                    if pid:
+                        with _ACTIVE_PLACE_IDS_LOCK:
+                            _ACTIVE_PLACE_IDS.discard(pid)
 
             msg = f"{total_created} article(s) drafted from {len(fresh_properties)} live-discovered properties."
             logger.info("Scheduler: completed category=%r — %s", category, msg)
             _record_run(category, label, "success", msg, total_created)
             return
 
-        # ── Fallback: no live properties found — use static brief ────────────
+        # ── Fallback: no live properties found — halt gracefully ─────────────
         logger.warning(
-            "Scheduler: no fresh live properties found for category=%r — "
-            "falling back to static brief.", category,
+            "Scheduler: no fresh live properties found for category=%r after exhausting "
+            "all discovery queries — halting gracefully (no fallback to avoid generic content).",
+            category,
         )
-        try:
-            created = run_research_pipeline(fallback_brief, db, category=category)
-            msg = f"{len(created)} article(s) drafted (static brief fallback — no live properties found)."
-            logger.info("Scheduler: completed category=%r (fallback) — %s", category, msg)
-            _record_run(category, label, "success", msg, len(created))
-        except ResearchPipelineError as exc:
-            logger.error("Scheduler: pipeline error for category=%r (fallback): %s", category, exc)
-            _record_run(category, label, "failed", str(exc), 0)
+        msg = "No new unique properties found — all discovered properties already exist in DB."
+        _record_run(category, label, "skipped", msg, 0)
 
     except Exception as exc:  # noqa: BLE001
         logger.exception("Scheduler: unexpected error for category=%r: %s", category, exc)
