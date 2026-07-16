@@ -10,6 +10,8 @@ candidate with its full photo gallery so the pipeline can immediately source
 Never raises — all provider failures are logged and return empty lists.
 """
 import logging
+import random
+import re
 from sqlalchemy.orm import Session
 
 from app.models.article import Article
@@ -79,6 +81,30 @@ def get_excluded_place_ids(db: Session) -> set[str]:
     return ids
 
 
+def get_excluded_headlines(db: Session) -> set[str]:
+    """
+    Return a set of lowercased, stripped headlines for all active (non-trashed)
+    articles.
+
+    This is used as a *secondary* de-duplication gate specifically for
+    landmarks and other destinations whose SerpApi ``data_id`` is unstable
+    across query calls — the same physical location (e.g. India Gate) may
+    return a different ``data_id`` each time, so the ``place_id`` check in
+    ``get_excluded_place_ids`` silently fails and the scheduler regenerates
+    the same article every run.
+
+    Matching rule: if ``listing.name.lower()`` is found as a substring of
+    any excluded headline, the property is treated as already covered.
+    Example: "india gate" ⊂ "exploring india gate: a symbol of national pride"
+    """
+    rows = (
+        db.query(Article.headline)
+        .filter(Article.headline.isnot(None), Article.is_trash == False)  # noqa: E712
+        .all()
+    )
+    return {r[0].lower().strip() for r in rows if r[0]}
+
+
 def _enrich_with_full_gallery(listing: PropertyListing, max_photos: int = 15) -> PropertyListing:
     """
     Fetch up to *max_photos* real photos for *listing* from its exact Google
@@ -128,12 +154,19 @@ def discover_fresh_properties(
     Never raises — returns [] when no fresh properties can be found.
     """
     excluded_ids = get_excluded_place_ids(db)
+    excluded_headlines = get_excluded_headlines(db)  # secondary gate for unstable place_ids
+
     queries = CATEGORY_QUERIES.get(category, CATEGORY_QUERIES["reviews"])
+
+    # Shuffle the query list so consecutive runs explore different corners of
+    # the category space and don't always try the same first query.
+    queries_to_try = list(queries)
+    random.shuffle(queries_to_try)
 
     collected: list[PropertyListing] = []
     seen_ids: set[str] = set()  # within-run dedup (across multiple queries)
 
-    for query in queries:
+    for query in queries_to_try:
         if len(collected) >= target_count:
             break
 
@@ -144,7 +177,13 @@ def discover_fresh_properties(
             logger.warning("search_properties raised for query %r: %s", query[:80], exc)
             results = []
 
-        for listing in results:
+        # Shuffle the per-query results so the same top-ranked property from
+        # SerpApi is not always the candidate (important when it is already
+        # excluded — we want to reach fresher alternatives quickly).
+        results_shuffled = list(results)
+        random.shuffle(results_shuffled)
+
+        for listing in results_shuffled:
             if len(collected) >= target_count:
                 break
 
@@ -158,6 +197,20 @@ def discover_fresh_properties(
                 logger.info(
                     "Discovery: skipping %r (place_id=%r) — already in DB",
                     listing.name, pid,
+                )
+                continue
+
+            # ── Secondary headline-based guard (unstable data_id safety net) ─
+            # Landmarks like India Gate may receive a different SerpApi data_id
+            # on each call, so the place_id check above silently misses them.
+            # If the listing name appears as a substring of any existing article
+            # headline (case-insensitive) we treat the property as covered.
+            listing_name_lower = listing.name.lower().strip()
+            if any(listing_name_lower in headline for headline in excluded_headlines):
+                logger.info(
+                    "Discovery: skipping %r — name found in existing article headlines "
+                    "(unstable place_id safety net).",
+                    listing.name,
                 )
                 continue
 
@@ -237,6 +290,6 @@ def build_property_brief(listing: PropertyListing, category: str) -> str:
         "numeric scores 1.0–10.0 AND letter grades), key_takeaways, wishnest_verdict, "
         "developer_lessons, and the full social media package (3 LinkedIn, 2 Facebook, "
         "X thread, newsletter summary, hashtags, CTA).\n\n"
-        f"Set article_type to \"{'review' if category != 'destinations' else 'standard'}\".\n"
+        "Set article_type to \"review\" — WishNest requires full ABCDE grading for every article type including destinations.\n"
         f"Set location to \"{address}\"."
     )

@@ -394,6 +394,18 @@ def run_research_pipeline(
             category=category,  # use caller-supplied category, not AI-inferred
         )
 
+        # Destinations must always be article_type=review — they require full
+        # ABCDE grading and a Premium schema. Override whatever the LLM returned
+        # so a mis-labelled brief never produces a STANDARD badge on a destination
+        # article.  (Also guarded upstream in build_property_brief, but this is
+        # the authoritative server-side enforcement.)
+        if category == "destinations" and article.article_type != ArticleType.review:
+            logger.info(
+                "Forced article_type=review for destinations article %r (was %r)",
+                (article.headline or "")[:60], article.article_type,
+            )
+            article.article_type = ArticleType.review
+
         # Final pre-save grade safety net: _ensure_abcde_overall() already ran
         # on `raw`, but Pydantic's model_dump + re-construction can silently
         # drop a field if the schema marks it Optional. Verify directly on the
