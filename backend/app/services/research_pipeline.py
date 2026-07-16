@@ -245,6 +245,7 @@ def regenerate_article_images(article: Article, db: Session) -> bool:
         location=article.location,
         article_type=article.article_type.value,
         full_article=article.full_article,
+        category=article.category,
     )
     html_changed = bool(enriched_html and enriched_html != article.full_article)
     ratings_changed = _apply_live_ratings(article, property_matches)
@@ -403,6 +404,7 @@ def run_research_pipeline(
                 location=article.location,
                 article_type=article.article_type.value,
                 full_article=article.full_article,
+                category=article.category,
             )
             html_changed = bool(enriched_html and enriched_html != article.full_article)
             ratings_changed = _apply_live_ratings(article, property_matches)

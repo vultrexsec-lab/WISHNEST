@@ -50,7 +50,12 @@ import urllib.parse
 import requests
 
 from app.config import get_settings
-from app.services.places_service import PropertyListing, fetch_premium_stays, fetch_property_by_name
+from app.services.places_service import (
+    PropertyListing,
+    fetch_landmark_attractions,
+    fetch_premium_stays,
+    fetch_property_by_name,
+)
 
 logger = logging.getLogger("wishnest.image_service")
 
@@ -177,6 +182,74 @@ def _static_fallback_url(index: int, used_urls: set[str]) -> str:
     # Every static image already used in this article — repeat rather than
     # ever return an empty slot.
     return _proxied_url(PREMIUM_LUXURY_HOTEL_IMAGES[index % n])
+
+
+# ---------------------------------------------------------------------------
+# Landmark / destination category detection
+# ---------------------------------------------------------------------------
+
+# Category values (from the DB / scheduler) that indicate an article is about
+# tourist attractions, monuments, or scenic places rather than hotels/villas.
+# Checked case-insensitively so UI display names ("Best Places & Destinations")
+# and internal slugs ("destinations") both match.
+_LANDMARK_CATEGORIES: frozenset[str] = frozenset({
+    "destinations",
+    "best places",
+    "best places & destinations",
+    "best-of-destinations",
+    "destination",
+    "places",
+})
+
+
+def _is_landmark_category(category: str | None) -> bool:
+    """Return True when *category* indicates a landmark / destination article."""
+    return bool(category and category.strip().lower() in _LANDMARK_CATEGORIES)
+
+
+class _LandmarkPool:
+    """
+    Like `_LivePropertyPool` but for 'Best Places & Destinations' category
+    articles. Queries SerpApi for tourist attractions and landmarks (India Gate,
+    Qutub Minar, hill stations, ghats, etc.) instead of hotels/resorts, so
+    every image slot carries genuine geographic content rather than hospitality
+    interiors.
+
+    When SerpApi returns no landmark results the pool is simply empty
+    (`available` is False) and callers fall through to the dynamic image-search
+    chain (DDG / Pexels / Unsplash with a location-anchored query). The static
+    hotel safety-net (`PREMIUM_LUXURY_HOTEL_IMAGES`) is intentionally NEVER
+    used for landmark articles — hotel clipart on a monument article is the
+    exact failure mode this pool exists to prevent.
+    """
+
+    def __init__(self, location: str | None, limit: int = 10):
+        try:
+            self.listings: list[PropertyListing] = fetch_landmark_attractions(location, limit=limit)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Landmark attraction fetch raised for %r: %s", location, exc)
+            self.listings = []
+        self._next_index = 0
+        self.used: list[PropertyListing] = []
+
+    @property
+    def available(self) -> bool:
+        return self._next_index < len(self.listings)
+
+    def take_next(self, used_urls: set[str]) -> "tuple[str, PropertyListing] | None":
+        """Return (proxied_url, listing) for the next unused attraction, or None."""
+        while self._next_index < len(self.listings):
+            listing = self.listings[self._next_index]
+            self._next_index += 1
+            if not listing.photo_url:
+                continue
+            proxied = _proxied_url(listing.photo_url)
+            if proxied in used_urls:
+                continue
+            used_urls.add(proxied)
+            self.used.append(listing)
+            return proxied, listing
+        return None
 
 
 class _LivePropertyPool:
@@ -761,6 +834,7 @@ def generate_article_images(
     location: str | None = None,
     article_type: str = "standard",
     full_article: str | None = None,
+    category: str | None = None,
 ) -> tuple[str | None, list[str], str | None, list[dict]]:
     """
     Fill every image slot for the article, preferring LIVE, real Google Maps
@@ -921,8 +995,21 @@ def generate_article_images(
     # -- Live property pool: one Google Places/SerpApi lookup per article,
     # sized to cover the hero slot plus every heading we expect to fill.
     # Extra headroom (+3) absorbs listings that fail the photo check.
+    #
+    # For 'Best Places & Destinations' / 'destinations' category articles we
+    # query SerpApi for tourist attractions and landmarks instead of
+    # hotels/resorts — hotel interiors are semantically wrong for a monument
+    # or scenic-spot article (the root cause of the India Gate image bug).
     expected_slots = 1 + (len(full_article_headings) if full_article_headings else 2)
-    live_pool = _LivePropertyPool(location, limit=expected_slots + 3)
+    _landmark = _is_landmark_category(category)
+    if _landmark:
+        live_pool: _LivePropertyPool | _LandmarkPool = _LandmarkPool(location, limit=expected_slots + 3)
+        logger.info(
+            "Using landmark/attraction pool for category=%r article %r",
+            category, headline[:60],
+        )
+    else:
+        live_pool = _LivePropertyPool(location, limit=expected_slots + 3)
 
     # -- Hero image ----------------------------------------------------------
     # Safe routing: live pool -> dynamic search chain -> static safety net.
@@ -951,9 +1038,20 @@ def generate_article_images(
         if hero_url is not None:
             logger.info("Hero image resolved via search fallback for %r (query=%r)", headline[:60], hero_query[:80])
     if hero_url is None:
-        hero_url = _static_fallback_url(static_fallback_index, used_urls)
-        static_fallback_index += 1
-        logger.warning("Hero image fell back to the static safety-net pool for %r", headline[:60])
+        if _landmark:
+            # For landmark/destination articles, NEVER substitute hotel images.
+            # A blank hero is far preferable to a resort pool photo on a
+            # monument article. The DDG chain above already tried the most
+            # relevant geographic queries; leave the slot empty.
+            logger.warning(
+                "No landmark/attraction image found for hero slot of %r — "
+                "leaving blank rather than inserting unrelated hotel imagery.",
+                headline[:60],
+            )
+        else:
+            hero_url = _static_fallback_url(static_fallback_index, used_urls)
+            static_fallback_index += 1
+            logger.warning("Hero image fell back to the static safety-net pool for %r", headline[:60])
 
     # -- Section images -- one per heading in document order -----------------
     section_urls: list[str] = []
@@ -986,9 +1084,18 @@ def generate_article_images(
                 if url is not None:
                     logger.info("Section image for heading %r -> search fallback (query=%r)", heading[:50], query[:80])
             if url is None:
-                url = _static_fallback_url(static_fallback_index, used_urls)
-                static_fallback_index += 1
-                logger.warning("Section image for heading %r fell back to the static safety-net pool", heading[:50])
+                if _landmark:
+                    # For landmark articles, leave the slot blank rather than
+                    # inserting hotel imagery — a missing section photo is less
+                    # misleading than an unrelated resort interior.
+                    logger.warning(
+                        "No landmark image found for heading %r — leaving blank.",
+                        heading[:50],
+                    )
+                else:
+                    url = _static_fallback_url(static_fallback_index, used_urls)
+                    static_fallback_index += 1
+                    logger.warning("Section image for heading %r fell back to the static safety-net pool", heading[:50])
             section_urls.append(url)
             heading_images.append((heading, url))
 
@@ -1011,9 +1118,15 @@ def generate_article_images(
                     logger.warning("Dynamic search raised for slot %r: %s", suffix, exc)
                     url = None
             if url is None:
-                url = _static_fallback_url(static_fallback_index, used_urls)
-                static_fallback_index += 1
-                logger.warning("Section image for slot %r fell back to the static safety-net pool", suffix)
+                if _landmark:
+                    logger.warning(
+                        "No landmark image found for slot %r — leaving blank rather than "
+                        "inserting unrelated hotel imagery.", suffix,
+                    )
+                else:
+                    url = _static_fallback_url(static_fallback_index, used_urls)
+                    static_fallback_index += 1
+                    logger.warning("Section image for slot %r fell back to the static safety-net pool", suffix)
             section_urls.append(url)
 
     property_matches = [_property_match_dict(l) for l in live_pool.used]

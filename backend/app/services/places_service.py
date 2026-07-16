@@ -198,6 +198,19 @@ def _serpapi_maps_query(query: str, limit: int) -> list[PropertyListing]:
                 place.get("thumbnail") or place.get("photo") or place.get("serpapi_thumbnail")
             )
             if not thumbnail:
+                # Landmarks and monuments often store photos in an "images" list
+                # rather than the top-level "thumbnail" key used by hotels.
+                # Check that array before discarding the result entirely.
+                imgs = place.get("images") or []
+                if isinstance(imgs, list):
+                    for img_entry in imgs[:5]:
+                        if not isinstance(img_entry, dict):
+                            continue
+                        candidate = img_entry.get("thumbnail") or img_entry.get("image")
+                        if candidate:
+                            thumbnail = _upscale_lh3_photo_url(candidate)
+                            break
+            if not thumbnail:
                 continue
             data_id = place.get("data_id")
             listings.append(
@@ -222,6 +235,45 @@ def _serpapi_maps_query(query: str, limit: int) -> list[PropertyListing]:
 def _serpapi_maps_search(location: str, limit: int) -> list[PropertyListing]:
     query = f"top rated luxury hotels resorts villas boutique stays in {location}"
     return _serpapi_maps_query(query, limit)
+
+
+def fetch_landmark_attractions(location: str | None, limit: int = 8) -> list[PropertyListing]:
+    """
+    Return up to *limit* real tourist attraction / landmark listings for
+    *location* via SerpApi Google Maps. Used for 'Best Places & Destinations'
+    category articles in place of hotel-oriented `fetch_premium_stays`, so
+    image slots carry genuine geographic / attraction content.
+
+    Tries multiple query angles (attractions, monuments, scenic spots) so that
+    even locations with few hotel-style listings still return real landmark
+    photos. Returns an empty list (never raises, never fabricates data) when
+    SERPAPI_KEY is not configured or SerpApi returns nothing.
+    """
+    location = (location or "").strip()
+    if not location:
+        return []
+
+    api_key = get_settings().serpapi_key
+    if not api_key:
+        _log_missing_key_notice()
+        return []
+
+    query_templates = [
+        f"top tourist attractions landmarks {location} India",
+        f"famous monuments scenic places {location} India",
+        f"must visit places tourism {location}",
+    ]
+    for query in query_templates:
+        listings = _serpapi_maps_query(query, limit)
+        if listings:
+            logger.info(
+                "Live attraction listings resolved for %r via SerpApi: %d found (query=%r)",
+                location, len(listings), query[:80],
+            )
+            return listings
+
+    logger.info("No live attraction listings found for %r from SerpApi.", location)
+    return []
 
 
 # ---------------------------------------------------------------------------
