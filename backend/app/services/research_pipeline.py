@@ -275,6 +275,7 @@ def run_research_pipeline(
     db: Session,
     category: str | None = None,
     place_id: str | None = None,
+    article_count: int = 1,
 ) -> list[Article]:
     # ── 0. Pre-flight duplicate guard ────────────────────────────────────────
     # If a place_id is known, check the DB before spending money on Firecrawl
@@ -306,7 +307,7 @@ def run_research_pipeline(
 
     # ── 2. Draft article packages via OpenAI ─────────────────────────────────
     try:
-        raw_packages = generate_article_packages(brief, sources)
+        raw_packages = generate_article_packages(brief, sources, count=article_count)
     except Exception as exc:  # noqa: BLE001
         raise ResearchPipelineError(f"Article drafting failed: {exc}") from exc
 

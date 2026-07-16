@@ -305,9 +305,19 @@ def _build_correction_message(violations: list[str]) -> str:
     return "\n".join(lines)
 
 
-def generate_article_packages(brief: str, sources: list[dict]) -> list[dict]:
+def generate_article_packages(
+    brief: str,
+    sources: list[dict],
+    count: int | None = None,
+) -> list[dict]:
     """
     Calls OpenAI to draft article packages from the brief + sources.
+
+    ``count`` — explicit number of articles to generate.  When provided it
+    overrides ``_extract_count`` entirely, preventing any digit in the brief
+    (e.g. a "4.5★" Google rating) from being misread as an article quantity.
+    Callers that always want exactly one article (the scheduler, the HTTP API)
+    should pass ``count=1`` explicitly.
 
     Includes a retry loop (up to MAX_SEO_RETRIES attempts) that feeds pinpoint
     correction messages back to OpenAI when seo_title or meta_description char
@@ -320,7 +330,10 @@ def generate_article_packages(brief: str, sources: list[dict]) -> list[dict]:
         raise RuntimeError("OPENAI_API_KEY is not configured.")
 
     client = OpenAI(api_key=settings.openai_api_key)
-    count = _extract_count(brief)
+    # Use the explicit count when provided; fall back to brief-text inference
+    # only when the caller has not specified a quantity.
+    if count is None:
+        count = _extract_count(brief)
 
     sources_block = "\n\n".join(
         f"SOURCE {i + 1}: {s['url']}\nTITLE: {s['title']}\nCONTENT:\n{s['content'][:3000]}"
