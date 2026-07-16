@@ -131,7 +131,10 @@ def _run_category(item: dict) -> None:
         logger.info(
             "Scheduler: starting live discovery for category=%r (%s)", category, label
         )
-        fresh_properties = discover_fresh_properties(category, db, target_count=2, max_photos=15)
+        # target_count=1 — one property per category per batch run prevents
+        # semantic duplicates (two articles for near-identical locations from
+        # the same query set landing in the dashboard simultaneously).
+        fresh_properties = discover_fresh_properties(category, db, target_count=1, max_photos=15)
 
         if fresh_properties:
             for listing in fresh_properties:

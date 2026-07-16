@@ -401,10 +401,32 @@ def generate_article_packages(brief: str, sources: list[dict]) -> list[dict]:
                 "content": _build_correction_message(all_violations),
             })
         else:
-            logger.error(
-                "SEO constraints still violated after %d attempts. "
-                "Returning best-effort result.",
+            logger.warning(
+                "SEO constraints still violated after %d attempts — "
+                "applying programmatic truncation.",
                 MAX_SEO_RETRIES,
+            )
+
+    # ── Programmatic truncation fallback ─────────────────────────────────────
+    # If OpenAI still exceeds the character limits after all retries, slice
+    # the fields down to the maximum spec rather than saving a violating value
+    # or crashing. Under-length fields are left as-is (the Pydantic validator
+    # will accept them; they are better than a hallucinated pad).
+    for art in last_articles:
+        title = art.get("seo_title") or ""
+        if len(title) > SEO_TITLE_MAX:
+            art["seo_title"] = title[:SEO_TITLE_MAX].rstrip()
+            logger.info(
+                "Truncated seo_title from %d → %d chars: %r",
+                len(title), len(art["seo_title"]), art["seo_title"],
+            )
+
+        desc = art.get("meta_description") or ""
+        if len(desc) > META_DESC_MAX:
+            art["meta_description"] = desc[:META_DESC_MAX].rstrip()
+            logger.info(
+                "Truncated meta_description from %d → %d chars: %r",
+                len(desc), len(art["meta_description"]), art["meta_description"],
             )
 
     return last_articles
