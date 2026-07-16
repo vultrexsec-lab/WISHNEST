@@ -37,6 +37,15 @@ def main() -> None:
                 )
                 conn.execute(stmt)
                 print(f"  ✓ articles.{col} ({pg_type})")
+            # Partial unique index: one active (non-trashed) article per place_id.
+            # Prevents duplicate rows when the scheduler or concurrent POST
+            # /api/research requests race to insert for the same Google Maps property.
+            conn.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_articles_place_id_active "
+                "ON articles (place_id) "
+                "WHERE place_id IS NOT NULL AND is_trash = false"
+            ))
+            print("  ✓ unique index uq_articles_place_id_active")
             conn.commit()
         print("apply_columns: schema synchronised.")
     except Exception as exc:

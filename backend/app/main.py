@@ -53,8 +53,17 @@ def _sync_schema() -> None:
                 conn.execute(
                     text(f"ALTER TABLE articles ADD COLUMN IF NOT EXISTS {col} {pg_type}")
                 )
+            # Partial unique index: one active (non-trashed) article per place_id.
+            # Prevents duplicate rows when the scheduler or concurrent POST /api/research
+            # requests race to insert articles for the same Google Maps property.
+            # IF NOT EXISTS keeps this idempotent across restarts.
+            conn.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_articles_place_id_active "
+                "ON articles (place_id) "
+                "WHERE place_id IS NOT NULL AND is_trash = false"
+            ))
             conn.commit()
-        log.info("Schema sync: all ABCDE columns present.")
+        log.info("Schema sync: columns and place_id unique index present.")
     except Exception as exc:
         # Log but don't crash — the articles table may not exist yet on a
         # completely fresh DB; create_tables.py in start.sh handles that case.

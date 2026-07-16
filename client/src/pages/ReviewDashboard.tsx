@@ -314,7 +314,11 @@ function GeneratePanel({ onGenerated }: { onGenerated: () => void }) {
     generateMutation.mutate({ query: trimmed, cat: category });
   };
 
-  const isSubmitting = generateMutation.isPending;
+  // Lock the form while the HTTP request is in-flight (isPending) OR while the
+  // background pipeline is still running (researchActive). This prevents the
+  // user from submitting a second identical request during the ~2-3 minutes
+  // the agent spends on Firecrawl + OpenAI + image generation.
+  const isSubmitting = generateMutation.isPending || researchActive;
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-8 backdrop-blur-xl">

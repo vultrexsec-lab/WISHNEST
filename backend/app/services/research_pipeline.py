@@ -15,6 +15,7 @@ Returns the created Article rows so the router can build the response.
 import logging
 
 from pydantic import ValidationError
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.article import Article, ArticleStatus
@@ -275,6 +276,25 @@ def run_research_pipeline(
     category: str | None = None,
     place_id: str | None = None,
 ) -> list[Article]:
+    # ── 0. Pre-flight duplicate guard ────────────────────────────────────────
+    # If a place_id is known, check the DB before spending money on Firecrawl
+    # and OpenAI. This is the second layer of duplicate prevention (the first
+    # is the in-flight process mutex in research.py; the third is the DB-level
+    # partial unique index uq_articles_place_id_active).
+    if place_id:
+        existing = (
+            db.query(Article)
+            .filter(Article.place_id == place_id, Article.is_trash.is_(False))
+            .first()
+        )
+        if existing:
+            logger.info(
+                "Duplicate skipped — article for place_id=%r already exists "
+                "(id=%s, headline=%r).",
+                place_id, existing.id, (existing.headline or "")[:60],
+            )
+            return [existing]
+
     # ── 1. Research sources via Firecrawl ────────────────────────────────────
     try:
         sources = search_and_scrape(brief)
@@ -328,6 +348,16 @@ def run_research_pipeline(
             db.refresh(article)
             created.append(article)
             logger.info("Saved article (no images yet): %r", article.headline[:60])
+        except IntegrityError as exc:
+            # Hit the DB-level partial unique index uq_articles_place_id_active —
+            # another concurrent INSERT already committed for this place_id.
+            # Roll back and skip rather than creating a duplicate row.
+            db.rollback()
+            logger.warning(
+                "Duplicate insert blocked by DB constraint for place_id=%r "
+                "(headline=%r): %s",
+                place_id, validated.headline[:60], exc.orig,
+            )
         except Exception as exc:  # noqa: BLE001
             logger.warning("Failed to save article %r: %s", validated.headline[:60], exc)
             db.rollback()
