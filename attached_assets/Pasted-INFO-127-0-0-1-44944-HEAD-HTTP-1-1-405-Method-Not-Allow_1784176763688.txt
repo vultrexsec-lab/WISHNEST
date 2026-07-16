@@ -1,0 +1,246 @@
+INFO:     127.0.0.1:44944 - "HEAD / HTTP/1.1" 405 Method Not Allowed
+        ^^^^^
+    )
+    ^
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/sqlalchemy/orm/context.py", line 306, in orm_execute_statement
+    result = conn.execute(
+        statement, params or {}, execution_options=execution_options
+    )
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1421, in execute
+    return meth(
+        self,
+        distilled_parameters,
+        execution_options or NO_OPTIONS,
+    )
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/sqlalchemy/sql/elements.py", line 526, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self, distilled_params, execution_options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1643, in _execute_clauseelement
+    ret = self._execute_context(
+        dialect,
+    ...<8 lines>...
+        cache_hit=cache_hit,
+    )
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1848, in _execute_context
+    return self._exec_single_context(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        dialect, context, statement, parameters
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1988, in _exec_single_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str_statement, effective_parameters, cursor, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 2365, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+sqlalchemy.exc.ProgrammingError: (psycopg2.errors.UndefinedColumn) column articles.place_id does not exist
+LINE 1: ...cles_cta, articles.category AS articles_category, articles.p...
+                                                             ^
+[SQL: SELECT articles.id AS articles_id, articles.article_type AS articles_article_type, articles.status AS articles_status, articles.is_trash AS articles_is_trash, articles.headline AS articles_headline, articles.subtitle AS articles_subtitle, articles.full_article AS articles_full_article, articles.executive_summary AS articles_executive_summary, articles.pull_quotes AS articles_pull_quotes, articles.faq_section AS articles_faq_section, articles.seo_title AS articles_seo_title, articles.meta_description AS articles_meta_description, articles.focus_keyword AS articles_focus_keyword, articles.keywords AS articles_keywords, articles.source_urls AS articles_source_urls, articles.image_credits AS articles_image_credits, articles.captions AS articles_captions, articles.alt_text AS articles_alt_text, articles.hero_image_url AS articles_hero_image_url, articles.section_image_urls AS articles_section_image_urls, articles.internal_links AS articles_internal_links, articles.property_snapshot AS articles_property_snapshot, articles.best_for AS articles_best_for, articles.not_ideal_for AS articles_not_ideal_for, articles.price_band AS articles_price_band, articles.location AS articles_location, articles.accessibility AS articles_accessibility, articles.architecture_grade AS articles_architecture_grade, articles.landscape_grade AS articles_landscape_grade, articles.connectivity_grade AS articles_connectivity_grade, articles.delight_grade AS articles_delight_grade, articles.eat_explore_grade AS articles_eat_explore_grade, articles.architecture_score AS articles_architecture_score, articles.landscape_score AS articles_landscape_score, articles.connectivity_score AS articles_connectivity_score, articles.delight_score AS articles_delight_score, articles.eat_explore_score AS articles_eat_explore_score, articles.abcde_overall AS articles_abcde_overall, articles.developer_lessons AS articles_developer_lessons, articles.key_takeaways AS articles_key_takeaways, articles.wishnest_verdict AS articles_wishnest_verdict, articles.linkedin_variations AS articles_linkedin_variations, articles.facebook_variations AS articles_facebook_variations, articles.twitter_thread AS articles_twitter_thread, articles.newsletter_summary AS articles_newsletter_summary, articles.suggested_hashtags AS articles_suggested_hashtags, articles.cta AS articles_cta, articles.category AS articles_category, articles.place_id AS articles_place_id, articles.scheduled_at AS articles_scheduled_at, articles.published_at AS articles_published_at, articles.created_at AS articles_created_at, articles.updated_at AS articles_updated_at 
+FROM articles 
+WHERE articles.is_trash IS false ORDER BY articles.created_at DESC]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+INFO:     49.36.222.100:0 - "GET /api/newsletter/count HTTP/1.1" 200 OK
+INFO:     49.36.222.100:0 - "GET /api/scheduler/status HTTP/1.1" 200 OK
+INFO:     49.36.222.100:0 - "GET /api/newsletter/count HTTP/1.1" 200 OK
+INFO:     49.36.222.100:0 - "GET /api/articles HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+psycopg2.errors.UndefinedColumn: column articles.place_id does not exist
+LINE 1: ...cles_cta, articles.category AS articles_category, articles.p...
+                                                             ^
+The above exception was the direct cause of the following exception:
+Traceback (most recent call last):
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/uvicorn/protocols/http/h11_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        self.scope, self.receive, self.send
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/uvicorn/middleware/proxy_headers.py", line 63, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/fastapi/applications.py", line 1163, in __call__
+    await super().__call__(scope, receive, send)
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/starlette/applications.py", line 90, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/starlette/middleware/cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/starlette/routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/fastapi/routing.py", line 2683, in app
+    await route.handle(scope, receive, send)
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/fastapi/routing.py", line 1753, in handle
+    await self.original_router.handle(scope, receive, send)
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/fastapi/routing.py", line 2738, in handle
+    await included_router._handle_selected(scope, receive, send)
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/fastapi/routing.py", line 1773, in _handle_selected
+    await original_route.handle(scope, receive, send)
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/fastapi/routing.py", line 1264, in handle
+    await app(scope, receive, send)
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/fastapi/routing.py", line 150, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/fastapi/routing.py", line 136, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/fastapi/routing.py", line 690, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/fastapi/routing.py", line 346, in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/starlette/concurrency.py", line 34, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/anyio/to_thread.py", line 65, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/anyio/_backends/_asyncio.py", line 2641, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/anyio/_backends/_asyncio.py", line 1033, in run
+    result = context.run(func, *args)
+  File "/opt/render/project/src/backend/app/routers/articles.py", line 87, in list_articles
+    articles = query.order_by(Article.created_at.desc()).all()
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/sqlalchemy/orm/query.py", line 2711, in all
+    return self._iter().all()  # type: ignore
+           ~~~~~~~~~~^^
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/sqlalchemy/orm/query.py", line 2864, in _iter
+    result: Union[ScalarResult[_T], Result[_T]] = self.session.execute(
+                                                  ~~~~~~~~~~~~~~~~~~~~^
+        statement,
+        ^^^^^^^^^^
+        params,
+        ^^^^^^^
+        execution_options={"_sa_orm_load_options": self.load_options},
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/sqlalchemy/orm/session.py", line 2373, in execute
+    return self._execute_internal(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        statement,
+        ^^^^^^^^^^
+    ...<4 lines>...
+        _add_event=_add_event,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/sqlalchemy/orm/session.py", line 2271, in _execute_internal
+    result: Result[Any] = compile_state_cls.orm_execute_statement(
+                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self,
+        ^^^^^
+    ...<4 lines>...
+        conn,
+        ^^^^^
+    )
+    ^
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/sqlalchemy/orm/context.py", line 306, in orm_execute_statement
+    result = conn.execute(
+        statement, params or {}, execution_options=execution_options
+    )
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1421, in execute
+    return meth(
+        self,
+        distilled_parameters,
+        execution_options or NO_OPTIONS,
+    )
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/sqlalchemy/sql/elements.py", line 526, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self, distilled_params, execution_options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1643, in _execute_clauseelement
+    ret = self._execute_context(
+        dialect,
+    ...<8 lines>...
+        cache_hit=cache_hit,
+    )
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1848, in _execute_context
+    return self._exec_single_context(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        dialect, context, statement, parameters
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1988, in _exec_single_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str_statement, effective_parameters, cursor, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 2365, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/opt/render/project/src/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+sqlalchemy.exc.ProgrammingError: (psycopg2.errors.UndefinedColumn) column articles.place_id does not exist
+LINE 1: ...cles_cta, articles.category AS articles_category, articles.p...
+                                                             ^
+[SQL: SELECT articles.id AS articles_id, articles.article_type AS articles_article_type, articles.status AS articles_status, articles.is_trash AS articles_is_trash, articles.headline AS articles_headline, articles.subtitle AS articles_subtitle, articles.full_article AS articles_full_article, articles.executive_summary AS articles_executive_summary, articles.pull_quotes AS articles_pull_quotes, articles.faq_section AS articles_faq_section, articles.seo_title AS articles_seo_title, articles.meta_description AS articles_meta_description, articles.focus_keyword AS articles_focus_keyword, articles.keywords AS articles_keywords, articles.source_urls AS articles_source_urls, articles.image_credits AS articles_image_credits, articles.captions AS articles_captions, articles.alt_text AS articles_alt_text, articles.hero_image_url AS articles_hero_image_url, articles.section_image_urls AS articles_section_image_urls, articles.internal_links AS articles_internal_links, articles.property_snapshot AS articles_property_snapshot, articles.best_for AS articles_best_for, articles.not_ideal_for AS articles_not_ideal_for, articles.price_band AS articles_price_band, articles.location AS articles_location, articles.accessibility AS articles_accessibility, articles.architecture_grade AS articles_architecture_grade, articles.landscape_grade AS articles_landscape_grade, articles.connectivity_grade AS articles_connectivity_grade, articles.delight_grade AS articles_delight_grade, articles.eat_explore_grade AS articles_eat_explore_grade, articles.architecture_score AS articles_architecture_score, articles.landscape_score AS articles_landscape_score, articles.connectivity_score AS articles_connectivity_score, articles.delight_score AS articles_delight_score, articles.eat_explore_score AS articles_eat_explore_score, articles.abcde_overall AS articles_abcde_overall, articles.developer_lessons AS articles_developer_lessons, articles.key_takeaways AS articles_key_takeaways, articles.wishnest_verdict AS articles_wishnest_verdict, articles.linkedin_variations AS articles_linkedin_variations, articles.facebook_variations AS articles_facebook_variations, articles.twitter_thread AS articles_twitter_thread, articles.newsletter_summary AS articles_newsletter_summary, articles.suggested_hashtags AS articles_suggested_hashtags, articles.cta AS articles_cta, articles.category AS articles_category, articles.place_id AS articles_place_id, articles.scheduled_at AS articles_scheduled_at, articles.published_at AS articles_published_at, articles.created_at AS articles_created_at, articles.updated_at AS articles_updated_at 
+FROM articles 
+WHERE articles.is_trash IS false ORDER BY articles.created_at DESC]
+(Background on this error at: https://sqlalche.me/e/20/f405)
