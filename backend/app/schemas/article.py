@@ -104,6 +104,16 @@ class ArticleBase(BaseModel):
     suggested_hashtags: Optional[list[str]] = None
     cta: Optional[str] = None
 
+class ArticleCreate(ArticleBase):
+    """
+    Input schema — strict SEO-length validation fires here so the pipeline
+    prompt feedback loop catches out-of-range values before they hit the DB.
+    These validators must NOT live on ArticleBase because ArticleOut inherits
+    from it and Pydantic runs them during response serialisation too, which
+    causes a 500 for any existing DB row whose AI-generated text is even one
+    character outside the target range.
+    """
+
     @field_validator("seo_title")
     @classmethod
     def validate_seo_title_length(cls, v: Optional[str]) -> Optional[str]:
@@ -129,10 +139,6 @@ class ArticleBase(BaseModel):
                 f"Current value: {v!r}"
             )
         return v
-
-
-class ArticleCreate(ArticleBase):
-    pass
 
 
 class ArticleUpdate(BaseModel):
