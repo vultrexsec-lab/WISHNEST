@@ -18,7 +18,7 @@ from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models.article import Article, ArticleStatus
+from app.models.article import Article, ArticleStatus, ArticleType
 from app.schemas.article import ArticleCreate
 from app.services.firecrawl_service import FirecrawlError, search_and_scrape
 from app.services.image_service import generate_article_images
