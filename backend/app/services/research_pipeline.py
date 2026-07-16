@@ -103,6 +103,16 @@ _SCORE_TO_GRADE: dict[str, str] = {
     "eat_explore_score":  "eat_explore_grade",
 }
 
+# Reverse map: canonical letter grade → approximate numeric midpoint score.
+# Used by _ensure_abcde_overall to derive an overall grade when only letter
+# grades (not numeric scores) were returned by the LLM.
+_GRADE_TO_SCORE: dict[str, float] = {
+    "A+": 9.5, "A": 8.5, "A-": 7.75,
+    "B+": 7.25, "B": 6.5, "B-": 5.75,
+    "C+": 5.25, "C": 4.5, "C-": 3.75,
+    "D+": 3.25, "D": 2.0,
+}
+
 
 def _score_to_grade(score: float) -> str:
     """Convert a 1.0–10.0 numeric score to a WishNest letter grade."""
@@ -159,6 +169,45 @@ def _normalise_grades(raw: dict) -> None:
             raw[field] = _GRADE_NAME_TO_VALUE[key]
         else:
             raw[field] = val.upper()
+
+
+def _ensure_abcde_overall(raw: dict) -> None:
+    """
+    Guarantee ``abcde_overall`` is always a non-blank string after normalisation.
+
+    ``_normalise_scores()`` derives it from numeric score fields, but when the
+    LLM returns only letter grades (no numeric scores) — which happens routinely
+    for landmark / destination articles — ``clean_scores`` stays empty and the
+    field is never written.  This function is the final backstop:
+
+    1. Already set → nothing to do.
+    2. Individual letter grades present → convert each to its numeric midpoint
+       (via ``_GRADE_TO_SCORE``), average them, and map back to a letter.
+    3. No grade fields at all → default to ``"B"`` (neutral; never blank).
+    """
+    if raw.get("abcde_overall"):
+        return  # already written by _normalise_scores
+
+    present_scores: list[float] = []
+    for grade_field in _GRADE_FIELDS:
+        g = raw.get(grade_field)
+        if g and isinstance(g, str):
+            score = _GRADE_TO_SCORE.get(g.upper().strip())
+            if score is not None:
+                present_scores.append(score)
+
+    if present_scores:
+        avg = sum(present_scores) / len(present_scores)
+        raw["abcde_overall"] = _score_to_grade(avg)
+        logger.info(
+            "abcde_overall derived from %d letter grade(s) (avg midpoint %.2f → %s)",
+            len(present_scores), avg, raw["abcde_overall"],
+        )
+    else:
+        raw["abcde_overall"] = "B"
+        logger.warning(
+            "abcde_overall missing and no ABCDE grade fields found — defaulting to 'B'."
+        )
 
 
 def _apply_live_ratings(article: Article, property_matches: list[dict]) -> bool:
@@ -321,9 +370,10 @@ def run_research_pipeline(
         if not raw.get("source_urls"):
             raw["source_urls"] = source_urls
 
-        _normalise_scores(raw)   # clamp floats, derive letter grades + overall
-        _normalise_grades(raw)   # catch any remaining letter-grade format quirks
-        _coerce_seo_fields(raw)  # auto-fix minor SEO length violations
+        _normalise_scores(raw)      # clamp floats, derive letter grades + overall
+        _normalise_grades(raw)      # catch any remaining letter-grade format quirks
+        _ensure_abcde_overall(raw)  # guarantee abcde_overall is always a non-blank string
+        _coerce_seo_fields(raw)     # auto-fix minor SEO length violations
 
         try:
             validated = ArticleCreate(**raw)
@@ -343,6 +393,26 @@ def run_research_pipeline(
             section_image_urls=None,
             category=category,  # use caller-supplied category, not AI-inferred
         )
+
+        # Final pre-save grade safety net: _ensure_abcde_overall() already ran
+        # on `raw`, but Pydantic's model_dump + re-construction can silently
+        # drop a field if the schema marks it Optional. Verify directly on the
+        # ORM object and patch if needed so the DB never stores a blank grade.
+        if not article.abcde_overall:
+            # Derive from individual grade fields already on the ORM object
+            _grade_scores = [
+                _GRADE_TO_SCORE[g]
+                for f in _GRADE_FIELDS
+                if (g := (getattr(article, f) or "").upper().strip()) in _GRADE_TO_SCORE
+            ]
+            article.abcde_overall = (
+                _score_to_grade(sum(_grade_scores) / len(_grade_scores))
+                if _grade_scores else "B"
+            )
+            logger.warning(
+                "Pre-save grade patch applied for %r: abcde_overall set to %r",
+                (article.headline or "")[:60], article.abcde_overall,
+            )
 
         try:
             db.add(article)

@@ -440,25 +440,70 @@ def _significant_tokens(text: str | None) -> set[str]:
     return {t for t in tokens if t not in _STOPWORDS}
 
 
+# ---------------------------------------------------------------------------
+# Hard content-type rejection — non-photographic / non-editorial media
+# ---------------------------------------------------------------------------
+
+# Keywords that definitively identify non-photo content regardless of query.
+# Applied to the combined title + source-URL string before any relevance check.
+# clipart / charts / diagrams / course illustrations / stock-art watermarks
+# are NEVER appropriate in a WishNest editorial article.
+_BAD_CONTENT_RE = re.compile(
+    r"\b(?:"
+    r"clipart|clip[\s_\-]?art|cartoon|vector|icon|icons?|logo|logos?"
+    r"|diagram|chart|charts?|infographic|infograph|illustration|illustrations?"
+    r"|drawing|sketch|sticker|badge|certificate|watermark"
+    r"|course|tutorial|lecture|powerpoint|presentation|slide|slides?|ebook|template"
+    r"|emission|emiss|carbon|co2|greenhouse|pollut"
+    r"|stock[\s_\-]?photo|royalty[\s_\-]?free|shutterstock|gettyimages"
+    r"|istockphoto|dreamstime|depositphoto|alamy|freepik|vecteezy"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _is_bad_content(title: str | None, source_url: str | None) -> bool:
+    """
+    Return True when the image is definitively non-photographic (clipart,
+    diagram, chart, course illustration, stock-art watermark, etc.).
+
+    Called before the token-relevance check so that a bad-content image is
+    always rejected even if it happens to share geographic tokens with the
+    query (e.g. an "India Gate emissions chart" would otherwise pass the
+    relevance filter).
+    """
+    text = f"{title or ''} {source_url or ''}"
+    return bool(_BAD_CONTENT_RE.search(text))
+
+
 def _is_relevant(query: str, title: str | None, source_url: str | None) -> bool:
     """
-    Reject a candidate image if its title/source metadata shares no
-    significant words with the search query (minus "india" and generic
-    filler like "luxury"/"resort"). This stops queries for a specific
-    landmark (e.g. "Har Ki Pauri, Haridwar") from silently accepting a
-    generic/unrelated stock photo when the exact match wasn't the top hit.
+    Reject a candidate image if:
+      (a) it is definitively non-photographic (clipart, chart, diagram, etc.) —
+          hard rejection applied before any token check, or
+      (b) its title/source metadata shares no significant words with the search
+          query (minus "india" and generic filler like "luxury"/"resort").
 
-    If the provider gives us no title/source metadata to judge at all, we
-    can't strictly filter a bare URL — allow it through rather than
-    starving every slot down to the Picsum placeholder.
+    The second check stops queries for a specific landmark
+    (e.g. "Har Ki Pauri, Haridwar") from silently accepting a generic/
+    unrelated stock photo when the exact match wasn't the top hit.
+
+    If the provider gives us no title/source metadata to judge relevance, we
+    allow the image through (can't filter a bare URL) — but the bad-content
+    check above already ran, so at minimum clipart and charts are blocked.
     """
+    # ── Hard reject: definitively non-photographic content ───────────────────
+    if _is_bad_content(title, source_url):
+        return False
+
+    # ── Token-overlap relevance check ────────────────────────────────────────
     query_tokens = _significant_tokens(query)
     if not query_tokens:
         return True
 
     metadata_tokens = _significant_tokens(f"{title or ''} {source_url or ''}")
     if not metadata_tokens:
-        return True
+        return True  # bare URL — can't judge; bad-content gate already ran
 
     return bool(query_tokens & metadata_tokens)
 
