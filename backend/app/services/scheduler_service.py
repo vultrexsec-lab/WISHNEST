@@ -151,6 +151,27 @@ def _run_category(item: dict) -> None:
         # the same query set landing in the dashboard simultaneously).
         fresh_properties = discover_fresh_properties(category, db, target_count=1, max_photos=15)
 
+        # ── Explicit dedup + hard limit before the loop ──────────────────────
+        # Belt-and-suspenders: deduplicate the returned list by place_id so
+        # that a repeated data_id from the SerpApi response never enters the
+        # pipeline more than once, then enforce an absolute ceiling of 1
+        # property per category per run regardless of target_count.
+        if fresh_properties:
+            _seen_batch_pids: set[str] = set()
+            _deduped: list = []
+            for _p in fresh_properties:
+                _pid = _p.place_id or ""
+                if _pid and _pid in _seen_batch_pids:
+                    logger.warning(
+                        "Scheduler: dropped duplicate place_id=%r (%r) from batch before loop.",
+                        _pid, _p.name,
+                    )
+                    continue
+                if _pid:
+                    _seen_batch_pids.add(_pid)
+                _deduped.append(_p)
+            fresh_properties = _deduped[:1]  # absolute max: 1 property per category run
+
         if fresh_properties:
             for listing in fresh_properties:
                 pid = listing.place_id or ""
