@@ -269,7 +269,12 @@ def regenerate_article_images(article: Article, db: Session) -> bool:
     return patched_any
 
 
-def run_research_pipeline(brief: str, db: Session, category: str | None = None) -> list[Article]:
+def run_research_pipeline(
+    brief: str,
+    db: Session,
+    category: str | None = None,
+    place_id: str | None = None,
+) -> list[Article]:
     # ── 1. Research sources via Firecrawl ────────────────────────────────────
     try:
         sources = search_and_scrape(brief)
@@ -331,6 +336,27 @@ def run_research_pipeline(brief: str, db: Session, category: str | None = None) 
         raise ResearchPipelineError(
             "OpenAI did not return any article package that matched the required schema."
         )
+
+    # ── 3b. Record the live property's place_id for de-duplication ───────────
+    # When this pipeline run was triggered by live discovery (scheduler or the
+    # broad-search resolver), the caller supplies the Google Places place_id /
+    # SerpApi data_id that uniquely identifies the property. Writing it here
+    # ensures the next scheduler run excludes this property from discovery.
+    if place_id:
+        try:
+            for article in created:
+                article.place_id = place_id
+            db.commit()
+            logger.info(
+                "Recorded place_id=%r on %d article(s) for de-duplication.",
+                place_id, len(created),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to record place_id=%r on articles: %s", place_id, exc)
+            try:
+                db.rollback()
+            except Exception:
+                pass
 
     # ── 4. Fetch real images from DuckDuckGo and patch saved rows ────────────
     # Runs after all articles are committed, so a failure never blocks an

@@ -81,6 +81,10 @@ class PropertyListing:
     review_count: int | None
     address: str | None
     maps_url: str | None
+    # Unique identifier from the live provider — Google Places `place_id` or
+    # SerpApi `data_id`. Used for de-duplication: the scheduler records this
+    # on each Article row so the same property is never covered twice.
+    place_id: str | None = None
     # Every other real photo belonging to THIS SAME listing (may be empty if
     # the provider only ever returns one). Used for review articles about a
     # single named property, so every image slot in the article can be
@@ -173,12 +177,17 @@ def _coerce_review_count(value) -> int | None:
         return None
 
 
-def _google_places_search(location: str, limit: int) -> list[PropertyListing]:
+def _google_places_query(query: str, limit: int) -> list[PropertyListing]:
+    """
+    Run a Google Places Text Search for *query* (a fully-formed query string,
+    NOT prefixed automatically). Returns up to *limit* `PropertyListing`s with
+    `place_id` set. Used by both the location-based `fetch_premium_stays` and
+    the direct-query `search_properties` / `text_search_place` functions.
+    """
     api_key = get_settings().google_places_api_key
     if not api_key:
         return []
 
-    query = f"top rated luxury hotels resorts villas boutique stays in {location}"
     try:
         resp = requests.get(
             "https://maps.googleapis.com/maps/api/place/textsearch/json",
@@ -191,7 +200,7 @@ def _google_places_search(location: str, limit: int) -> list[PropertyListing]:
         if status not in ("OK", "ZERO_RESULTS"):
             logger.warning(
                 "Google Places textsearch error for %r: %s (%s)",
-                location, status, data.get("error_message", ""),
+                query[:80], status, data.get("error_message", ""),
             )
             return []
 
@@ -224,14 +233,20 @@ def _google_places_search(location: str, limit: int) -> list[PropertyListing]:
                         f"https://www.google.com/maps/place/?q=place_id:{place_id}"
                         if place_id else None
                     ),
+                    place_id=place_id,
                 )
             )
             if len(listings) >= limit:
                 break
         return listings
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Google Places search failed for %r: %s", location, exc)
+        logger.warning("Google Places query failed for %r: %s", query[:80], exc)
         return []
+
+
+def _google_places_search(location: str, limit: int) -> list[PropertyListing]:
+    query = f"top rated luxury hotels resorts villas boutique stays in {location}"
+    return _google_places_query(query, limit)
 
 
 def _google_place_details_photos(place_id: str, api_key: str, max_photos: int) -> list[str]:
@@ -368,6 +383,7 @@ def fetch_property_by_name(
                             f"https://www.google.com/maps/place/?q=place_id:{place_id}"
                             if place_id else None
                         ),
+                        place_id=place_id,
                         photo_urls=photo_urls,
                     )
         except Exception as exc:  # noqa: BLE001
@@ -437,6 +453,7 @@ def fetch_property_by_name(
                         review_count=_coerce_review_count(place.get("reviews")),
                         address=place.get("address"),
                         maps_url=place.get("link"),
+                        place_id=data_id,
                         photo_urls=photo_urls,
                     )
         except Exception as exc:  # noqa: BLE001
@@ -445,12 +462,16 @@ def fetch_property_by_name(
     return None
 
 
-def _serpapi_maps_search(location: str, limit: int) -> list[PropertyListing]:
+def _serpapi_maps_query(query: str, limit: int) -> list[PropertyListing]:
+    """
+    Run a SerpApi Google Maps search for *query* (fully-formed). Returns up
+    to *limit* `PropertyListing`s with `place_id` set to the SerpApi `data_id`
+    (the stable identifier used to pull a property's full photo gallery).
+    """
     api_key = get_settings().serpapi_key
     if not api_key:
         return []
 
-    query = f"top rated luxury hotels resorts villas boutique stays in {location}"
     try:
         resp = requests.get(
             "https://serpapi.com/search.json",
@@ -475,6 +496,7 @@ def _serpapi_maps_search(location: str, limit: int) -> list[PropertyListing]:
             )
             if not thumbnail:
                 continue
+            data_id = place.get("data_id")
             listings.append(
                 PropertyListing(
                     name=place.get("title") or "",
@@ -483,14 +505,84 @@ def _serpapi_maps_search(location: str, limit: int) -> list[PropertyListing]:
                     review_count=_coerce_review_count(place.get("reviews")),
                     address=place.get("address"),
                     maps_url=place.get("link"),
+                    place_id=data_id,
                 )
             )
             if len(listings) >= limit:
                 break
         return listings
     except Exception as exc:  # noqa: BLE001
-        logger.warning("SerpApi Google Maps search failed for %r: %s", location, exc)
+        logger.warning("SerpApi Google Maps query failed for %r: %s", query[:80], exc)
         return []
+
+
+def _serpapi_maps_search(location: str, limit: int) -> list[PropertyListing]:
+    query = f"top rated luxury hotels resorts villas boutique stays in {location}"
+    return _serpapi_maps_query(query, limit)
+
+
+def search_properties(query: str, limit: int = 20) -> list[PropertyListing]:
+    """
+    Direct-query version of `fetch_premium_stays` — accepts a fully-formed
+    search string (e.g. "top rated luxury boutique hotels Rajasthan India")
+    instead of a bare location name. Used by the discovery service for
+    category-specific scheduler queries and by the broad-search resolver.
+
+    Provider order: Google Places API, then SerpApi. Returns an empty list
+    (never raises, never fabricates data) when neither provider is configured.
+    """
+    query = (query or "").strip()
+    if not query:
+        return []
+
+    for provider_fn in (_google_places_query, _serpapi_maps_query):
+        try:
+            listings = provider_fn(query, limit)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "search_properties provider %s raised for query %r: %s",
+                provider_fn.__name__, query[:80], exc,
+            )
+            listings = []
+        if listings:
+            logger.info(
+                "search_properties: %d result(s) via %s for query %r",
+                len(listings), provider_fn.__name__, query[:80],
+            )
+            return listings
+
+    logger.info("search_properties: no results from any provider for query %r", query[:80])
+    return []
+
+
+def text_search_place(query: str, max_photos: int = 15) -> PropertyListing | None:
+    """
+    Resolve a free-form text query (e.g. "Top 5 star hotel in Mussoorie" or
+    "Amanbagh Rajasthan") to the single best matching Google Maps business,
+    returning a `PropertyListing` with its full photo gallery (via Place
+    Details / SerpApi gallery).
+
+    This is the broad-query resolver used by the research router: if the user
+    types anything that Google Places can match to a real business, we extract
+    its exact details and feed them into the article pipeline instead of
+    running a generic LLM-context search. Returns None (never raises) if no
+    real match is found — callers fall through to the Firecrawl path.
+    """
+    query = (query or "").strip()
+    if not query:
+        return None
+
+    # `fetch_property_by_name` does exactly what we need: Text Search for
+    # the query, then Place Details for the full photo gallery. The `name`
+    # and `location` split doesn't matter here — passing the full query as
+    # `name` with `location=None` produces the right Text Search call.
+    result = fetch_property_by_name(query, location=None, max_photos=max_photos)
+    if result:
+        logger.info(
+            "text_search_place: resolved %r -> %r (place_id=%r, %.1f★)",
+            query[:80], result.name, result.place_id, result.rating or 0.0,
+        )
+    return result
 
 
 def fetch_premium_stays(location: str | None, limit: int = 8) -> list[PropertyListing]:

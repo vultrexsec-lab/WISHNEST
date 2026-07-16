@@ -114,6 +114,14 @@ class Article(Base):
     # --- Category / taxonomy ---
     category = Column(String, nullable=True, index=True)  # e.g. "intelligence", "destinations", "best-of", "reimagined"
 
+    # --- De-duplication: Google Places place_id (or SerpApi data_id) of the
+    # specific business this article was generated for. Populated for every
+    # article produced by the live-discovery pipeline; NULL for articles
+    # generated from a free-text brief without a Places match. The scheduler
+    # checks this column before generating to guarantee no property is ever
+    # covered twice. ---
+    place_id = Column(String, nullable=True, index=True)
+
     # --- Scheduling / audit ---
     scheduled_at = Column(DateTime(timezone=True), nullable=True)
     published_at = Column(DateTime(timezone=True), nullable=True)

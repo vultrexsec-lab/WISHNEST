@@ -1,13 +1,26 @@
 """
 Weekly auto-generation scheduler for WishNest.
 
-Runs three research pipeline jobs every week — one each for:
+Runs three discovery-based pipeline jobs every week — one each for:
   • Hospitality / reviews
   • Best places / destinations
   • Villas / best-of
 
-Each job runs in a background thread (identical pattern to manual /api/research).
-Run history (last 30 entries) is kept in memory so the dashboard can display it.
+Each job uses the live Google Places / SerpApi discovery engine to find
+top-rated properties in India that have NOT yet been covered (checked via
+the `place_id` column on the `articles` table), then generates a full
+WishNest article for each fresh property found. This guarantees:
+
+  1. No static/generic LLM briefs — every article is anchored to a real,
+     named, live-rated property from Google Maps.
+  2. No repetition — properties are excluded from future runs once covered,
+     using their Google Places place_id as the persistent key.
+  3. ≥10 high-res real photos per article — the discovery service enriches
+     each candidate with its full Google Maps photo gallery (≤15 photos)
+     before handing it to the pipeline.
+
+Falls back to the original static brief for a category only when no fresh
+live properties can be found (e.g. API not configured, quota exhausted).
 """
 import logging
 import threading
@@ -22,8 +35,10 @@ from app.services.research_pipeline import ResearchPipelineError, run_research_p
 
 logger = logging.getLogger("wishnest.scheduler")
 
-# ── Weekly auto-generation briefs per category ────────────────────────────────
-AUTO_BRIEFS = [
+# ── Fallback static briefs (used ONLY when live discovery finds nothing) ──────
+# These are intentionally generic so they still work as a last resort even
+# without a specific property to anchor the article to.
+_FALLBACK_BRIEFS = [
     {
         "category": "reviews",
         "label": "Hospitality & Reviews",
@@ -52,6 +67,9 @@ AUTO_BRIEFS = [
         ),
     },
 ]
+
+# Expose the category/label metadata for the dashboard status endpoint
+AUTO_BRIEFS = _FALLBACK_BRIEFS
 
 # ── Shared state — ALL access must hold _STATE_LOCK ──────────────────────────
 _STATE_LOCK = threading.Lock()
@@ -86,18 +104,81 @@ def _record_run(category: str, label: str, status: str, message: str, article_co
             _HISTORY.pop(0)
 
 
-def _run_category(brief: str, category: str, label: str) -> None:
-    """Single-category pipeline run — called by the scheduler or manual trigger."""
+def _run_category(item: dict) -> None:
+    """
+    Single-category pipeline run using live Google Maps discovery.
+
+    Strategy:
+      1. Call `discover_fresh_properties(category)` to find top-rated India
+         properties not yet in the DB (checked via place_id).
+      2. For each fresh property, build a targeted research brief and run the
+         full pipeline (Firecrawl → OpenAI → images → DB).
+      3. Record the place_id on the created article rows for future dedup.
+      4. If live discovery finds nothing (no API key, quota exhausted, etc.),
+         fall back to the category's static generic brief so the scheduler
+         never silently produces zero articles.
+    """
+    category: str = item["category"]
+    label: str = item["label"]
+    fallback_brief: str = item["brief"]
+
     db = SessionLocal()
+    total_created = 0
     try:
-        logger.info("Scheduler: starting auto-generation for category=%r (%s)", category, label)
-        created = run_research_pipeline(brief, db, category=category)
-        msg = f"{len(created)} article(s) drafted."
-        logger.info("Scheduler: completed category=%r — %s", category, msg)
-        _record_run(category, label, "success", msg, len(created))
-    except ResearchPipelineError as exc:
-        logger.error("Scheduler: pipeline error for category=%r: %s", category, exc)
-        _record_run(category, label, "failed", str(exc), 0)
+        # ── Live discovery path ──────────────────────────────────────────────
+        from app.services.discovery_service import build_property_brief, discover_fresh_properties
+
+        logger.info(
+            "Scheduler: starting live discovery for category=%r (%s)", category, label
+        )
+        fresh_properties = discover_fresh_properties(category, db, target_count=2, max_photos=15)
+
+        if fresh_properties:
+            for listing in fresh_properties:
+                brief = build_property_brief(listing, category)
+                logger.info(
+                    "Scheduler: generating article for %r (place_id=%r)",
+                    listing.name, listing.place_id,
+                )
+                try:
+                    created = run_research_pipeline(
+                        brief,
+                        db,
+                        category=category,
+                        place_id=listing.place_id,
+                    )
+                    total_created += len(created)
+                    logger.info(
+                        "Scheduler: drafted %d article(s) for %r", len(created), listing.name
+                    )
+                except ResearchPipelineError as exc:
+                    logger.error(
+                        "Scheduler: pipeline error for property %r: %s", listing.name, exc
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception(
+                        "Scheduler: unexpected error for property %r: %s", listing.name, exc
+                    )
+
+            msg = f"{total_created} article(s) drafted from {len(fresh_properties)} live-discovered properties."
+            logger.info("Scheduler: completed category=%r — %s", category, msg)
+            _record_run(category, label, "success", msg, total_created)
+            return
+
+        # ── Fallback: no live properties found — use static brief ────────────
+        logger.warning(
+            "Scheduler: no fresh live properties found for category=%r — "
+            "falling back to static brief.", category,
+        )
+        try:
+            created = run_research_pipeline(fallback_brief, db, category=category)
+            msg = f"{len(created)} article(s) drafted (static brief fallback — no live properties found)."
+            logger.info("Scheduler: completed category=%r (fallback) — %s", category, msg)
+            _record_run(category, label, "success", msg, len(created))
+        except ResearchPipelineError as exc:
+            logger.error("Scheduler: pipeline error for category=%r (fallback): %s", category, exc)
+            _record_run(category, label, "failed", str(exc), 0)
+
     except Exception as exc:  # noqa: BLE001
         logger.exception("Scheduler: unexpected error for category=%r: %s", category, exc)
         _record_run(category, label, "failed", f"Unexpected error: {exc}", 0)
@@ -106,7 +187,7 @@ def _run_category(brief: str, category: str, label: str) -> None:
 
 
 def _weekly_auto_generate() -> None:
-    """Weekly job: generates one article per category, in sequence."""
+    """Weekly job: generates articles per category in sequence."""
     progress_key = "all"
     with _PROGRESS_LOCK:
         if progress_key in _IN_PROGRESS:
@@ -116,8 +197,8 @@ def _weekly_auto_generate() -> None:
 
     try:
         logger.info("Scheduler: weekly auto-generation started.")
-        for item in AUTO_BRIEFS:
-            _run_category(item["brief"], item["category"], item["label"])
+        for item in _FALLBACK_BRIEFS:
+            _run_category(item)
         logger.info("Scheduler: weekly auto-generation finished.")
     finally:
         with _PROGRESS_LOCK:
@@ -195,7 +276,7 @@ def get_scheduler_status() -> dict:
         "next_run": next_run_val.isoformat() if next_run_val else None,
         "started_at": started,
         "categories": [
-            {"category": b["category"], "label": b["label"]} for b in AUTO_BRIEFS
+            {"category": b["category"], "label": b["label"]} for b in _FALLBACK_BRIEFS
         ],
         "history": history,
     }
@@ -210,12 +291,12 @@ def trigger_now(category: str | None = None) -> None:
     Raises RuntimeError if the requested category (or "all") is already in progress.
     """
     if category:
-        items = [b for b in AUTO_BRIEFS if b["category"] == category]
+        items = [b for b in _FALLBACK_BRIEFS if b["category"] == category]
         if not items:
             raise ValueError(f"Unknown category: {category!r}")
         progress_key = category
     else:
-        items = list(AUTO_BRIEFS)
+        items = list(_FALLBACK_BRIEFS)
         progress_key = "all"
 
     with _PROGRESS_LOCK:
@@ -227,7 +308,7 @@ def trigger_now(category: str | None = None) -> None:
     def _run() -> None:
         try:
             for item in items:
-                _run_category(item["brief"], item["category"], item["label"])
+                _run_category(item)
         finally:
             with _PROGRESS_LOCK:
                 _IN_PROGRESS.discard(progress_key)

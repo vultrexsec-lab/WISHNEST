@@ -23,6 +23,8 @@ REQUIRED_COLS = [
     ("eat_explore_score",   "DOUBLE PRECISION"),
     ("abcde_overall",       "TEXT"),
     ("is_trash",            "BOOLEAN NOT NULL DEFAULT false"),
+    # De-duplication: Google Places place_id / SerpApi data_id for live-discovered properties
+    ("place_id",            "TEXT"),
 ]
 
 
