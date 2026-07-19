@@ -61,13 +61,29 @@ class ArticleBase(BaseModel):
     @classmethod
     def strip_null_image_urls(cls, v: object) -> object:
         """
-        Existing DB rows may have NULL entries inside the ARRAY column
-        (written before the image-service None-filter was added).  Strip
-        them here so Pydantic never sees a None inside list[str] and
-        raises a ResponseValidationError on GET /api/articles.
+        Strip every entry from section_image_urls that is not a fully-formed
+        http(s) URL before the value reaches the frontend.
+
+        Three classes of bad entry are possible:
+          1. SQL NULL / Python None — written by old image-service code before
+             the None-filter was added.
+          2. Empty strings — written when the image provider returned nothing
+             and the slot was left as "".
+          3. Placeholder strings — e.g. "[Section 5 — Riverstone Cottages…]",
+             written when the image service could not fill a slot and returned
+             the raw alt-text template instead of a real URL.
+
+        Passing any of these to the frontend means the <img> element either
+        shows a broken-image icon (cases 2 & 3) or causes a Pydantic
+        ResponseValidationError (case 1).  We accept only http(s) strings.
         """
         if isinstance(v, list):
-            return [u for u in v if u is not None]
+            return [
+                u for u in v
+                if isinstance(u, str) and (
+                    u.startswith("http://") or u.startswith("https://")
+                )
+            ]
         return v
 
     # Review-only fields

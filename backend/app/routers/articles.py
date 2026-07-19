@@ -91,7 +91,16 @@ def list_articles(
     # somehow doesn't fire (e.g. response_model bypass paths).
     for a in articles:
         if a.section_image_urls:
-            a.section_image_urls = [u for u in a.section_image_urls if u is not None]
+            # Mirror the schema validator: accept only fully-formed http(s) URLs.
+            # This removes None entries (legacy rows), empty strings, and placeholder
+            # strings like "[Section 5 — Property Name…]" that the image service
+            # writes when a slot cannot be filled with a real image URL.
+            a.section_image_urls = [
+                u for u in a.section_image_urls
+                if isinstance(u, str) and (
+                    u.startswith("http://") or u.startswith("https://")
+                )
+            ]
     return articles
 
 

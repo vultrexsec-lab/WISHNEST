@@ -11,6 +11,85 @@ import {
   overallGrade,
 } from "@/lib/article-types";
 
+/**
+ * Format a raw property_snapshot value for display.
+ *
+ * The snapshot is typed as Record<string, unknown> on the backend so individual
+ * values can be scalars, arrays, or nested objects.  In particular:
+ *
+ *   google_live_sources → Array<{name: string; rating: number; maps_url: string}>
+ *
+ * `String(value)` on an array of objects produces "[object Object]", so we need
+ * a smarter serialiser here.
+ */
+function formatSnapshotValue(value: unknown): string {
+  if (value == null) return "—";
+
+  // Array: if every element is a primitive, join them; otherwise extract .name
+  // (used by google_live_sources) or fall back to JSON.
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "—";
+    const first = value[0];
+    if (typeof first === "object" && first !== null) {
+      const names = (value as Record<string, unknown>[])
+        .map((o) => (typeof o["name"] === "string" ? o["name"] : null))
+        .filter(Boolean);
+      return names.length > 0 ? names.join(", ") : JSON.stringify(value);
+    }
+    return value.join(", ");
+  }
+
+  // Plain object (shouldn't normally appear, but guard anyway)
+  if (typeof value === "object") {
+    const o = value as Record<string, unknown>;
+    if (typeof o["name"] === "string") return o["name"];
+    return JSON.stringify(value);
+  }
+
+  return String(value);
+}
+
+/**
+ * Parse <figcaption> text from the injected full_article HTML.
+ *
+ * The image service writes every injected image as:
+ *   <figure><img …><figcaption>Image: {sectionHeading}</figcaption></figure>
+ *
+ * These figcaptions reliably reflect the ACTUAL section the image appears in,
+ * whereas the LLM-generated `captions` array describes what the image was
+ * *intended* to be — which diverges from reality when the property pool returns
+ * bedroom/bathroom photos for a culinary or outdoor heading.
+ *
+ * Parsing from the HTML in the browser is cheap (single querySelectorAll call)
+ * and gives captions that are always in sync with the rendered article body.
+ */
+function extractFigcaptions(html: string | null | undefined): string[] {
+  if (!html) return [];
+  try {
+    const tmp = document.createElement("div");
+    tmp.innerHTML = html;
+    return Array.from(tmp.querySelectorAll("figcaption")).map(
+      (el) => el.textContent?.replace(/^Image:\s*/i, "").trim() ?? "",
+    );
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Returns true only for fully-formed http(s) URLs.
+ *
+ * The image service writes placeholder strings like
+ *   "[Section 5 — Riverstone Cottages: A Serene Retreat in Uttarakhand]"
+ * when no image could be fetched for a slot.  Those strings are truthy so
+ * they pass a simple `!!url` guard — but they are not renderable images.
+ * This predicate catches them (and empty strings) before they reach an <img>.
+ */
+function isRenderable(url: string | null | undefined): boolean {
+  if (!url) return false;
+  return url.startsWith("http://") || url.startsWith("https://");
+}
+
 export const ArticleDetailPage = (): JSX.Element => {
   const { id } = useParams<{ id: string }>();
 
@@ -123,7 +202,7 @@ export const ArticleDetailPage = (): JSX.Element => {
                     {key.replace(/_/g, " ").toUpperCase()}
                   </div>
                   <div className="pt-1 [font-family:'Inter',Helvetica] text-[14px] font-normal text-[#1e1e1e]">
-                    {String(value)}
+                    {formatSnapshotValue(value)}
                   </div>
                 </div>
               ))}
@@ -146,30 +225,50 @@ export const ArticleDetailPage = (): JSX.Element => {
               )}
 
               {article.section_image_urls &&
-                article.section_image_urls.some(Boolean) && (
+                article.section_image_urls.some(isRenderable) && (
                   <div className="mb-10 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    {article.section_image_urls
-                      .map((url, originalIdx) => ({
-                        url,
-                        caption: article.captions?.[originalIdx],
-                      }))
-                      .filter(({ url }) => !!url)
-                      .map(({ url, caption }, i) => (
-                        <div key={i}>
-                          <img
-                            src={url}
-                            alt={caption || `Section ${i + 1} — ${article.headline}`}
-                            loading="lazy"
-                            referrerPolicy="no-referrer"
-                            className="h-[160px] w-full rounded-lg object-cover"
-                          />
-                          {caption && (
-                            <p className="mt-1.5 [font-family:'Inter',Helvetica] text-[11px] italic text-[#6b6b6b]">
-                              {caption}
-                            </p>
-                          )}
-                        </div>
-                      ))}
+                    {(() => {
+                      // Derive captions from <figcaption> tags in the article HTML.
+                      // These reflect the ACTUAL section headings the image service
+                      // used when injecting images — they are always in sync with
+                      // section_image_urls and never drift from the rendered body.
+                      // The LLM-generated captions[] array describes *intended* images
+                      // and diverges when the property pool substitutes a bedroom for
+                      // a culinary or outdoor slot (seen as "swimming pool" caption
+                      // under a bedroom thumbnail).
+                      const figCaptions = extractFigcaptions(article.full_article);
+
+                      return article.section_image_urls!
+                        .map((url, originalIdx) => ({
+                          url,
+                          // Prefer figcaption from the rendered HTML; fall back to
+                          // the LLM caption only if figcaptions are unavailable.
+                          caption:
+                            figCaptions[originalIdx] ||
+                            article.captions?.[originalIdx] ||
+                            null,
+                        }))
+                        // isRenderable rejects null, empty strings, and placeholder
+                        // strings like "[Section 5 — Riverstone Cottages…]" that the
+                        // image service writes when a slot cannot be filled.
+                        .filter(({ url }) => isRenderable(url))
+                        .map(({ url, caption }, i) => (
+                          <div key={i}>
+                            <img
+                              src={url!}
+                              alt={caption || `Section ${i + 1} — ${article.headline}`}
+                              loading="lazy"
+                              referrerPolicy="no-referrer"
+                              className="h-[160px] w-full rounded-lg object-cover"
+                            />
+                            {caption && (
+                              <p className="mt-1.5 [font-family:'Inter',Helvetica] text-[11px] italic text-[#6b6b6b]">
+                                {caption}
+                              </p>
+                            )}
+                          </div>
+                        ));
+                    })()}
                   </div>
                 )}
 
