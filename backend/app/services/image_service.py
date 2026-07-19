@@ -173,6 +173,33 @@ PREMIUM_FOOD_PLACEHOLDER_IMAGES: list[str] = [
 ]
 
 
+# Verified lounge/lobby/exterior placeholders — used ONLY when ALL dynamic
+# search providers fail for a hospitality or general section so the slot
+# never shows a bathroom or blank image under a guest-experience heading.
+PREMIUM_LOUNGE_EXTERIOR_IMAGES: list[str] = [
+    "https://images.unsplash.com/photo-1590490360182-c33d57733427?w=1600&q=80",  # L1 hotel suite lounge area
+    "https://images.unsplash.com/photo-1564501049412-61c2a3083791?w=1600&q=80",  # L2 hotel lobby interior
+    "https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=1600&q=80",  # L3 grand hotel exterior
+    "https://images.unsplash.com/photo-1551882547-ff40c63fe5fa?w=1600&q=80",  # L4 luxury hotel entrance
+    "https://images.unsplash.com/photo-1455587734955-081b22074882?w=1600&q=80",  # L5 hotel reception/lobby
+]
+
+
+def _lounge_fallback_url(used_urls: set[str]) -> str:
+    """
+    Pick a verified lounge / lobby / exterior placeholder that has not already
+    been used in this article.  Falls back to the first entry if every
+    placeholder is already used.  Designed for hospitality and general sections
+    where the property photo pool cannot be trusted (untagged Google Maps photos
+    may be bathrooms or bedrooms).
+    """
+    for raw_url in PREMIUM_LOUNGE_EXTERIOR_IMAGES:
+        if raw_url not in used_urls:
+            used_urls.add(raw_url)
+            return raw_url
+    return PREMIUM_LOUNGE_EXTERIOR_IMAGES[0]
+
+
 def _food_fallback_url(used_urls: set[str]) -> str:
     """
     Pick a verified food/dining placeholder that has not already been used in
@@ -586,6 +613,20 @@ _ROOM_DESIGN_HEADING_TOKENS: frozenset[str] = frozenset({
     "facility", "facilities", "spa", "wellness",
 })
 
+# Tokens that classify a heading as "hospitality / guest experience" — these
+# sections describe staff quality, check-in, reviews, and service, NOT rooms.
+# They must NEVER receive a bathroom or bedroom photo from the property pool.
+# Fallback: warm lounge / lobby / reception imagery.
+_HOSPITALITY_HEADING_TOKENS: frozenset[str] = frozenset({
+    "hospitality", "experience", "experiences", "guest", "guests",
+    "service", "services", "staff", "team", "host", "hosting",
+    "review", "reviews", "rating", "ratings", "feedback",
+    "check-in", "checkin", "checkout", "check-out",
+    "concierge", "reception", "front-desk", "frontdesk",
+    "welcome", "warmth", "care", "attention",
+    "impression", "impressions", "testimonial", "testimonials",
+})
+
 # Section-specific image-search query suffixes — appended when doing a
 # targeted search for a section so providers return contextually correct photos.
 _SECTION_QUERY_SUFFIX: dict[str, str] = {
@@ -594,7 +635,8 @@ _SECTION_QUERY_SUFFIX: dict[str, str] = {
     "outdoor":       "outdoor garden exterior grounds terrace pool",
     "room_design":   "room interior suite bedroom accommodation",
     "connectivity":  "exterior lobby entrance facade gate hotel front",
-    "general":       "",
+    "hospitality":   "hotel lounge lobby reception warm welcoming interior",
+    "general":       "hotel exterior facade property grounds architecture",
 }
 
 # Human-readable labels for figure captions — describe what TYPE of image
@@ -606,6 +648,7 @@ _SECTION_CAPTION_PREFIX: dict[str, str] = {
     "outdoor":       "Outdoor spaces",
     "room_design":   "Room and amenities",
     "connectivity":  "Entrance and access",
+    "hospitality":   "Guest experience",
     "general":       "Property feature",
 }
 
@@ -622,8 +665,13 @@ _SECTION_CAPTION_PREFIX: dict[str, str] = {
 # preferable to a rival property's dining room appearing under "Culinary Delights".
 # If even this neutral search fails, the slot is left intentionally blank.
 _SECTION_NEUTRAL_FALLBACK: dict[str, str] = {
-    "culinary": "fresh organic vegetables farm produce ingredients natural food",
-    "outdoor":  "outdoor natural scenery green garden peaceful vegetation sunlight",
+    "culinary":     "fresh organic vegetables farm produce ingredients natural food",
+    "outdoor":      "outdoor natural scenery green garden peaceful vegetation sunlight",
+    # Hospitality/experience sections: warm lounge/lobby imagery — never a bathroom.
+    "hospitality":  "hotel lounge lobby reception area warm welcoming atmosphere elegant",
+    # General/catch-all sections: safe exterior shot — universally appropriate
+    # for history, conclusion, overview, and any unclassified heading type.
+    "general":      "luxury hotel exterior architecture property beautiful grounds facade",
 }
 
 
@@ -631,7 +679,7 @@ def _classify_section(heading: str) -> str:
     """
     Return the section type for *heading*: one of
     ``"culinary"``, ``"outdoor"``, ``"room_design"``, ``"connectivity"``,
-    or ``"general"``.
+    ``"hospitality"``, ``"intro"``, or ``"general"``.
 
     Bathroom / plumbing images are appropriate only for ``"room_design"``
     sections.  The image routing layer uses this classification to decide
@@ -642,6 +690,10 @@ def _classify_section(heading: str) -> str:
     are routed to exterior / entrance / facade imagery so the section photo
     never shows an interior room or pool when readers are expecting a shot of
     the building's approach or front gate.
+
+    "hospitality" headings (guest experience, reviews, staff, service, etc.)
+    are routed to warm lounge / lobby imagery — they must never receive a
+    bathroom or bedroom photo from the property pool.
     """
     tokens = set(re.findall(r"[a-z]+", heading.lower()))
     if tokens & _CULINARY_HEADING_TOKENS:
@@ -652,6 +704,8 @@ def _classify_section(heading: str) -> str:
         return "room_design"
     if tokens & _CONNECTIVITY_HEADING_TOKENS:
         return "connectivity"
+    if tokens & _HOSPITALITY_HEADING_TOKENS:
+        return "hospitality"
     # Check intro LAST so specific types above take precedence (e.g. a heading
     # like "Introduction to the Garden" should be "outdoor", not "intro").
     if tokens & _INTRO_HEADING_TOKENS:
@@ -1243,24 +1297,31 @@ def generate_article_images(
             reject_plumbing = section_type != "room_design"
             url: str | None = None
 
-            # ── Culinary and outdoor sections BYPASS the property pool ──────
-            # Google Maps photo galleries are untagged by topic — photos of
-            # bathrooms, bedrooms, and lobbies sit alongside garden and dining
-            # shots with no metadata to distinguish them.  Pulling from the
-            # pool positionally guarantees mismatches (bathroom under "Outdoor
-            # Spaces", bedroom under "Culinary Delights").  Instead, route
-            # these sections to the same topic-specific neutral search that the
-            # multi-property path uses, then fall back to curated placeholders.
-            if section_type in ("culinary", "outdoor"):
+            # ── All sections EXCEPT room_design bypass the property pool ────
+            # Google Maps photo galleries are completely untagged by topic.
+            # Bathroom, bedroom, lobby, dining, and garden shots all sit in
+            # the same flat list with no metadata to distinguish them.
+            # Pulling from the pool positionally for any section type reliably
+            # produces mismatches — bathrooms under "Guest Experience and
+            # Hospitality", bedrooms under "Culinary Delights", toilets under
+            # "Outdoor Spaces".  The ONLY section that legitimately needs raw
+            # pool photos is "room_design" (guests assessing hygiene/comfort).
+            # Every other type is routed to a topic-specific neutral search so
+            # the image is always contextually appropriate.
+            _POOL_BYPASS_TYPES = frozenset({
+                "culinary", "outdoor", "hospitality", "general",
+                "connectivity", "intro",
+            })
+            if section_type in _POOL_BYPASS_TYPES:
                 time.sleep(0.2)
                 neutral_query = _SECTION_NEUTRAL_FALLBACK.get(section_type)
                 if neutral_query:
                     try:
                         url = _best_image(
                             neutral_query,
-                            location=None,          # property-neutral — no location
+                            location=None,      # property-neutral — no location
                             used_urls=used_urls,
-                            reject_plumbing=True,   # always True for these types
+                            reject_plumbing=True,
                         )
                     except Exception as exc:  # noqa: BLE001
                         logger.warning(
@@ -1268,28 +1329,37 @@ def generate_article_images(
                             slot[:50], section_type, exc,
                         )
                         url = None
-                if url is None and section_type == "culinary":
-                    url = _food_fallback_url(used_urls)
-                    logger.warning(
-                        "Section slot %r (culinary) -> curated food placeholder "
-                        "(all searches exhausted).",
-                        slot[:50],
-                    )
-                elif url is None:
-                    logger.warning(
-                        "Section slot %r (outdoor) -> leaving blank "
-                        "(no contextually appropriate image found).",
-                        slot[:50],
-                    )
+                # Curated fallback per section type when all searches fail
+                if url is None:
+                    if section_type == "culinary":
+                        url = _food_fallback_url(used_urls)
+                        logger.warning(
+                            "Section slot %r (culinary) -> curated food placeholder "
+                            "(all searches exhausted).",
+                            slot[:50],
+                        )
+                    elif section_type in ("hospitality", "general"):
+                        url = _lounge_fallback_url(used_urls)
+                        logger.warning(
+                            "Section slot %r (type=%r) -> curated lounge/exterior placeholder "
+                            "(all searches exhausted).",
+                            slot[:50], section_type,
+                        )
+                    else:
+                        logger.warning(
+                            "Section slot %r (type=%r) -> leaving blank "
+                            "(no contextually appropriate image found).",
+                            slot[:50], section_type,
+                        )
                 if url is not None:
                     fallback_fill_count += 1
                     logger.info(
                         "Section slot %r (type=%r) -> topic-specific search "
-                        "(pool bypassed to prevent indoor mismatch)",
+                        "(pool bypassed — global bathroom blacklist for non-room-design sections)",
                         slot[:50], section_type,
                     )
 
-            # ── All other section types: use property's own pool ────────────
+            # ── room_design: use property's own pool (bathrooms OK here) ────
             elif single_pool.has_unused:
                 url = single_pool.take_next()
                 pool_fill_count += 1
@@ -1439,14 +1509,17 @@ def generate_article_images(
             # assess hygiene / sanitation quality.
             reject_plumbing = section_type != "room_design"
 
-            # Culinary, outdoor, connectivity, and intro sections bypass the live
-            # mixed pool.  The multi-property live pool aggregates photos from
-            # several different businesses — we cannot tag-filter it, so any
-            # interior taken from the pool might be a random hotel's bathroom or
-            # bedroom.  For these section types the risk of a contextual mismatch
-            # outweighs the benefit of live listing imagery.
-            # Room-design and general sections use the pool first.
-            needs_pool_bypass = section_type in ("culinary", "outdoor", "connectivity", "intro")
+            # All sections except room_design bypass the live mixed pool.
+            # The multi-property live pool aggregates untagged photos from
+            # several businesses — bathrooms, bedrooms, and lobbies sit in the
+            # same flat list.  Pulling from the pool for hospitality/general
+            # sections reliably produces mismatches (e.g. a bathroom under
+            # "Guest Experience and Hospitality").  room_design is the ONLY
+            # type that legitimately needs raw pool photos (hygiene/comfort).
+            needs_pool_bypass = section_type in (
+                "culinary", "outdoor", "connectivity", "intro",
+                "hospitality", "general",
+            )
 
             url: str | None = None
             if not needs_pool_bypass:
@@ -1465,9 +1538,11 @@ def generate_article_images(
 
             if url is None:
                 time.sleep(0.3)
-                if section_type in ("culinary", "outdoor") and section_type in _SECTION_NEUTRAL_FALLBACK:
-                    # Property-neutral, location-free abstract stock — guaranteed
-                    # never to pull another restaurant's dining room or resort pool.
+                if section_type in _SECTION_NEUTRAL_FALLBACK:
+                    # Property-neutral, location-free abstract stock — covers
+                    # culinary, outdoor, hospitality, and general sections.
+                    # Guaranteed never to pull another restaurant's dining room,
+                    # resort pool, or a competitor's bathroom under these headings.
                     search_query = _SECTION_NEUTRAL_FALLBACK[section_type]
                     search_location = None
                 elif section_type in ("connectivity", "intro"):
@@ -1511,6 +1586,15 @@ def generate_article_images(
                     logger.warning(
                         "No food image found for heading %r — using curated food placeholder.",
                         heading[:50],
+                    )
+                elif section_type in ("hospitality", "general"):
+                    # Guest experience / general sections: use curated lounge /
+                    # exterior placeholder — always contextually safe and never
+                    # a bathroom even when all search providers are exhausted.
+                    url = _lounge_fallback_url(used_urls)
+                    logger.warning(
+                        "No lounge/exterior image found for heading %r (type=%r) — using curated placeholder.",
+                        heading[:50], section_type,
                     )
                 elif _landmark or section_type in ("outdoor", "connectivity", "intro"):
                     # Landmark, outdoor, connectivity, and intro sections: leave the
