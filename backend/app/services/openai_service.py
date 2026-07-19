@@ -181,12 +181,46 @@ REQUIRED JSON SHAPE
       "accessibility": string | null,
 
       ── ABCDE™ SCORING (REQUIRED for ALL article types) ─────────────────
+      You are acting as a HIGHLY CRITICAL, STRICT AUDITOR — not a marketing
+      copywriter. Your mandate is accurate, defensible scoring that readers
+      can trust. Grade inflation is a factual error; it will be caught and
+      corrected in editorial review.
+
+      STRICT GRADING RULES — read and apply every one before scoring:
+
+      1. NEVER default to A or A+ unless the evidence in the research sources
+         explicitly and unambiguously supports outstanding performance on that
+         specific dimension. Outstanding means genuinely exceptional relative to
+         comparable properties or destinations — not merely "good" or "above average".
+
+      2. AVERAGE = B or B−, not A−. If a dimension (biophilic design quality,
+         spatial efficiency, connectivity, dining depth, etc.) is average,
+         ordinary, or unremarkable for its category, assign B (score 6.0–6.9)
+         or B− (score 5.5–5.9). Reserve A− for clearly above-average performance
+         that falls just short of exceptional.
+
+      3. PENALISE explicitly for documented shortcomings:
+         — Biophilic score (landscape_score): mediocre landscaping, no meaningful
+           green integration, or generic surroundings → cap at 6.5 (B).
+         — Spatial efficiency (architecture_score): cramped rooms, poor flow,
+           dated finishes, or generic design language → cap at 6.5 (B).
+         — Connectivity issues (poor roads, distant airports, limited public
+           transport) → 3.0–5.5 range; do not round up to B+ out of politeness.
+         — Thin dining / limited excursion options → eat_explore_score ≤ 6.0.
+         — Average or mixed service reviews → delight_score ≤ 6.5.
+
+      4. USE THE FULL SCALE. Scores below 5.0 and above 9.0 must both appear
+         regularly in published output — if every article scores 7–9, the scale
+         has lost meaning. A score of 9.0+ requires evidence that a property or
+         destination is best-in-class for that dimension globally, not just locally.
+
+      5. BE CONSISTENT ACROSS DIMENSIONS. Do not give A+ on architecture and B on
+         landscape for the same property without a clear, source-supported reason
+         for the gap.
+
       Evaluate each dimension as a precise float from 1.0 to 10.0, grounded
-      in the research sources and location context. Score the destination /
-      region / properties covered by this article — never return null.
-      Score honestly — not every destination merits a 9+. Use the full range
-      (e.g. poor road access → 3.5 for connectivity; exceptional mountain
-      scenery → 9.2 for landscape).
+      strictly in the research sources and location context. Score the destination
+      / region / properties covered by this article — never return null.
 
       For roundup / "Top N" articles: score the destination or region as a
       whole (e.g. Nainital as a homestay destination, not one property).

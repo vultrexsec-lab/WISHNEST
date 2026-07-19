@@ -441,6 +441,53 @@ def _significant_tokens(text: str | None) -> set[str]:
 
 
 # ---------------------------------------------------------------------------
+# Outdoor-context / indoor-metadata mismatch detection
+#
+# Problem: a section heading like "Outdoor Spaces and Amenities" generates a
+# query whose generic token "amenities" matches hotel-room or bathroom images
+# tagged "hotel amenities" — semantically wrong for an outdoor/nature section.
+#
+# Fix: if the search query signals an outdoor / garden / nature context, images
+# whose metadata contains indoor-space tokens (bathroom, sink, bedroom, etc.)
+# are hard-rejected regardless of token-overlap score.
+# ---------------------------------------------------------------------------
+
+# Tokens that signal an outdoor / garden / nature context in the query text.
+_OUTDOOR_CONTEXT_TOKENS: frozenset[str] = frozenset({
+    "outdoor", "outdoors", "outside", "open-air", "openair",
+    "garden", "gardens", "grounds", "lawn", "courtyard", "patio",
+    "terrace", "balcony", "deck", "verandah", "veranda",
+    "pool", "infinity", "landscape", "landscaping",
+    "forest", "trail", "trek", "nature", "natural",
+    "valley", "mountain", "hill", "scenic", "vista", "view",
+    "sky", "sunrise", "sunset", "surroundings", "environment",
+    "meadow", "field", "jungle", "wildlife",
+})
+
+# Tokens in image metadata (title / source URL) that definitively indicate
+# an indoor / bathroom / bedroom space — never appropriate under an outdoor
+# section heading.
+_INDOOR_MISMATCH_TOKENS: frozenset[str] = frozenset({
+    "bathroom", "washroom", "restroom", "lavatory", "toilet",
+    "bathtub", "bathing", "shower", "showerroom",
+    "sink", "faucet", "tap", "plumbing", "vanity",
+    "bedroom", "closet", "wardrobe", "corridor", "hallway",
+    "laundry", "linen", "towel", "bath",
+})
+
+# Compiled regex for fast hard-rejection of indoor/bathroom content — applied
+# whether or not the outdoor-context flag is set (bathroom images are almost
+# never editorially appropriate in a travel article).
+_INDOOR_BATHROOM_RE = re.compile(
+    r"\b(?:"
+    r"bathroom|washroom|restroom|lavatory|toilet|bathtub|bathing"
+    r"|shower[\s_\-]?room|sink|faucet|plumbing"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+# ---------------------------------------------------------------------------
 # Hard content-type rejection — non-photographic / non-editorial media
 # ---------------------------------------------------------------------------
 
@@ -478,30 +525,71 @@ def _is_bad_content(title: str | None, source_url: str | None) -> bool:
 
 def _is_relevant(query: str, title: str | None, source_url: str | None) -> bool:
     """
-    Reject a candidate image if:
-      (a) it is definitively non-photographic (clipart, chart, diagram, etc.) —
-          hard rejection applied before any token check, or
-      (b) its title/source metadata shares no significant words with the search
-          query (minus "india" and generic filler like "luxury"/"resort").
+    Reject a candidate image if any of the following conditions are met:
 
-    The second check stops queries for a specific landmark
-    (e.g. "Har Ki Pauri, Haridwar") from silently accepting a generic/
-    unrelated stock photo when the exact match wasn't the top hit.
+      (a) It is definitively non-photographic (clipart, chart, diagram, etc.) —
+          hard rejection applied before any token check.
 
-    If the provider gives us no title/source metadata to judge relevance, we
-    allow the image through (can't filter a bare URL) — but the bad-content
-    check above already ran, so at minimum clipart and charts are blocked.
+      (b) Its metadata contains bathroom / washroom / indoor-plumbing content —
+          hard-rejected unconditionally because such images are editorially
+          inappropriate for a travel publication regardless of section context.
+
+      (c) The query signals an OUTDOOR / GARDEN / NATURE context (tokens such as
+          "outdoor", "garden", "terrace", "pool", "landscape", "valley", etc.)
+          AND the image metadata contains INDOOR-SPACE tokens (bathroom, bedroom,
+          sink, corridor, etc.).  This prevents a generic tag like "amenities"
+          from matching a washroom photo filed under "Outdoor Spaces and
+          Amenities".  The full query is evaluated — not just one sub-word —
+          so environmental tokens like "Outdoor" or "Gardens" outweigh incidental
+          generic terms like "Amenities".
+
+      (d) Its title/source metadata shares no significant words with the search
+          query (token-overlap check).  Stops a landmark query from silently
+          accepting an unrelated stock photo.
+
+    If the provider gives us no title/source metadata (bare URL only) we allow
+    the image through for (c) and (d) — can't filter what we can't read — but
+    (a) and (b) still run because they inspect the source URL itself.
     """
-    # ── Hard reject: definitively non-photographic content ───────────────────
+    metadata_text = f"{title or ''} {source_url or ''}"
+
+    # ── (a) Hard reject: definitively non-photographic content ───────────────
     if _is_bad_content(title, source_url):
         return False
 
-    # ── Token-overlap relevance check ────────────────────────────────────────
+    # ── (b) Hard reject: bathroom / washroom / plumbing images ───────────────
+    # These are never editorially appropriate in a travel article regardless of
+    # which section they would appear under.
+    if _INDOOR_BATHROOM_RE.search(metadata_text):
+        logger.debug(
+            "Rejected bathroom/indoor-plumbing image for query %r: metadata=%r",
+            query[:50], metadata_text[:80],
+        )
+        return False
+
+    # ── (c) Outdoor-context / indoor-metadata mismatch ───────────────────────
+    # Evaluate the FULL query string for outdoor/nature signals so that a
+    # heading like "Outdoor Spaces and Amenities" is treated as outdoor context
+    # even though "amenities" is a generic term.
+    query_lower = query.lower()
+    metadata_lower = metadata_text.lower()
+
+    has_outdoor_context = any(tok in query_lower for tok in _OUTDOOR_CONTEXT_TOKENS)
+    if has_outdoor_context:
+        has_indoor_metadata = any(tok in metadata_lower for tok in _INDOOR_MISMATCH_TOKENS)
+        if has_indoor_metadata:
+            logger.debug(
+                "Rejected indoor image for outdoor-context query %r: metadata=%r",
+                query[:50], metadata_text[:80],
+            )
+            return False
+
+    # ── (d) Token-overlap relevance check ────────────────────────────────────
     query_tokens = _significant_tokens(query)
     if not query_tokens:
         return True
 
-    metadata_tokens = _significant_tokens(f"{title or ''} {source_url or ''}")
+    metadata_tokens = _significant_tokens(metadata_text)
     if not metadata_tokens:
         return True  # bare URL — can't judge; bad-content gate already ran
 
