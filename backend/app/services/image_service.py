@@ -176,16 +176,17 @@ PREMIUM_FOOD_PLACEHOLDER_IMAGES: list[str] = [
 def _food_fallback_url(used_urls: set[str]) -> str:
     """
     Pick a verified food/dining placeholder that has not already been used in
-    this article.  Falls back to the first entry if every placeholder is
-    already used rather than ever returning None.
+    this article.  Returns the DIRECT Unsplash URL (not proxied) so it is
+    100% guaranteed to load in the browser — Unsplash's CDN is public and
+    does not use hotlink protection for standard image URLs.  Falls back to
+    the first entry if every placeholder is already used.
     """
     for raw_url in PREMIUM_FOOD_PLACEHOLDER_IMAGES:
-        proxied = _proxied_url(raw_url)
-        if proxied not in used_urls:
-            used_urls.add(proxied)
-            return proxied
-    # All five already used — just repeat the first; duplication beats blank.
-    return _proxied_url(PREMIUM_FOOD_PLACEHOLDER_IMAGES[0])
+        if raw_url not in used_urls:
+            used_urls.add(raw_url)
+            return raw_url
+    # All five already used — repeat the first; duplication beats blank.
+    return PREMIUM_FOOD_PLACEHOLDER_IMAGES[0]
 
 
 def _static_fallback_url(index: int, used_urls: set[str]) -> str:

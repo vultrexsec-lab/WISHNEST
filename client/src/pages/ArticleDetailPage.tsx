@@ -1,5 +1,6 @@
 import { useParams, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { SiteNav } from "@/components/SiteNav";
 import { SiteFooter } from "@/components/SiteFooter";
 import { Loader2 } from "lucide-react";
@@ -8,41 +9,67 @@ import {
   formatDate,
 } from "@/lib/article-types";
 
+// Verified, always-public food placeholder — used as an onerror fallback
+// for any broken image inside the article body (culinary slots that were
+// stored before the backend food-placeholder fix was deployed).
+const FOOD_IMAGE_FALLBACK =
+  "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?q=80&w=1000";
+
 /**
- * Format a raw property_snapshot value for display.
+ * Safely convert any property_snapshot value to a display string.
  *
- * The snapshot is typed as Record<string, unknown> on the backend so individual
- * values can be scalars, arrays, or nested objects.  In particular:
+ * The backend stores values of wildly different shapes in property_snapshot:
+ *   - scalars:  "4.8", 12010
+ *   - string arrays:  ["Located in Library Bazar", "Offers a range…"]
+ *   - object arrays:  [{"name":"Welcomhotel…","rating":4.8,"maps_url":"…"}]
+ *     (this is google_live_sources — the source of the "[object Object]" bug)
  *
- *   google_live_sources → Array<{name: string; rating: number; maps_url: string}>
- *
- * `String(value)` on an array of objects produces "[object Object]", so we need
- * a smarter serialiser here.
+ * The cast `as Record<string, string | number>` used to narrow the snapshot
+ * type is a compile-time lie — at runtime the value can be anything. This
+ * function accepts `unknown` so TypeScript doesn't coerce the value and the
+ * full runtime shape is preserved.
  */
 function formatSnapshotValue(value: unknown): string {
+  // null / undefined
   if (value == null) return "—";
 
-  // Array: if every element is a primitive, join them; otherwise extract .name
-  // (used by google_live_sources) or fall back to JSON.
+  // Array ─ handle separately so .join() never silently calls .toString()
+  // on object elements (which produces "[object Object]").
   if (Array.isArray(value)) {
     if (value.length === 0) return "—";
-    const first = value[0];
-    if (typeof first === "object" && first !== null) {
-      const names = (value as Record<string, unknown>[])
-        .map((o) => (typeof o["name"] === "string" ? o["name"] : null))
-        .filter(Boolean);
-      return names.length > 0 ? names.join(", ") : JSON.stringify(value);
-    }
-    return value.join(", ");
+    return value
+      .map((item: unknown): string => {
+        if (item == null) return "";
+        if (typeof item !== "object") return String(item);
+        // Object element: try name → source → JSON
+        const o = item as Record<string, unknown>;
+        if (typeof o["name"] === "string" && o["name"]) return o["name"];
+        if (typeof o["source"] === "string" && o["source"]) return o["source"];
+        if (typeof o["title"] === "string" && o["title"]) return o["title"];
+        // Last resort: compact JSON, still human-readable
+        try {
+          return JSON.stringify(item);
+        } catch {
+          return String(item);
+        }
+      })
+      .filter(Boolean)
+      .join(", ") || "—";
   }
 
-  // Plain object (shouldn't normally appear, but guard anyway)
+  // Plain object (single entry, not wrapped in array)
   if (typeof value === "object") {
     const o = value as Record<string, unknown>;
-    if (typeof o["name"] === "string") return o["name"];
-    return JSON.stringify(value);
+    if (typeof o["name"] === "string" && o["name"]) return o["name"];
+    if (typeof o["source"] === "string" && o["source"]) return o["source"];
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return "—";
+    }
   }
 
+  // Scalar
   return String(value);
 }
 
@@ -135,9 +162,37 @@ export const ArticleDetailPage = (): JSX.Element => {
   }
 
   const isReview = article.article_type === "review";
-  const snapshot =
-    (article.property_snapshot as Record<string, string | number>) ?? {};
+  // Keep the type as `Record<string, unknown>` — the old `string | number` cast
+  // was a compile-time lie that caused TypeScript to lose the array/object shape
+  // at the call site, making it impossible to detect the "[object Object]" case.
+  const snapshot: Record<string, unknown> =
+    (article.property_snapshot as Record<string, unknown>) ?? {};
   const snapshotEntries = Object.entries(snapshot);
+
+  // Patch any broken images inside the rendered article body so a failed proxy
+  // or stale URL never shows the browser's broken-image icon.  Runs after the
+  // dangerouslySetInnerHTML content mounts (or changes) and adds a one-shot
+  // onerror handler on every <img> inside the article body.
+  useEffect(() => {
+    if (!article.full_article) return;
+    const body = document.querySelector<HTMLElement>(
+      '[data-testid="text-article-body"]',
+    );
+    if (!body) return;
+    const imgs = body.querySelectorAll<HTMLImageElement>("img");
+    imgs.forEach((img) => {
+      // Guard: don't re-apply if the src is already the fallback.
+      if (img.src === FOOD_IMAGE_FALLBACK) return;
+      img.addEventListener(
+        "error",
+        function onError() {
+          img.removeEventListener("error", onError);
+          img.src = FOOD_IMAGE_FALLBACK;
+        },
+        { once: true },
+      );
+    });
+  }, [article.full_article]);
 
   return (
     <main className="w-full max-w-full overflow-x-hidden bg-[#f8f7f4] text-[#1e1e1e]">
