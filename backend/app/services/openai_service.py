@@ -312,6 +312,12 @@ GLOBAL RULES
    No hallucinated property names, prices, distances, or features.
 8. Use "review" article_type only for a specific named property/resort; "standard" for roundups.
 9. Return ONLY valid JSON matching the shape above. No markdown fences. No extra keys.
+11. NEVER include an ABCDE score breakdown, score table, score summary, or scorecard
+    section inside full_article. Scores live exclusively in the dedicated JSON fields
+    (architecture_score, landscape_score, etc.). The article body is editorial prose
+    only — no headings like "ABCDE Score", "WishNest Score Breakdown", "Score Summary",
+    "Our Verdict Score", or any variation. Violating this rule causes the score block
+    to be stripped server-side before publishing.
 10. ABCDE scores are MANDATORY for every article — never null, never omitted.
     "architecture_score", "landscape_score", "connectivity_score", "delight_score",
     "eat_explore_score" must each be a float 1.0–10.0.

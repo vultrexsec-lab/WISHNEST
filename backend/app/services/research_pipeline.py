@@ -13,6 +13,7 @@ even if image URL building fails. Images are patched in a second UPDATE pass.
 Returns the created Article rows so the router can build the response.
 """
 import logging
+import re
 
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
@@ -74,6 +75,53 @@ def _coerce_seo_fields(raw: dict) -> None:
                 # Last resort: pad/truncate to exact range
                 desc = desc.ljust(_META_DESC_MIN)[: _META_DESC_MAX]
         raw["meta_description"] = desc
+
+
+# ---------------------------------------------------------------------------
+# ABCDE score-block scrubber
+#
+# The LLM occasionally injects an ABCDE score summary or scorecard table
+# directly inside full_article even though the system prompt forbids it.
+# This function removes any <h2>/<h3> section whose heading text matches
+# known score-block patterns, along with all HTML content up to (but not
+# including) the next sibling heading — so the post body is always pure
+# editorial prose and the score data lives only in the dedicated JSON fields.
+# ---------------------------------------------------------------------------
+
+_SCORE_HEADING_PAT = (
+    r"<h[23][^>]*>\s*(?:"
+    r"(?:ABCDE|WishNest)\s*(?:Score|Scores|Scorecard|Score\s*Breakdown|Score\s*Summary)"
+    r"|Score\s*(?:Breakdown|Summary|Card|Overview)"
+    r"|Our\s*(?:Verdict\s*Score|Score|Scorecard)"
+    r"|(?:Ratings?|Rating\s*Breakdown)"
+    r")\s*</h[23]>"
+)
+
+# Matches a full score section: the heading + all content until the next
+# sibling h2/h3 (or end of string).  DOTALL so '.' crosses newlines.
+_SCORE_SECTION_RE = re.compile(
+    _SCORE_HEADING_PAT + r".*?(?=<h[23][^>]*>|$)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _strip_abcde_score_block(html: str | None) -> str | None:
+    """
+    Remove any ABCDE / score-breakdown section from *html*.
+
+    Strips the matched heading tag and everything following it up to (but
+    not including) the next sibling <h2>/<h3>, so surrounding editorial
+    sections are unaffected.  Returns the cleaned HTML (or the original
+    value if it is falsy or no match is found).
+    """
+    if not html:
+        return html
+    cleaned, count = _SCORE_SECTION_RE.subn("", html)
+    if count:
+        logger.info(
+            "Stripped %d ABCDE score-block section(s) from full_article.", count
+        )
+    return cleaned
 
 
 # OpenAI sometimes returns grade values using Python enum-name style
@@ -577,6 +625,7 @@ def run_research_pipeline(
         _normalise_grades(raw)      # catch any remaining letter-grade format quirks
         _ensure_abcde_overall(raw)  # guarantee abcde_overall is always a non-blank string
         _coerce_seo_fields(raw)     # auto-fix minor SEO length violations
+        raw["full_article"] = _strip_abcde_score_block(raw.get("full_article"))  # never show scores in body
 
         try:
             validated = ArticleCreate(**raw)

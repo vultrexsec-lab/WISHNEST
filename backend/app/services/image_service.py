@@ -504,14 +504,20 @@ _INDOOR_MISMATCH_TOKENS: frozenset[str] = frozenset({
     "laundry", "linen", "towel", "bath",
 })
 
-# Compiled regex for rejecting bathroom/plumbing content when the calling
-# section makes such images inappropriate (culinary, outdoor).  NOT a global
-# ban — bathroom photos are legitimate in architecture, room-comforts, and
-# hygiene sections where guests need to verify stay quality.
+# Compiled regex for rejecting bathroom/plumbing AND bedroom/room-interior
+# content when the calling section makes such images contextually wrong
+# (culinary, outdoor).  NOT a global ban — bathroom and bedroom photos are
+# legitimate editorial content in architecture, room-comforts, and hygiene
+# sections where guests need to assess stay quality.  This gate fires ONLY
+# when reject_plumbing=True (i.e. for every section except "room_design").
 _INDOOR_BATHROOM_RE = re.compile(
     r"\b(?:"
     r"bathroom|washroom|restroom|lavatory|toilet|bathtub|bathing"
     r"|shower[\s_\-]?room|sink|faucet|plumbing"
+    # bedroom / room-interior terms — wrong under Culinary / Outdoor headings
+    r"|bedroom|bedrooms|bed[\s_\-]?room|guest[\s_\-]?room|hotel[\s_\-]?room"
+    r"|suite[\s_\-]?interior|room[\s_\-]?interior|interior[\s_\-]?room"
+    r"|sleeping[\s_\-]?area|bed[\s_\-]?area|accommodation[\s_\-]?interior"
     r")\b",
     re.IGNORECASE,
 )
