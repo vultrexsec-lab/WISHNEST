@@ -1291,85 +1291,23 @@ def generate_article_images(
         fallback_fill_count = 0
         for slot in slots:
             section_type = _classify_section(slot)
-            # GLOBAL bathroom/plumbing+bedroom ban: reject_plumbing is True for
-            # every section EXCEPT "room_design" where guests legitimately need
-            # to assess hygiene / sanitation / sleep quality.
-            reject_plumbing = section_type != "room_design"
             url: str | None = None
 
-            # ── All sections EXCEPT room_design bypass the property pool ────
-            # Google Maps photo galleries are completely untagged by topic.
-            # Bathroom, bedroom, lobby, dining, and garden shots all sit in
-            # the same flat list with no metadata to distinguish them.
-            # Pulling from the pool positionally for any section type reliably
-            # produces mismatches — bathrooms under "Guest Experience and
-            # Hospitality", bedrooms under "Culinary Delights", toilets under
-            # "Outdoor Spaces".  The ONLY section that legitimately needs raw
-            # pool photos is "room_design" (guests assessing hygiene/comfort).
-            # Every other type is routed to a topic-specific neutral search so
-            # the image is always contextually appropriate.
-            _POOL_BYPASS_TYPES = frozenset({
-                "culinary", "outdoor", "hospitality", "general",
-                "connectivity", "intro",
-            })
-            if section_type in _POOL_BYPASS_TYPES:
-                time.sleep(0.2)
-                neutral_query = _SECTION_NEUTRAL_FALLBACK.get(section_type)
-                if neutral_query:
-                    try:
-                        url = _best_image(
-                            neutral_query,
-                            location=None,      # property-neutral — no location
-                            used_urls=used_urls,
-                            reject_plumbing=True,
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        logger.warning(
-                            "Neutral search raised for slot %r (type=%r): %s",
-                            slot[:50], section_type, exc,
-                        )
-                        url = None
-                # Curated fallback per section type when all searches fail
-                if url is None:
-                    if section_type == "culinary":
-                        url = _food_fallback_url(used_urls)
-                        logger.warning(
-                            "Section slot %r (culinary) -> curated food placeholder "
-                            "(all searches exhausted).",
-                            slot[:50],
-                        )
-                    elif section_type in ("hospitality", "general"):
-                        url = _lounge_fallback_url(used_urls)
-                        logger.warning(
-                            "Section slot %r (type=%r) -> curated lounge/exterior placeholder "
-                            "(all searches exhausted).",
-                            slot[:50], section_type,
-                        )
-                    else:
-                        logger.warning(
-                            "Section slot %r (type=%r) -> leaving blank "
-                            "(no contextually appropriate image found).",
-                            slot[:50], section_type,
-                        )
-                if url is not None:
-                    fallback_fill_count += 1
-                    logger.info(
-                        "Section slot %r (type=%r) -> topic-specific search "
-                        "(pool bypassed — global bathroom blacklist for non-room-design sections)",
-                        slot[:50], section_type,
-                    )
-
-            # ── room_design: use property's own pool (bathrooms OK here) ────
-            elif single_pool.has_unused:
+            # ── ALL sections: strictly from this property's Google Maps pool ─
+            # Only real photos from this exact property are used — no DDG,
+            # Pexels, Unsplash, or any other stock source.  If the pool is
+            # exhausted the slot stays blank; a blank image is always
+            # preferable to an unrelated or synthetic photo.
+            if single_pool.has_unused:
                 url = single_pool.take_next()
                 pool_fill_count += 1
                 logger.info(
-                    "Section slot %r (type=%r) -> property's own pool",
+                    "Section slot %r (type=%r) -> property's own Google Maps gallery",
                     slot[:50], section_type,
                 )
             else:
                 logger.warning(
-                    "Section slot %r (type=%r) -> property pool exhausted, leaving blank.",
+                    "Section slot %r (type=%r) -> Google Maps pool exhausted, leaving blank.",
                     slot[:50], section_type,
                 )
 
@@ -1466,33 +1404,16 @@ def generate_article_images(
     if hero_live is not None:
         hero_url, hero_listing = hero_live
         logger.info(
-            "Hero image resolved from live listing %r (%.1f★) for %r",
+            "Hero image resolved from live Google Maps listing %r (%.1f★) for %r",
             hero_listing.name, hero_listing.rating or 0.0, headline[:60],
         )
     else:
-        hero_query = _build_query(headline, location)
-        try:
-            hero_url = _best_image(hero_query, location=location, used_urls=used_urls)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Dynamic search raised for hero slot (%r): %s", headline[:60], exc)
-            hero_url = None
-        if hero_url is not None:
-            logger.info("Hero image resolved via search fallback for %r (query=%r)", headline[:60], hero_query[:80])
-    if hero_url is None:
-        if _landmark:
-            # For landmark/destination articles, NEVER substitute hotel images.
-            # A blank hero is far preferable to a resort pool photo on a
-            # monument article. The DDG chain above already tried the most
-            # relevant geographic queries; leave the slot empty.
-            logger.warning(
-                "No landmark/attraction image found for hero slot of %r — "
-                "leaving blank rather than inserting unrelated hotel imagery.",
-                headline[:60],
-            )
-        else:
-            hero_url = _static_fallback_url(static_fallback_index, used_urls)
-            static_fallback_index += 1
-            logger.warning("Hero image fell back to the static safety-net pool for %r", headline[:60])
+        # No Google Maps photo available — leave hero blank.
+        # Stock/DDG/Pexels/Unsplash images are never used.
+        logger.warning(
+            "No Google Maps photo available for hero slot of %r — leaving blank.",
+            headline[:60],
+        )
 
     # -- Section images -- one per heading in document order -----------------
     section_urls: list[str] = []
@@ -1504,115 +1425,35 @@ def generate_article_images(
 
         for heading in headings:
             section_type = _classify_section(heading)
-            # GLOBAL bathroom/plumbing ban: reject_plumbing is True for every
-            # section EXCEPT "room_design" where guests legitimately need to
-            # assess hygiene / sanitation quality.
-            reject_plumbing = section_type != "room_design"
-
-            # All sections except room_design bypass the live mixed pool.
-            # The multi-property live pool aggregates untagged photos from
-            # several businesses — bathrooms, bedrooms, and lobbies sit in the
-            # same flat list.  Pulling from the pool for hospitality/general
-            # sections reliably produces mismatches (e.g. a bathroom under
-            # "Guest Experience and Hospitality").  room_design is the ONLY
-            # type that legitimately needs raw pool photos (hygiene/comfort).
-            needs_pool_bypass = section_type in (
-                "culinary", "outdoor", "connectivity", "intro",
-                "hospitality", "general",
-            )
-
             url: str | None = None
-            if not needs_pool_bypass:
-                # Non-restricted section: try live pool first
-                try:
-                    live_next = live_pool.take_next(used_urls)
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("Live pool lookup raised for heading %r: %s", heading[:50], exc)
-                    live_next = None
-                if live_next is not None:
-                    url, listing = live_next
-                    logger.info(
-                        "Section image for heading %r (type=%r) -> live listing %r (%.1f★)",
-                        heading[:50], section_type, listing.name, listing.rating or 0.0,
-                    )
 
-            if url is None:
-                time.sleep(0.3)
-                if section_type in _SECTION_NEUTRAL_FALLBACK:
-                    # Property-neutral, location-free abstract stock — covers
-                    # culinary, outdoor, hospitality, and general sections.
-                    # Guaranteed never to pull another restaurant's dining room,
-                    # resort pool, or a competitor's bathroom under these headings.
-                    search_query = _SECTION_NEUTRAL_FALLBACK[section_type]
-                    search_location = None
-                elif section_type in ("connectivity", "intro"):
-                    # Exterior / entrance / facade search anchored to location.
-                    # "intro" sections open the article and must show the property
-                    # exterior — never a random interior from the mixed live pool.
-                    suffix = _SECTION_QUERY_SUFFIX[section_type]
-                    search_query = _build_query(f"{heading} {suffix}".strip(), location)
-                    search_location = location
-                else:
-                    # Pool exhausted for a non-restricted section: contextual
-                    # search is acceptable because we're not restricted to one
-                    # named property in the multi-property path.
-                    suffix = _SECTION_QUERY_SUFFIX.get(section_type, "")
-                    search_query = _build_query(f"{heading} {suffix}".strip(), location)
-                    search_location = location
-                try:
-                    url = _best_image(
-                        search_query,
-                        location=search_location,
-                        used_urls=used_urls,
-                        reject_plumbing=reject_plumbing,
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("Dynamic search raised for heading %r: %s", heading[:50], exc)
-                    url = None
-                if url is not None:
-                    logger.info(
-                        "Section image for heading %r (type=%r) -> %s (query=%r)",
-                        heading[:50], section_type,
-                        "neutral stock" if section_type in _SECTION_NEUTRAL_FALLBACK else "contextual search",
-                        search_query[:80],
-                    )
+            # ALL section types: strictly from the Google Maps live pool.
+            # No DDG, Pexels, Unsplash, or stock fallback images are used.
+            # If the pool is exhausted the slot stays blank — a missing image
+            # is always preferable to a synthetic or unrelated photo.
+            try:
+                live_next = live_pool.take_next(used_urls)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Live pool lookup raised for heading %r: %s", heading[:50], exc)
+                live_next = None
+            if live_next is not None:
+                url, listing = live_next
+                logger.info(
+                    "Section image for heading %r (type=%r) -> Google Maps listing %r (%.1f★)",
+                    heading[:50], section_type, listing.name, listing.rating or 0.0,
+                )
+            else:
+                logger.warning(
+                    "Section image for heading %r (type=%r) -> Google Maps pool exhausted, leaving blank.",
+                    heading[:50], section_type,
+                )
 
-            if url is None:
-                if section_type == "culinary":
-                    # For dining sections use the verified food placeholder so the
-                    # slot is never blank — a missing image under a food heading
-                    # looks like a broken article.
-                    url = _food_fallback_url(used_urls)
-                    logger.warning(
-                        "No food image found for heading %r — using curated food placeholder.",
-                        heading[:50],
-                    )
-                elif section_type in ("hospitality", "general"):
-                    # Guest experience / general sections: use curated lounge /
-                    # exterior placeholder — always contextually safe and never
-                    # a bathroom even when all search providers are exhausted.
-                    url = _lounge_fallback_url(used_urls)
-                    logger.warning(
-                        "No lounge/exterior image found for heading %r (type=%r) — using curated placeholder.",
-                        heading[:50], section_type,
-                    )
-                elif _landmark or section_type in ("outdoor", "connectivity", "intro"):
-                    # Landmark, outdoor, connectivity, and intro sections: leave the
-                    # slot blank rather than inserting a static hotel image with no
-                    # connection to the current heading context.
-                    logger.warning(
-                        "No contextually appropriate image found for heading %r (type=%r) — leaving blank.",
-                        heading[:50], section_type,
-                    )
-                else:
-                    url = _static_fallback_url(static_fallback_index, used_urls)
-                    static_fallback_index += 1
-                    logger.warning("Section image for heading %r fell back to the static safety-net pool", heading[:50])
             section_urls.append(url)
             heading_images.append((heading, url))
 
     else:
         for suffix in ["exterior view", "interior ambiance"]:
+            url: str | None = None
             try:
                 live_next = live_pool.take_next(used_urls)
             except Exception as exc:  # noqa: BLE001
@@ -1621,24 +1462,10 @@ def generate_article_images(
             if live_next is not None:
                 url, _listing = live_next
             else:
-                time.sleep(0.2)
-                subject = f"{focus_keyword or headline} {suffix}"
-                query = _build_query(subject, location)
-                try:
-                    url = _best_image(query, location=location, used_urls=used_urls)
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("Dynamic search raised for slot %r: %s", suffix, exc)
-                    url = None
-            if url is None:
-                if _landmark:
-                    logger.warning(
-                        "No landmark image found for slot %r — leaving blank rather than "
-                        "inserting unrelated hotel imagery.", suffix,
-                    )
-                else:
-                    url = _static_fallback_url(static_fallback_index, used_urls)
-                    static_fallback_index += 1
-                    logger.warning("Section image for slot %r fell back to the static safety-net pool", suffix)
+                # Google Maps pool exhausted — leave blank; no stock fallback.
+                logger.warning(
+                    "No Google Maps photo available for slot %r — leaving blank.", suffix,
+                )
             section_urls.append(url)
 
     property_matches = [_property_match_dict(l) for l in live_pool.used]

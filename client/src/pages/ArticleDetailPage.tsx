@@ -172,7 +172,12 @@ export const ArticleDetailPage = (): JSX.Element => {
   // at the call site, making it impossible to detect the "[object Object]" case.
   const snapshot: Record<string, unknown> =
     (article.property_snapshot as Record<string, unknown>) ?? {};
-  const snapshotEntries = Object.entries(snapshot);
+  // Exclude internal pipeline fields that are not meaningful to readers.
+  // "google_live_sources" is an array of listing objects that renders as
+  // "[object Object]" when stringified; remove it from the display entirely.
+  const snapshotEntries = Object.entries(snapshot).filter(
+    ([key]) => key !== "google_live_sources",
+  );
 
   // Patch any broken images inside the rendered article body so a failed proxy
   // or stale URL never shows the browser's broken-image icon.  Runs after the
