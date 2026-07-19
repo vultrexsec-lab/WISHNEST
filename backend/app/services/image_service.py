@@ -1237,19 +1237,60 @@ def generate_article_images(
         fallback_fill_count = 0
         for slot in slots:
             section_type = _classify_section(slot)
-            # GLOBAL bathroom/plumbing ban: reject_plumbing is True for every
-            # section EXCEPT "room_design" where guests legitimately need to
-            # assess hygiene / sanitation quality. This prevents toilet, sink,
-            # and washroom images from leaking into any non-amenity section.
+            # GLOBAL bathroom/plumbing+bedroom ban: reject_plumbing is True for
+            # every section EXCEPT "room_design" where guests legitimately need
+            # to assess hygiene / sanitation / sleep quality.
             reject_plumbing = section_type != "room_design"
             url: str | None = None
 
-            # ── ALL section types: STRICTLY from property's own pool ────────
-            # User mandate: only use real Google Maps photos of this specific
-            # property. No DDG, no Pexels, no Unsplash, no food/hotel
-            # placeholders. If the pool is exhausted, the slot stays blank —
-            # a blank image is always preferable to an unrelated photo.
-            if single_pool.has_unused:
+            # ── Culinary and outdoor sections BYPASS the property pool ──────
+            # Google Maps photo galleries are untagged by topic — photos of
+            # bathrooms, bedrooms, and lobbies sit alongside garden and dining
+            # shots with no metadata to distinguish them.  Pulling from the
+            # pool positionally guarantees mismatches (bathroom under "Outdoor
+            # Spaces", bedroom under "Culinary Delights").  Instead, route
+            # these sections to the same topic-specific neutral search that the
+            # multi-property path uses, then fall back to curated placeholders.
+            if section_type in ("culinary", "outdoor"):
+                time.sleep(0.2)
+                neutral_query = _SECTION_NEUTRAL_FALLBACK.get(section_type)
+                if neutral_query:
+                    try:
+                        url = _best_image(
+                            neutral_query,
+                            location=None,          # property-neutral — no location
+                            used_urls=used_urls,
+                            reject_plumbing=True,   # always True for these types
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning(
+                            "Neutral search raised for slot %r (type=%r): %s",
+                            slot[:50], section_type, exc,
+                        )
+                        url = None
+                if url is None and section_type == "culinary":
+                    url = _food_fallback_url(used_urls)
+                    logger.warning(
+                        "Section slot %r (culinary) -> curated food placeholder "
+                        "(all searches exhausted).",
+                        slot[:50],
+                    )
+                elif url is None:
+                    logger.warning(
+                        "Section slot %r (outdoor) -> leaving blank "
+                        "(no contextually appropriate image found).",
+                        slot[:50],
+                    )
+                if url is not None:
+                    fallback_fill_count += 1
+                    logger.info(
+                        "Section slot %r (type=%r) -> topic-specific search "
+                        "(pool bypassed to prevent indoor mismatch)",
+                        slot[:50], section_type,
+                    )
+
+            # ── All other section types: use property's own pool ────────────
+            elif single_pool.has_unused:
                 url = single_pool.take_next()
                 pool_fill_count += 1
                 logger.info(
