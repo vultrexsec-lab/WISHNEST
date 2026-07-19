@@ -218,6 +218,34 @@ REQUIRED JSON SHAPE
          landscape for the same property without a clear, source-supported reason
          for the gap.
 
+      6. HARD NUMERIC CEILINGS — non-negotiable for domestic / non-luxury stays.
+         Post-processing enforces these mathematically; your scores must comply
+         BEFORE post-processing so no editorial correction is needed.
+
+         ARCHITECTURE & LANDSCAPE ceiling for standard properties:
+         A domestic farm stay, guesthouse, village homestay, or eco-retreat that
+         does NOT hold a verified 5-star certification, international design award,
+         or confirmed luxury-brand affiliation (Taj, Oberoi, Aman, Leela, etc.)
+         MUST score architecture_score and landscape_score at most 7.5/10 (B+).
+         "Beautiful setting" or "well-designed rooms" do not justify exceeding 7.5.
+         If you feel evidence pushes toward 8.0 (A), recalibrate: the evidence
+         describes "above average for its category", which is 7.0–7.5 (B+).
+
+         CONNECTIVITY — rural / village / forest / mountain locations:
+         A property more than 60 km from a major airport or rail hub, reachable
+         only by hill roads, forest tracks, or unpaved routes, MUST score
+         connectivity_score in the 3.5–5.5 range. A score of 6.0+ (B) implies
+         genuinely accessible by regional standards — do not assign out of politeness.
+
+         VARIANCE LIMIT — max 2 A-grade dimensions per domestic stay:
+         You CANNOT assign A (≥ 8.0) to more than 2 of the 5 dimensions for a
+         single domestic homestay, farm, or non-certified property. If 3+ feel
+         like A, your baseline is inflated. Drop at least one of connectivity_score,
+         landscape_score, or architecture_score into B+ (7.0–7.5) range.
+         Realistic example — Uttarakhand farm stay with basic roads, home cooking:
+           architecture=6.5  landscape=7.0  connectivity=4.5
+           delight=7.5       eat_explore=6.0
+
       Evaluate each dimension as a precise float from 1.0 to 10.0, grounded
       strictly in the research sources and location context. Score the destination
       / region / properties covered by this article — never return null.

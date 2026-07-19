@@ -103,6 +103,43 @@ _SCORE_TO_GRADE: dict[str, str] = {
     "eat_explore_score":  "eat_explore_grade",
 }
 
+# ── Hard grading-reality constants ────────────────────────────────────────────
+#
+# These constants implement the WishNest editorial mandate: the ABCDE scorecard
+# must reflect genuine, defensible quality differentiation. The LLM prompt
+# already asks for strict grading, but LLMs are well-documented to regress
+# toward grade inflation over time. The post-processing functions below enforce
+# the editorial rules mathematically, independent of what the model returns.
+#
+#   STANDARD_SCORE_CEILING  — max score for Architecture and Landscape on a
+#       domestic non-luxury property (7.5 = B+). A farm stay, guesthouse, or
+#       village homestay that hasn't earned international luxury credentials
+#       cannot score above B+ on built-environment quality or natural beauty
+#       regardless of how enthusiastically the LLM describes it.
+#
+#   A_GRADE_THRESHOLD       — the numeric boundary where a score becomes an
+#       A (8.0). Used for the variance check.
+#
+#   MAX_A_GRADES_STANDARD   — a single domestic homestay/farm may not receive
+#       more than this many A/A+ scores. More than 2 A-grades across five
+#       dimensions is statistically inconsistent with what "domestic standard"
+#       means editorially; the excess indicates grade inflation.
+#
+#   _LUXURY_KEYWORDS        — if ANY of these appear in the article's headline,
+#       focus keyword, or category text, the ceiling is lifted (the property
+#       claims a luxury tier and must be scored against that benchmark instead).
+#
+_STANDARD_SCORE_CEILING: float = 7.5   # B+ — max for non-luxury architecture/landscape
+_A_GRADE_THRESHOLD:      float = 8.0   # minimum score that maps to "A"
+_MAX_A_GRADES_STANDARD:  int   = 2     # variance limit for domestic stays
+
+_LUXURY_KEYWORDS: frozenset[str] = frozenset([
+    "luxury", "5-star", "five-star", "5 star", "five star",
+    "resort", "premium", "ultra-luxury", "exclusive", "signature resort",
+    "palace", "oberoi", "taj ", "leela", "aman", "four seasons",
+    "ritz", "bulgari", "raffles", "banyan tree",
+])
+
 # Reverse map: canonical letter grade → approximate numeric midpoint score.
 # Used by _ensure_abcde_overall to derive an overall grade when only letter
 # grades (not numeric scores) were returned by the LLM.
@@ -129,13 +166,175 @@ def _score_to_grade(score: float) -> str:
     return "D"
 
 
+def _is_luxury_property(text_fields: list[str]) -> bool:
+    """
+    Return True when at least one luxury keyword appears in any of the
+    supplied text fields, indicating the property claims a premium tier and
+    should not have its scores capped at the standard ceiling.
+
+    text_fields: list of raw strings (headline, focus_keyword, category, etc.)
+    """
+    haystack = " ".join(s.lower() for s in text_fields if s)
+    return any(kw in haystack for kw in _LUXURY_KEYWORDS)
+
+
+def _enforce_grade_reality(raw: dict) -> None:
+    """
+    Apply hard mathematical constraints to the ABCDE scores in *raw* after
+    the LLM has returned its values and they have been clamped to [1.0, 10.0].
+
+    Three rules are enforced in order:
+
+    RULE 1 — Architecture / Landscape ceiling for non-luxury properties
+        A domestic homestay, farm stay, guesthouse, or village retreat cannot
+        legitimately score above 7.5/10 (B+) for built-environment quality
+        (architecture_score) or natural beauty (landscape_score) unless the
+        article explicitly claims luxury / 5-star credentials. Grade inflation
+        at the top compresses the scale and devalues real luxury properties.
+
+    RULE 2 — Variance normalisation for domestic stays
+        If more than _MAX_A_GRADES_STANDARD (2) dimensions receive an A/A+
+        score (≥ 8.0), a normalization penalty is applied to the "softest"
+        elevated dimensions — connectivity, landscape, and architecture — in
+        that priority order. Each inflated dimension is dragged down to at
+        most 7.5 (B+). An ordinary rural homestay simply cannot be
+        outstanding (≥ A) across the majority of editorial dimensions.
+
+    RULE 3 — Overall recomputation
+        After any corrections, abcde_overall is recalculated from the live
+        score averages so it reflects the adjusted values, not the original.
+    """
+    luxury = _is_luxury_property([
+        raw.get("headline") or "",
+        raw.get("focus_keyword") or "",
+        raw.get("category") or "",
+        raw.get("wishnest_verdict") or "",
+    ])
+
+    # ── RULE 1: Hard ceiling for non-luxury architecture/landscape ───────────
+    if not luxury:
+        for field in ("architecture_score", "landscape_score"):
+            val = raw.get(field)
+            if val is None:
+                continue
+            try:
+                fval = float(val)
+            except (TypeError, ValueError):
+                continue
+            if fval > _STANDARD_SCORE_CEILING:
+                logger.info(
+                    "Grade ceiling applied [non-luxury]: %s %.1f → %.1f (B+)",
+                    field, fval, _STANDARD_SCORE_CEILING,
+                )
+                raw[field] = _STANDARD_SCORE_CEILING
+                raw[_SCORE_TO_GRADE[field]] = _score_to_grade(_STANDARD_SCORE_CEILING)
+
+    # ── RULE 2: Variance normalisation — max 2 A/A+ grades per domestic stay ─
+    # Luxury properties are exempt: a verified 5-star resort can legitimately
+    # score A across all dimensions and should not be penalized for it.
+    a_grade_fields = []
+    for field in _SCORE_FIELDS:
+        try:
+            if raw.get(field) is not None and float(raw[field]) >= _A_GRADE_THRESHOLD:
+                a_grade_fields.append(field)
+        except (TypeError, ValueError):
+            pass
+
+    if not luxury and len(a_grade_fields) > _MAX_A_GRADES_STANDARD:
+        # Priority order: penalize the dimensions most likely to be inflated
+        # for a typical domestic stay (connectivity last because it's the
+        # most objectively verifiable, so if it genuinely earned an A we
+        # should be more conservative about overriding it).
+        penalty_candidates = [
+            f for f in ("connectivity_score", "landscape_score", "architecture_score")
+            if f in a_grade_fields
+        ]
+        excess = len(a_grade_fields) - _MAX_A_GRADES_STANDARD
+        to_penalize = penalty_candidates[:excess]
+
+        for field in to_penalize:
+            original = float(raw[field])
+            # Pull down to B+ (7.5) — one full grade tier below A (8.0),
+            # which is the minimum defensible ceiling for "above average" on
+            # a property that is strong but not exceptional.
+            penalized = round(min(original, _STANDARD_SCORE_CEILING), 1)
+            logger.info(
+                "Variance normalisation: %s %.1f → %.1f "
+                "(%d A/A+ grades exceed limit of %d for domestic stay)",
+                field, original, penalized, len(a_grade_fields), _MAX_A_GRADES_STANDARD,
+            )
+            raw[field] = penalized
+            raw[_SCORE_TO_GRADE[field]] = _score_to_grade(penalized)
+
+    # ── RULE 3: Recompute overall from corrected scores ──────────────────────
+    corrected = [float(raw[f]) for f in _SCORE_FIELDS if raw.get(f) is not None]
+    if corrected:
+        raw["abcde_overall"] = _score_to_grade(sum(corrected) / len(corrected))
+
+
+def _apply_grade_ceilings_to_article(article: Article) -> None:
+    """
+    Re-enforce grading-reality rules on a live ``Article`` ORM object after
+    ``_apply_live_ratings`` has blended Google Maps ratings into the scores.
+
+    Google ratings (typically 4.0–4.5★, scaled to 8.0–9.0/10) can silently
+    push every dimension into A territory when the blending formula runs.
+    This function applies the same ceiling and variance rules as
+    ``_enforce_grade_reality`` but operates directly on the ORM object's
+    attributes rather than a raw dict.
+    """
+    luxury = _is_luxury_property([article.headline or ""])
+
+    # Rule 1 — ceiling
+    if not luxury:
+        for field, grade_field in _SCORE_TO_GRADE.items():
+            if field not in ("architecture_score", "landscape_score"):
+                continue
+            val = getattr(article, field)
+            if val is not None and val > _STANDARD_SCORE_CEILING:
+                logger.info(
+                    "Post-blend ceiling applied [non-luxury]: %s %.1f → %.1f",
+                    field, val, _STANDARD_SCORE_CEILING,
+                )
+                setattr(article, field, _STANDARD_SCORE_CEILING)
+                setattr(article, grade_field, _score_to_grade(_STANDARD_SCORE_CEILING))
+
+    # Rule 2 — variance (exempt luxury properties)
+    a_fields = [
+        f for f in _SCORE_TO_GRADE
+        if getattr(article, f) is not None
+        and getattr(article, f) >= _A_GRADE_THRESHOLD
+    ]
+    if not luxury and len(a_fields) > _MAX_A_GRADES_STANDARD:
+        penalty_candidates = [
+            f for f in ("connectivity_score", "landscape_score", "architecture_score")
+            if f in a_fields
+        ]
+        excess = len(a_fields) - _MAX_A_GRADES_STANDARD
+        for field in penalty_candidates[:excess]:
+            original = getattr(article, field)
+            penalized = round(min(original, _STANDARD_SCORE_CEILING), 1)
+            logger.info(
+                "Post-blend variance normalisation: %s %.1f → %.1f",
+                field, original, penalized,
+            )
+            setattr(article, field, penalized)
+            setattr(article, _SCORE_TO_GRADE[field], _score_to_grade(penalized))
+
+    # Rule 3 — recompute overall
+    live_scores = [getattr(article, f) for f in _SCORE_TO_GRADE if getattr(article, f) is not None]
+    if live_scores:
+        article.abcde_overall = _score_to_grade(sum(live_scores) / len(live_scores))
+
+
 def _normalise_scores(raw: dict) -> None:
     """
     Mutate *raw* in-place:
     1. Clamp any numeric score to [1.0, 10.0].
     2. Derive the paired letter grade from the score (overrides whatever the
        LLM independently returned for that grade field, keeping both in sync).
-    3. Compute abcde_overall from the average of all present scores.
+    3. Apply hard grading-reality constraints (ceiling + variance check).
+    4. Compute abcde_overall from the average of all corrected scores.
     """
     clean_scores: list[float] = []
     for field in _SCORE_FIELDS:
@@ -152,9 +351,14 @@ def _normalise_scores(raw: dict) -> None:
         # Derive letter grade from score
         raw[_SCORE_TO_GRADE[field]] = _score_to_grade(clamped)
 
-    # Compute overall grade from average of all numeric scores
-    if clean_scores:
-        avg = sum(clean_scores) / len(clean_scores)
+    # Apply mandatory editorial caps BEFORE computing the overall average so
+    # the overall grade reflects the corrected (not inflated) dimension scores.
+    _enforce_grade_reality(raw)
+
+    # Compute overall grade from the post-correction scores
+    corrected_scores = [float(raw[f]) for f in _SCORE_FIELDS if raw.get(f) is not None]
+    if corrected_scores:
+        avg = sum(corrected_scores) / len(corrected_scores)
         raw["abcde_overall"] = _score_to_grade(avg)
 
 
@@ -252,6 +456,13 @@ def _apply_live_ratings(article: Article, property_matches: list[dict]) -> bool:
         new_scores = [getattr(article, f) for f in _SCORE_TO_GRADE if getattr(article, f) is not None]
         if new_scores:
             article.abcde_overall = _score_to_grade(sum(new_scores) / len(new_scores))
+
+    # Re-apply hard editorial ceilings AFTER blending, because a typical
+    # Google rating of 4.2–4.5★ scales to 8.4–9.0/10 and will push every
+    # dimension back into A territory even when the LLM scores were correctly
+    # capped during normalisation. This call enforces the same ceiling and
+    # variance rules on the blended values.
+    _apply_grade_ceilings_to_article(article)
 
     snapshot = dict(article.property_snapshot or {})
     snapshot["google_live_rating"] = round(avg_google_rating, 1)
