@@ -475,9 +475,10 @@ _INDOOR_MISMATCH_TOKENS: frozenset[str] = frozenset({
     "laundry", "linen", "towel", "bath",
 })
 
-# Compiled regex for fast hard-rejection of indoor/bathroom content — applied
-# whether or not the outdoor-context flag is set (bathroom images are almost
-# never editorially appropriate in a travel article).
+# Compiled regex for rejecting bathroom/plumbing content when the calling
+# section makes such images inappropriate (culinary, outdoor).  NOT a global
+# ban — bathroom photos are legitimate in architecture, room-comforts, and
+# hygiene sections where guests need to verify stay quality.
 _INDOOR_BATHROOM_RE = re.compile(
     r"\b(?:"
     r"bathroom|washroom|restroom|lavatory|toilet|bathtub|bathing"
@@ -485,6 +486,77 @@ _INDOOR_BATHROOM_RE = re.compile(
     r")\b",
     re.IGNORECASE,
 )
+
+
+# ---------------------------------------------------------------------------
+# Section type classification
+#
+# Each article heading is classified into one of four types so the image
+# routing logic can apply contextually correct constraints:
+#
+#   "culinary"    — dining, food, cuisine, kitchen, "Eat & Explore", etc.
+#   "outdoor"     — garden, pool, terrace, outdoor spaces, landscape, etc.
+#   "room_design" — room comforts, architecture, design, amenities, spa, etc.
+#   "general"     — everything else (connectivity, history, conclusion, …)
+#
+# Bathroom / plumbing images are ALLOWED in "room_design" (guests need to see
+# hygiene quality) but FORBIDDEN in "culinary" and "outdoor".
+# ---------------------------------------------------------------------------
+
+_CULINARY_HEADING_TOKENS: frozenset[str] = frozenset({
+    "culinary", "dining", "food", "restaurant", "kitchen", "cuisine",
+    "breakfast", "meal", "meals", "eat", "explore", "gastro", "gastronomy",
+    "beverage", "drinks", "cafe", "menu", "chef", "cook", "cooking",
+    "delights", "flavours", "flavors", "taste", "tasting",
+})
+
+_OUTDOOR_HEADING_TOKENS: frozenset[str] = frozenset({
+    "outdoor", "outdoors", "outside", "open-air", "openair",
+    "garden", "gardens", "grounds", "lawn", "courtyard", "patio",
+    "pool", "infinity", "terrace", "balcony", "deck", "verandah", "veranda",
+    "landscape", "landscaping", "nature", "natural",
+    "forest", "trail", "valley", "mountain", "hill",
+    "view", "views", "vista", "scenic", "scenery",
+    "sunrise", "sunset", "sky", "environment",
+    "surroundings", "meadow", "field", "jungle", "wildlife",
+})
+
+_ROOM_DESIGN_HEADING_TOKENS: frozenset[str] = frozenset({
+    "room", "rooms", "suite", "suites", "comforts", "comfort",
+    "bedroom", "accommodation", "architecture", "architectural",
+    "design", "interior", "interiors", "amenities", "amenity",
+    "stay", "lodging", "bathroom", "hygiene", "sanitation",
+    "facility", "facilities", "spa", "wellness",
+})
+
+# Section-specific image-search query suffixes — appended when doing a
+# targeted search for a section so providers return contextually correct photos.
+_SECTION_QUERY_SUFFIX: dict[str, str] = {
+    "culinary":    "dining food restaurant cuisine kitchen",
+    "outdoor":     "outdoor garden exterior grounds terrace pool",
+    "room_design": "room interior suite bedroom accommodation",
+    "general":     "",
+}
+
+
+def _classify_section(heading: str) -> str:
+    """
+    Return the section type for *heading*: one of
+    ``"culinary"``, ``"outdoor"``, ``"room_design"``, or ``"general"``.
+
+    Bathroom / plumbing images are appropriate only for ``"room_design"``
+    sections.  The image routing layer uses this classification to decide
+    whether to take from the live property pool or do a targeted thematic
+    search, and whether to pass ``reject_plumbing=True`` to the search chain.
+    """
+    tokens = set(re.findall(r"[a-z]+", heading.lower()))
+    if tokens & _CULINARY_HEADING_TOKENS:
+        return "culinary"
+    if tokens & _OUTDOOR_HEADING_TOKENS:
+        return "outdoor"
+    if tokens & _ROOM_DESIGN_HEADING_TOKENS:
+        return "room_design"
+    return "general"
 
 
 # ---------------------------------------------------------------------------
@@ -523,33 +595,42 @@ def _is_bad_content(title: str | None, source_url: str | None) -> bool:
     return bool(_BAD_CONTENT_RE.search(text))
 
 
-def _is_relevant(query: str, title: str | None, source_url: str | None) -> bool:
+def _is_relevant(
+    query: str,
+    title: str | None,
+    source_url: str | None,
+    *,
+    reject_plumbing: bool = False,
+) -> bool:
     """
     Reject a candidate image if any of the following conditions are met:
 
       (a) It is definitively non-photographic (clipart, chart, diagram, etc.) —
           hard rejection applied before any token check.
 
-      (b) Its metadata contains bathroom / washroom / indoor-plumbing content —
-          hard-rejected unconditionally because such images are editorially
-          inappropriate for a travel publication regardless of section context.
+      (b) [Section-controlled] When ``reject_plumbing=True`` (set by the caller
+          for culinary and outdoor sections), the image metadata contains
+          bathroom / washroom / indoor-plumbing content and is rejected.
+          This is NOT a global ban — bathroom images are legitimate editorial
+          content in architecture / room-comfort / hygiene sections where guests
+          need to verify stay quality.  ``reject_plumbing`` is only True when
+          the current section makes such images contextually wrong.
 
       (c) The query signals an OUTDOOR / GARDEN / NATURE context (tokens such as
           "outdoor", "garden", "terrace", "pool", "landscape", "valley", etc.)
           AND the image metadata contains INDOOR-SPACE tokens (bathroom, bedroom,
           sink, corridor, etc.).  This prevents a generic tag like "amenities"
           from matching a washroom photo filed under "Outdoor Spaces and
-          Amenities".  The full query is evaluated — not just one sub-word —
-          so environmental tokens like "Outdoor" or "Gardens" outweigh incidental
-          generic terms like "Amenities".
+          Amenities" even when the explicit outdoor-section routing bypasses the
+          live pool and goes directly to the dynamic-search chain.
 
       (d) Its title/source metadata shares no significant words with the search
           query (token-overlap check).  Stops a landmark query from silently
           accepting an unrelated stock photo.
 
     If the provider gives us no title/source metadata (bare URL only) we allow
-    the image through for (c) and (d) — can't filter what we can't read — but
-    (a) and (b) still run because they inspect the source URL itself.
+    the image through for (b)–(d) — can't filter what we can't read — but
+    (a) still runs because it inspects the source URL itself.
     """
     metadata_text = f"{title or ''} {source_url or ''}"
 
@@ -557,20 +638,21 @@ def _is_relevant(query: str, title: str | None, source_url: str | None) -> bool:
     if _is_bad_content(title, source_url):
         return False
 
-    # ── (b) Hard reject: bathroom / washroom / plumbing images ───────────────
-    # These are never editorially appropriate in a travel article regardless of
-    # which section they would appear under.
-    if _INDOOR_BATHROOM_RE.search(metadata_text):
+    # ── (b) Section-controlled bathroom / plumbing rejection ─────────────────
+    # Only active when the caller explicitly signals that plumbing images are
+    # inappropriate for the current section (culinary, outdoor).
+    if reject_plumbing and _INDOOR_BATHROOM_RE.search(metadata_text):
         logger.debug(
-            "Rejected bathroom/indoor-plumbing image for query %r: metadata=%r",
+            "Rejected plumbing/bathroom image for section-restricted query %r: metadata=%r",
             query[:50], metadata_text[:80],
         )
         return False
 
     # ── (c) Outdoor-context / indoor-metadata mismatch ───────────────────────
-    # Evaluate the FULL query string for outdoor/nature signals so that a
-    # heading like "Outdoor Spaces and Amenities" is treated as outdoor context
-    # even though "amenities" is a generic term.
+    # Secondary safety net: even when the live pool is bypassed, the dynamic-
+    # search chain can still pull bathroom images for outdoor queries via
+    # generic tags ("amenities"). Evaluate the FULL query string for outdoor
+    # signals so environmental tokens win over generic ones.
     query_lower = query.lower()
     metadata_lower = metadata_text.lower()
 
@@ -600,7 +682,7 @@ def _is_relevant(query: str, title: str | None, source_url: str | None) -> bool:
 # Provider 1: DuckDuckGo image search (no API key required)
 # ---------------------------------------------------------------------------
 
-def _ddg_image_search(query: str, max_results: int = 5) -> list[str]:
+def _ddg_image_search(query: str, max_results: int = 5, *, reject_plumbing: bool = False) -> list[str]:
     """
     Return a list of validated direct image URLs from DuckDuckGo Images.
     Returns an empty list on any failure.
@@ -623,7 +705,7 @@ def _ddg_image_search(query: str, max_results: int = 5) -> list[str]:
                 safe = _safe_image_url(raw_url)
                 if not safe:
                     continue
-                if not _is_relevant(query, r.get("title"), r.get("source") or r.get("url")):
+                if not _is_relevant(query, r.get("title"), r.get("source") or r.get("url"), reject_plumbing=reject_plumbing):
                     rejected += 1
                     continue
                 results.append(safe)
@@ -643,7 +725,7 @@ def _ddg_image_search(query: str, max_results: int = 5) -> list[str]:
 # Provider 2: Pexels API (free key at pexels.com/api)
 # ---------------------------------------------------------------------------
 
-def _pexels_image_search(query: str, max_results: int = 5) -> list[str]:
+def _pexels_image_search(query: str, max_results: int = 5, *, reject_plumbing: bool = False) -> list[str]:
     api_key = get_settings().pexels_api_key
     if not api_key:
         return []
@@ -665,7 +747,7 @@ def _pexels_image_search(query: str, max_results: int = 5) -> list[str]:
                 continue
             title = photo.get("alt")
             source_url = photo.get("url")
-            if not _is_relevant(query, title, source_url):
+            if not _is_relevant(query, title, source_url, reject_plumbing=reject_plumbing):
                 rejected += 1
                 continue
             results.append(safe)
@@ -683,7 +765,7 @@ def _pexels_image_search(query: str, max_results: int = 5) -> list[str]:
 # Provider 3: Unsplash API (free key at unsplash.com/developers)
 # ---------------------------------------------------------------------------
 
-def _unsplash_image_search(query: str, max_results: int = 5) -> list[str]:
+def _unsplash_image_search(query: str, max_results: int = 5, *, reject_plumbing: bool = False) -> list[str]:
     access_key = get_settings().unsplash_access_key
     if not access_key:
         return []
@@ -705,7 +787,7 @@ def _unsplash_image_search(query: str, max_results: int = 5) -> list[str]:
                 continue
             title = photo.get("alt_description") or photo.get("description")
             source_url = (photo.get("links") or {}).get("html")
-            if not _is_relevant(query, title, source_url):
+            if not _is_relevant(query, title, source_url, reject_plumbing=reject_plumbing):
                 rejected += 1
                 continue
             results.append(safe)
@@ -723,11 +805,11 @@ def _unsplash_image_search(query: str, max_results: int = 5) -> list[str]:
 # Provider chain — try all three real providers before giving up
 # ---------------------------------------------------------------------------
 
-def _search_all_providers(query: str, max_results: int = 5) -> list[str]:
+def _search_all_providers(query: str, max_results: int = 5, *, reject_plumbing: bool = False) -> list[str]:
     """Try each provider in order; return the first non-empty result list."""
     for provider in (_ddg_image_search, _pexels_image_search, _unsplash_image_search):
         try:
-            urls = provider(query, max_results=max_results)
+            urls = provider(query, max_results=max_results, reject_plumbing=reject_plumbing)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Image provider %s raised for %r: %s", provider.__name__, query[:60], exc)
             urls = []
@@ -826,6 +908,8 @@ def _best_image(
     query: str,
     location: str | None = None,
     used_urls: set[str] | None = None,
+    *,
+    reject_plumbing: bool = False,
 ) -> str | None:
     """
     Return the best validated (and proxied) image URL for *query* that has
@@ -835,12 +919,16 @@ def _best_image(
     India-relevant fallback queries (see `_degraded_query_chain`).  Fetches
     8 candidates per query level so there is room to skip duplicates.
 
+    ``reject_plumbing=True`` propagates into every provider call so that
+    bathroom / plumbing images are skipped throughout the entire degradation
+    chain — used for culinary and outdoor section searches.
+
     Returns None only when every query level across every provider is
     exhausted — a blank slot is always preferable to a random foreign image.
     Picsum is intentionally never used.
     """
     for attempt_query in _degraded_query_chain(query, location):
-        urls = _search_all_providers(attempt_query, max_results=8)
+        urls = _search_all_providers(attempt_query, max_results=8, reject_plumbing=reject_plumbing)
         for raw_url in urls:
             proxied = _proxied_url(raw_url)
             if used_urls is None or proxied not in used_urls:
@@ -1039,39 +1127,59 @@ def generate_article_images(
         slots = full_article_headings if full_article_headings else ["exterior view", "interior ambiance"]
         themed_fill_count = 0
         for slot in slots:
-            if single_pool.has_unused:
-                # A real, never-shown-yet photo of THIS property is still
-                # available — always prefer it over a themed search so we
-                # exhaust the property's own gallery before touching anything
-                # else.
+            section_type = _classify_section(slot)
+            # Culinary and outdoor sections must NEVER receive bathroom/plumbing
+            # or random interior photos from the live pool. Skip the pool for
+            # these sections and use a targeted contextual search instead so
+            # "Culinary Delights" gets food/kitchen photos and "Outdoor Spaces"
+            # gets garden/terrace/exterior photos — not a toilet or a corridor.
+            # Room-design and general sections continue to use the live pool
+            # (bathroom images are editorially appropriate there — guests want
+            # to see hygiene quality).
+            needs_contextual_search = section_type in ("culinary", "outdoor")
+            reject_plumbing = needs_contextual_search
+
+            if not needs_contextual_search and single_pool.has_unused:
+                # Non-culinary/non-outdoor slot: take the next real property
+                # photo directly from the gallery.
                 url = single_pool.take_next()
             else:
-                # Every real photo of this property has already been used
-                # once. Rather than silently repeating one under a new
-                # caption (e.g. the same exterior shot captioned "the
-                # infinity pool"), try a themed search anchored on the
-                # property's own name + this specific slot (pool/dining/
-                # room view/etc) so the reader sees a distinct, on-topic
-                # image instead of an obvious duplicate.
+                # Culinary/outdoor sections (or pool exhausted): do a themed
+                # search anchored on the property name + section context suffix
+                # so the returned photo matches what the reader expects to see.
                 time.sleep(0.2)
-                themed_query = _build_query(f"{property_name} {slot}", location)
+                suffix = _SECTION_QUERY_SUFFIX.get(section_type, "")
+                subject = f"{property_name} {slot} {suffix}".strip()
+                themed_query = _build_query(subject, location)
                 try:
-                    url = _best_image(themed_query, location=location, used_urls=used_urls)
+                    url = _best_image(
+                        themed_query,
+                        location=location,
+                        used_urls=used_urls,
+                        reject_plumbing=reject_plumbing,
+                    )
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("Themed search raised for slot %r on %r: %s", slot[:50], property_name, exc)
                     url = None
                 if url is not None:
                     themed_fill_count += 1
                     used_urls.add(url)
-                else:
-                    # No distinct image found anywhere — cycling a repeat is
-                    # still preferable to leaving the slot blank.
+                elif not needs_contextual_search and single_pool.has_unused:
+                    # Themed search found nothing for a non-restricted slot —
+                    # fall back to the pool rather than leaving a blank.
                     url = single_pool.take_next()
+                # For culinary/outdoor: if themed search found nothing, leave
+                # the slot blank — a missing photo is far less damaging than
+                # a toilet seat image under "Culinary Delights".
             section_urls.append(url)
             if full_article_headings:
                 heading_images.append((slot, url))
+            logger.info(
+                "Section slot %r (type=%r) -> %s",
+                slot[:50], section_type, "contextual search" if needs_contextual_search else "live pool",
+            )
         logger.info(
-            "Filled %d section slot(s) for %r: %d from the property's own gallery, %d via themed search top-up",
+            "Filled %d section slot(s) for %r: %d from the property's own gallery, %d via themed/contextual search",
             len(section_urls), property_name, len(section_urls) - themed_fill_count, themed_fill_count,
         )
 
@@ -1195,35 +1303,58 @@ def generate_article_images(
         logger.info("Extracted %d headings from article %r", len(headings), headline[:50])
 
         for heading in headings:
-            try:
-                live_next = live_pool.take_next(used_urls)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Live pool lookup raised for heading %r: %s", heading[:50], exc)
-                live_next = None
-            if live_next is not None:
-                url, listing = live_next
-                logger.info(
-                    "Section image for heading %r -> live listing %r (%.1f★)",
-                    heading[:50], listing.name, listing.rating or 0.0,
-                )
-            else:
-                time.sleep(0.3)
-                query = _build_query(heading, location)
+            section_type = _classify_section(heading)
+            # Culinary and outdoor sections bypass the live pool entirely —
+            # the pool may contain bathroom/bedroom photos that are contextually
+            # wrong for food or garden sections. Instead we do a targeted
+            # thematic search with reject_plumbing=True so providers never
+            # return plumbing images for these sections.
+            # Room-design and general sections continue to use the live pool first
+            # (bathroom images are appropriate there — they verify hygiene quality).
+            needs_contextual_search = section_type in ("culinary", "outdoor")
+
+            url: str | None = None
+            if not needs_contextual_search:
+                # Non-restricted section: try live pool first
                 try:
-                    url = _best_image(query, location=location, used_urls=used_urls)
+                    live_next = live_pool.take_next(used_urls)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Live pool lookup raised for heading %r: %s", heading[:50], exc)
+                    live_next = None
+                if live_next is not None:
+                    url, listing = live_next
+                    logger.info(
+                        "Section image for heading %r (type=%r) -> live listing %r (%.1f★)",
+                        heading[:50], section_type, listing.name, listing.rating or 0.0,
+                    )
+
+            if url is None:
+                # Culinary/outdoor sections always land here (pool bypassed).
+                # Other sections land here only when the pool is exhausted.
+                time.sleep(0.3)
+                suffix = _SECTION_QUERY_SUFFIX.get(section_type, "")
+                base_subject = f"{heading} {suffix}".strip()
+                query = _build_query(base_subject, location)
+                reject_plumbing = needs_contextual_search
+                try:
+                    url = _best_image(query, location=location, used_urls=used_urls, reject_plumbing=reject_plumbing)
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("Dynamic search raised for heading %r: %s", heading[:50], exc)
                     url = None
                 if url is not None:
-                    logger.info("Section image for heading %r -> search fallback (query=%r)", heading[:50], query[:80])
+                    logger.info(
+                        "Section image for heading %r (type=%r) -> contextual search (query=%r)",
+                        heading[:50], section_type, query[:80],
+                    )
+
             if url is None:
-                if _landmark:
-                    # For landmark articles, leave the slot blank rather than
-                    # inserting hotel imagery — a missing section photo is less
-                    # misleading than an unrelated resort interior.
+                if _landmark or needs_contextual_search:
+                    # For landmark articles and culinary/outdoor sections, leave
+                    # the slot blank — a missing photo is less damaging than an
+                    # unrelated or contextually wrong image.
                     logger.warning(
-                        "No landmark image found for heading %r — leaving blank.",
-                        heading[:50],
+                        "No contextually appropriate image found for heading %r (type=%r) — leaving blank.",
+                        heading[:50], section_type,
                     )
                 else:
                     url = _static_fallback_url(static_fallback_index, used_urls)
