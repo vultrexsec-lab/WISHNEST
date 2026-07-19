@@ -348,33 +348,143 @@ class _LivePropertyPool:
         return None
 
 
+# ---------------------------------------------------------------------------
+# Photo tag classification — SerpApi category tags per pool photo
+# ---------------------------------------------------------------------------
+
+# Lowercased SerpApi photo tag tokens signalling exterior / facade content.
+# Preferred for intro, accessibility, conclusion, and general sections.
+_EXTERIOR_PHOTO_TAG_TOKENS: frozenset[str] = frozenset({
+    "exterior", "front", "facade", "building", "outside", "outside view",
+    "front of property", "outside of building", "street view", "approach",
+    "property exterior", "entrance", "gate", "driveway", "landscaping",
+    "garden", "grounds", "lawn", "panoramic view", "scenic", "outside area",
+})
+
+# Tokens signalling food / dining / kitchen content.
+# Preferred for culinary sections; excluded from all others.
+_CULINARY_PHOTO_TAG_TOKENS: frozenset[str] = frozenset({
+    "food & drink", "food", "drinks", "beverages", "menu", "dining room",
+    "kitchen", "breakfast", "lunch", "dinner", "chef", "meal", "cuisine",
+    "cafe", "bar", "buffet", "restaurant", "cooking", "dishes", "dining",
+})
+
+# Tokens signalling a close-up portrait or staff member.
+# Excluded from all sections except explicit hospitality headings.
+_PORTRAIT_PHOTO_TAG_TOKENS: frozenset[str] = frozenset({
+    "people", "staff", "owner", "employee", "team", "host", "hosts",
+    "guests", "portrait", "selfie", "person", "individuals",
+})
+
+# Tokens signalling bedroom / room interior / bathroom content.
+_ROOM_INTERIOR_PHOTO_TAG_TOKENS: frozenset[str] = frozenset({
+    "rooms", "room", "bedroom", "suite", "interior", "accommodation",
+    "bathroom", "washroom", "restroom", "toilet", "living room", "lobby",
+    "reception", "lounge", "corridor", "hallway",
+})
+
+# Tokens signalling outdoor / garden / pool content.
+_OUTDOOR_PHOTO_TAG_TOKENS: frozenset[str] = frozenset({
+    "outdoor", "outdoors", "open air", "garden", "pool", "swimming pool",
+    "terrace", "balcony", "patio", "veranda", "deck", "courtyard",
+    "nature", "landscape", "greenery", "valley", "forest",
+})
+
+
+def _section_photo_preferences(
+    section_type: str,
+) -> tuple[frozenset[str], frozenset[str]]:
+    """
+    Return ``(preferred_tags, excluded_tags)`` for *section_type*.
+
+    The smart pool scanner first tries photos whose tags overlap with
+    ``preferred_tags``.  If none exist, any photo whose tags do NOT overlap
+    with ``excluded_tags`` is returned.  Photos whose tags overlap with
+    ``excluded_tags`` are never returned for this section (blank beats wrong).
+    Untagged photos (empty tag list) never match preferred and never match
+    excluded — they're treated as generic and returned in Pass 2.
+    """
+    if section_type in ("connectivity", "intro", "general"):
+        # Accessibility / Conclusion / Introduction: exterior/facade first;
+        # never kitchen, portrait, or room interior.
+        return (
+            _EXTERIOR_PHOTO_TAG_TOKENS | _OUTDOOR_PHOTO_TAG_TOKENS,
+            _PORTRAIT_PHOTO_TAG_TOKENS | _CULINARY_PHOTO_TAG_TOKENS | _ROOM_INTERIOR_PHOTO_TAG_TOKENS,
+        )
+    if section_type == "culinary":
+        # Culinary: food/dining preferred; never portrait or bedroom.
+        return (
+            _CULINARY_PHOTO_TAG_TOKENS,
+            _PORTRAIT_PHOTO_TAG_TOKENS | _ROOM_INTERIOR_PHOTO_TAG_TOKENS,
+        )
+    if section_type == "outdoor":
+        # Outdoor Spaces: garden/pool preferred; never portrait or kitchen.
+        return (
+            _OUTDOOR_PHOTO_TAG_TOKENS | _EXTERIOR_PHOTO_TAG_TOKENS,
+            _PORTRAIT_PHOTO_TAG_TOKENS | _CULINARY_PHOTO_TAG_TOKENS,
+        )
+    if section_type == "hospitality":
+        # Guest Experience: portraits allowed; exterior/lobby preferred;
+        # kitchen and bedroom excluded.
+        return (
+            _EXTERIOR_PHOTO_TAG_TOKENS | _OUTDOOR_PHOTO_TAG_TOKENS,
+            _CULINARY_PHOTO_TAG_TOKENS | _ROOM_INTERIOR_PHOTO_TAG_TOKENS,
+        )
+    if section_type == "room_design":
+        # Rooms / Amenities: room interior preferred; portraits and kitchen excluded.
+        return (
+            _ROOM_INTERIOR_PHOTO_TAG_TOKENS,
+            _PORTRAIT_PHOTO_TAG_TOKENS | _CULINARY_PHOTO_TAG_TOKENS,
+        )
+    # Catch-all: no strong preference; exclude portraits and kitchen.
+    return (
+        frozenset(),
+        _PORTRAIT_PHOTO_TAG_TOKENS | _CULINARY_PHOTO_TAG_TOKENS,
+    )
+
+
 class _SinglePropertyPhotoPool:
     """
     Strict, single-business image source for review articles about ONE named
-    property (e.g. "Hyatt Dehradun"). Every slot cycles through that same
-    property's own verified photo pool — never a different business, never
-    DDG/Pexels/Unsplash, never the static safety-net images. If the property
-    has fewer real photos than the article needs, photos are safely repeated
-    (cycled) rather than padded with anything foreign.
+    property. Every slot comes from that property's own verified Google Maps
+    photo gallery — never a different business, never stock images.
 
-    `available` is True only when at least one real photo for the named
-    property was found; callers must fall back to the broader multi-property
-    pipeline entirely when it's False (there is nothing to strictly filter
-    to).
+    Supports SerpApi tag-based smart selection: exterior photos are routed to
+    intro/connectivity/conclusion sections, food photos to culinary sections,
+    and portrait photos are excluded from non-hospitality sections.
+    Untagged photos (the common case) are treated as generic and used when no
+    better-tagged option is available.
+
+    `available` is True only when at least one real photo was found; callers
+    must fall back to the multi-property pipeline when it's False.
     """
 
     def __init__(self, headline: str, location: str | None):
         self.listing: PropertyListing | None = None
         try:
-            # 15 (not the bare minimum 10) gives enough headroom for the
-            # hero slot + at least MIN_SINGLE_PROPERTY_IMAGES section slots
-            # even after a couple of photos get skipped as duplicates.
-            self.listing = fetch_property_by_name(headline, location, max_photos=15)
+            # 20 photos gives more headroom for tag-based filtering — extra
+            # photos ensure that even after excluding portraits/kitchens for
+            # unsuitable sections there are real photos remaining.
+            self.listing = fetch_property_by_name(headline, location, max_photos=20)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Single-property lookup raised for %r: %s", headline[:60], exc)
             self.listing = None
-        self._photos: list[str] = list(self.listing.photo_urls) if self.listing else []
-        self._cursor = 0
+
+        # Build internal list of (raw_url, lowercased_tags) tuples.
+        # Guard against missing photo_tags attribute on older objects.
+        if self.listing:
+            raw_urls = self.listing.photo_urls
+            raw_tags = getattr(self.listing, "photo_tags", None) or [[] for _ in raw_urls]
+            self._photos: list[tuple[str, list[str]]] = [
+                (url, [t.lower() for t in (tags or []) if isinstance(t, str)])
+                for url, tags in zip(raw_urls, raw_tags)
+            ]
+        else:
+            self._photos = []
+
+        # Track which indices have been handed out — never reuse until all
+        # are exhausted.
+        self._used: set[int] = set()
 
     @property
     def available(self) -> bool:
@@ -382,31 +492,59 @@ class _SinglePropertyPhotoPool:
 
     @property
     def has_unused(self) -> bool:
-        """True while at least one of this property's real photos has never
-        been handed out yet — callers should prefer topping up from a
-        different source (a themed search for the specific slot, e.g.
-        "pool"/"dining"/"room") over calling `take_next()` and silently
-        repeating a photo the reader already saw under a different caption."""
-        return self._cursor < len(self._photos)
+        return len(self._used) < len(self._photos)
 
     @property
     def unused_count(self) -> int:
-        """How many of this property's real photos have never been handed
-        out yet. Used to pad the section-image grid with extra real photos
-        (beyond one per heading) up to the article's minimum image target."""
-        return max(0, len(self._photos) - self._cursor)
+        return max(0, len(self._photos) - len(self._used))
 
-    def take_next(self) -> str:
-        """Return the proxied URL for the next UNUSED photo in this
-        property's own pool. Only repeats (cycles) once every real photo has
-        already been handed out at least once — callers should check
-        `has_unused` first and prefer a themed search fallback instead of
-        forcing a repeat when there's a richer source available (e.g. Google
-        Places not configured but DDG/Pexels/Unsplash are). Only call this
-        when `available` is True."""
-        url = self._photos[self._cursor % len(self._photos)]
-        self._cursor += 1
-        return _proxied_url(url)
+    def _hand_out(self, index: int) -> str:
+        self._used.add(index)
+        return _proxied_url(self._photos[index][0])
+
+    def take_for_section(self, section_type: str) -> str | None:
+        """
+        Return the best-matching photo URL for *section_type* using tag-based
+        smart routing, or None if the pool is exhausted or every remaining
+        photo has excluded tags for this section.
+
+        Pass 1 — preferred tag match (and no excluded tags).
+        Pass 2 — no excluded tags (any neutral/untagged photo is acceptable).
+        Pass 3 — all remaining photos are excluded → return None (blank slot).
+
+        Photos skipped in Pass 3 remain in the pool for future sections that
+        may accept them (e.g. a bedroom photo skipped for "Culinary" may still
+        be used for "room_design").
+        """
+        prefer, exclude = _section_photo_preferences(section_type)
+
+        # Pass 1: preferred tags AND no excluded tags
+        for i, (_, tags) in enumerate(self._photos):
+            if i in self._used:
+                continue
+            tag_set = set(tags)
+            if tag_set & exclude:
+                continue
+            if prefer and (tag_set & prefer):
+                return self._hand_out(i)
+
+        # Pass 2: no excluded tags (untagged photos qualify here)
+        for i, (_, tags) in enumerate(self._photos):
+            if i in self._used:
+                continue
+            if not (set(tags) & exclude):
+                return self._hand_out(i)
+
+        # Pass 3: only excluded-tag photos remain — leave slot blank
+        return None
+
+    def take_any_remaining(self) -> str | None:
+        """Return next unused photo regardless of tags — used for padding
+        slots where any real photo is better than blank."""
+        for i in range(len(self._photos)):
+            if i not in self._used:
+                return self._hand_out(i)
+        return None
 
 
 def _build_query(subject: str, location: str | None) -> str:
@@ -1277,8 +1415,10 @@ def generate_article_images(
 
     if single_pool is not None and single_pool.available:
         property_name = single_pool.listing.name
-        hero_url = single_pool.take_next()
-        used_urls.add(hero_url)
+        # Hero: prefer exterior/facade shot (intro preference) for the opening image.
+        hero_url = single_pool.take_for_section("intro")
+        if hero_url:
+            used_urls.add(hero_url)
         logger.info(
             "Hero image resolved from strict single-property pool %r (%d photo(s) available) for %r",
             property_name, len(single_pool.listing.photo_urls), headline[:60],
@@ -1293,21 +1433,24 @@ def generate_article_images(
             section_type = _classify_section(slot)
             url: str | None = None
 
-            # ── ALL sections: strictly from this property's Google Maps pool ─
-            # Only real photos from this exact property are used — no DDG,
-            # Pexels, Unsplash, or any other stock source.  If the pool is
-            # exhausted the slot stays blank; a blank image is always
-            # preferable to an unrelated or synthetic photo.
-            if single_pool.has_unused:
-                url = single_pool.take_next()
+            # ── ALL sections: tag-matched photo from property's Google Maps pool ─
+            # Only real photos from this exact property are used.  The smart pool
+            # scanner first finds photos whose SerpApi tags match the section type
+            # (exterior for Accessibility/Conclusion, food for Culinary, etc.) then
+            # falls back to any untagged/neutral photo.  Portraits are excluded
+            # from all non-hospitality sections; kitchen photos locked to Culinary.
+            # Blank slot beats wrong content.
+            url = single_pool.take_for_section(section_type)
+            if url is not None:
                 pool_fill_count += 1
                 logger.info(
-                    "Section slot %r (type=%r) -> property's own Google Maps gallery",
+                    "Section slot %r (type=%r) -> tag-matched Google Maps photo",
                     slot[:50], section_type,
                 )
             else:
                 logger.warning(
-                    "Section slot %r (type=%r) -> Google Maps pool exhausted, leaving blank.",
+                    "Section slot %r (type=%r) -> no suitable pool photo "
+                    "(portrait/kitchen excluded or pool exhausted), leaving blank.",
                     slot[:50], section_type,
                 )
 
@@ -1332,7 +1475,10 @@ def generate_article_images(
         total_so_far = 1 + len(section_urls)  # hero + sections filled above
         padded_count = 0
         while total_so_far < MIN_SINGLE_PROPERTY_IMAGES and single_pool.has_unused:
-            section_urls.append(single_pool.take_next())
+            padded_url = single_pool.take_any_remaining()
+            if padded_url is None:
+                break
+            section_urls.append(padded_url)
             total_so_far += 1
             padded_count += 1
         if padded_count:

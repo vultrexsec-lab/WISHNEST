@@ -76,10 +76,20 @@ class PropertyListing:
     # single named property so every image slot cycles through this one
     # business's own verified photo pool instead of mixing in stock images.
     photo_urls: list[str] = None  # type: ignore[assignment]
+    # SerpApi category tags for each photo in photo_urls — parallel list
+    # where photo_tags[i] holds lowercased tag strings for photo_urls[i]
+    # (e.g. ["exterior", "front of property"]).  Empty list when SerpApi
+    # returned no tag data for that photo.  Used by the smart pool to route
+    # exterior photos to intro/conclusion/connectivity sections, food photos
+    # to culinary sections, and to exclude portrait photos from non-staff
+    # sections.
+    photo_tags: list[list[str]] = None  # type: ignore[assignment]
 
     def __post_init__(self):
         if self.photo_urls is None:
             self.photo_urls = [self.photo_url] if self.photo_url else []
+        if self.photo_tags is None:
+            self.photo_tags = [[] for _ in self.photo_urls]
 
 
 def _log_missing_key_notice() -> None:
@@ -125,7 +135,7 @@ def _coerce_review_count(value) -> int | None:
 # SerpApi — photo gallery
 # ---------------------------------------------------------------------------
 
-def _serpapi_maps_photos_gallery(data_id: str, api_key: str, max_photos: int) -> list[str]:
+def _serpapi_maps_photos_gallery(data_id: str, api_key: str, max_photos: int) -> list[dict]:
     """
     Fetch up to *max_photos* real photo URLs from SerpApi's dedicated
     `google_maps_photos` engine for the business identified by *data_id* —
@@ -146,12 +156,17 @@ def _serpapi_maps_photos_gallery(data_id: str, api_key: str, max_photos: int) ->
         resp.raise_for_status()
         data = resp.json()
         photos = data.get("photos") or []
-        urls: list[str] = []
+        result: list[dict] = []
         for photo in photos[:max_photos]:
             url = photo.get("thumbnail") or photo.get("image")
             if url:
-                urls.append(_upscale_lh3_photo_url(url) or url)
-        return urls
+                # SerpApi returns tags as a list or single string — normalise.
+                raw_tag = photo.get("tag") or photo.get("tags") or []
+                if isinstance(raw_tag, str):
+                    raw_tag = [raw_tag]
+                tags = [t.strip().lower() for t in raw_tag if isinstance(t, str) and t.strip()]
+                result.append({"url": _upscale_lh3_photo_url(url) or url, "tags": tags})
+        return result
     except Exception as exc:  # noqa: BLE001
         logger.warning("SerpApi google_maps_photos lookup failed for data_id=%r: %s", data_id, exc)
         return []
@@ -327,14 +342,16 @@ def fetch_property_by_name(
         )
         data_id = place.get("data_id")
 
-        photo_urls: list[str] = []
+        tagged_photos: list[dict] = []
         if data_id:
-            photo_urls = _serpapi_maps_photos_gallery(data_id, api_key, max_photos)
+            tagged_photos = _serpapi_maps_photos_gallery(data_id, api_key, max_photos)
 
-        if not photo_urls:
+        if tagged_photos:
+            photo_urls: list[str] = [p["url"] for p in tagged_photos]
+            photo_tags_list: list[list[str]] = [p["tags"] for p in tagged_photos]
+        else:
             # Gallery lookup unavailable/empty — fall back to whatever single
-            # photo(s) the search result itself carried, still strictly
-            # belonging to this business.
+            # photo(s) the search result itself carried.  No tag data available.
             extra = place.get("photos") or []
             extra_urls = [
                 _upscale_lh3_photo_url(p.get("thumbnail") or p.get("image"))
@@ -342,17 +359,24 @@ def fetch_property_by_name(
                 if isinstance(p, dict) and (p.get("thumbnail") or p.get("image"))
             ][:max_photos]
             photo_urls = [u for u in ([thumbnail] + extra_urls) if u]
+            photo_tags_list = [[] for _ in photo_urls]
 
-        # De-dup while preserving order.
+        # De-dup while preserving order; keep tag list in sync.
         seen: set[str] = set()
-        photo_urls = [u for u in photo_urls if not (u in seen or seen.add(u))]
+        deduped = [
+            (u, t) for u, t in zip(photo_urls, photo_tags_list)
+            if not (u in seen or seen.add(u))
+        ]
+        photo_urls = [u for u, _ in deduped]
+        photo_tags_list = [t for _, t in deduped]
 
         if not photo_urls:
             return None
 
+        tagged_count = sum(1 for t in photo_tags_list if t)
         logger.info(
-            "Strict single-property photo pool resolved for %r via SerpApi: %d photo(s)",
-            name, len(photo_urls),
+            "Strict single-property photo pool resolved for %r via SerpApi: %d photo(s) (%d tagged)",
+            name, len(photo_urls), tagged_count,
         )
         return PropertyListing(
             name=place.get("title") or name,
@@ -363,6 +387,7 @@ def fetch_property_by_name(
             maps_url=place.get("link"),
             place_id=data_id,
             photo_urls=photo_urls,
+            photo_tags=photo_tags_list,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("SerpApi single-property lookup failed for %r: %s", name, exc)
