@@ -73,6 +73,10 @@ REQUIRED JSON SHAPE
             leave a heading hanging above a list with no intro paragraph).
           • Add a blank line (empty <p></p> or <br>) between major sections for
             clean visual breathing room.
+          • NEVER use a heading called "Objective", "Objectives", "Our Objective",
+            "Purpose", "About This Review", or any academic/report-style label.
+            This is an editorial magazine article, not a research report.
+            Begin the article directly with the property/destination narrative.
 
           WHEN the article covers 2 or more properties/resorts (roundup, comparison,
           "best of" list), you MUST embed an HTML comparison table immediately

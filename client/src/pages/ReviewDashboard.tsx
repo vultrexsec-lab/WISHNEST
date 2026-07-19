@@ -611,9 +611,47 @@ function ArticlePreviewModal({
   const [scheduleDate, setScheduleDate] = useState("");
   const grade = overallGrade(article);
   const isReview = article.article_type === "review";
-  const snapshot =
-    (article.property_snapshot as Record<string, string | number>) ?? {};
+  const snapshot: Record<string, unknown> =
+    (article.property_snapshot as Record<string, unknown>) ?? {};
   const snapshotEntries = Object.entries(snapshot);
+
+  // Safely convert any property_snapshot value to a display string —
+  // identical logic to ArticleDetailPage to prevent "[object Object]"
+  // for array fields like google_live_sources.
+  function fmtSnap(value: unknown): string {
+    if (value == null) return "—";
+    if (Array.isArray(value)) {
+      if (value.length === 0) return "—";
+      return (
+        value
+          .map((item: unknown): string => {
+            if (item == null) return "";
+            if (typeof item !== "object") return String(item);
+            const o = item as Record<string, unknown>;
+            if (typeof o["name"] === "string" && o["name"]) return o["name"];
+            if (typeof o["source"] === "string" && o["source"])
+              return o["source"];
+            try {
+              return JSON.stringify(item);
+            } catch {
+              return String(item);
+            }
+          })
+          .filter(Boolean)
+          .join(", ") || "—"
+      );
+    }
+    if (typeof value === "object") {
+      const o = value as Record<string, unknown>;
+      if (typeof o["name"] === "string" && o["name"]) return o["name"];
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return "—";
+      }
+    }
+    return String(value);
+  }
 
   // Lock body scroll while modal is open
   useEffect(() => {
@@ -996,7 +1034,7 @@ function ArticlePreviewModal({
                         {key.replace(/_/g, " ").toUpperCase()}
                       </div>
                       <div className="pt-1 [font-family:'Inter',Helvetica] text-[14px] text-[#1e1e1e]">
-                        {String(value)}
+                        {fmtSnap(value)}
                       </div>
                     </div>
                   ))}

@@ -1238,126 +1238,23 @@ def generate_article_images(
             reject_plumbing = section_type != "room_design"
             url: str | None = None
 
-            if section_type in ("culinary", "outdoor"):
-                # ── Culinary / Outdoor: SKIP the property pool entirely ──────
-                # A typical homestay/farm's Google Maps gallery is overwhelmingly
-                # bedrooms, corridors, and bathrooms. Pulling pool photos for these
-                # sections will almost always produce a severe image-text mismatch
-                # (washbasin under "Culinary Offerings", toilet under "Outdoor
-                # Spaces"). The pool is positional — we cannot tag-filter it.
-                #
-                # Instead, go directly to the property-neutral abstract stock query:
-                # — NO property name  → cannot pull another restaurant's dining room
-                # — NO location       → cannot geo-match a rival hotel in the city
-                # — Generic enough that a vegetable/garden image is editorially safe
-                #   alongside any LLM text about food or outdoor amenities.
-                time.sleep(0.2)
-                fallback_query = _SECTION_NEUTRAL_FALLBACK[section_type]
-                try:
-                    url = _best_image(
-                        fallback_query,
-                        location=None,
-                        used_urls=used_urls,
-                        reject_plumbing=True,
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("Neutral stock search raised for slot %r on %r: %s", slot[:50], property_name, exc)
-                    url = None
-                if url is not None:
-                    fallback_fill_count += 1
-                    used_urls.add(url)
-                    logger.info(
-                        "Section slot %r (type=%r) -> neutral abstract stock (query=%r)",
-                        slot[:50], section_type, fallback_query[:60],
-                    )
-                else:
-                    # All dynamic searches failed.  For culinary sections use a
-                    # verified food/dining placeholder so the slot is never blank;
-                    # outdoor sections stay blank (no appropriate generic outdoor
-                    # placeholder is guaranteed to be location-neutral).
-                    if section_type == "culinary":
-                        url = _food_fallback_url(used_urls)
-                        fallback_fill_count += 1
-                        logger.warning(
-                            "No neutral food image found for slot %r — using curated food placeholder.",
-                            slot[:50],
-                        )
-                    else:
-                        logger.warning(
-                            "No neutral stock image found for slot %r (type=%r) — leaving blank.",
-                            slot[:50], section_type,
-                        )
-
-            elif section_type in ("connectivity", "intro"):
-                # ── Connectivity / Intro: exterior-focused search ─────────────
-                # "Connectivity and Accessibility" headings need the building
-                # entrance, facade, gate, or lobby.
-                # "Introduction / Overview" headings open the article — the image
-                # must show the property's exterior/setting, NEVER a bathroom or
-                # corridor picked at random from the Google Maps pool.
-                # Both section types share the same exterior-search strategy.
-                time.sleep(0.2)
-                suffix = _SECTION_QUERY_SUFFIX[section_type]
-                ext_query = _build_query(f"{property_name} {suffix}".strip(), location)
-                try:
-                    url = _best_image(
-                        ext_query,
-                        location=location,
-                        used_urls=used_urls,
-                        reject_plumbing=True,
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("Exterior search raised for %r slot %r on %r: %s", section_type, slot[:50], property_name, exc)
-                    url = None
-                if url is not None:
-                    fallback_fill_count += 1
-                    used_urls.add(url)
-                    logger.info(
-                        "Section slot %r (type=%r) -> exterior search (query=%r)",
-                        slot[:50], section_type, ext_query[:60],
-                    )
-                else:
-                    logger.warning(
-                        "No exterior image found for %r slot %r — leaving blank.",
-                        section_type, slot[:50],
-                    )
-
+            # ── ALL section types: STRICTLY from property's own pool ────────
+            # User mandate: only use real Google Maps photos of this specific
+            # property. No DDG, no Pexels, no Unsplash, no food/hotel
+            # placeholders. If the pool is exhausted, the slot stays blank —
+            # a blank image is always preferable to an unrelated photo.
+            if single_pool.has_unused:
+                url = single_pool.take_next()
+                pool_fill_count += 1
+                logger.info(
+                    "Section slot %r (type=%r) -> property's own pool",
+                    slot[:50], section_type,
+                )
             else:
-                # ── Room-design / General: property pool first ───────────────
-                # For architecture, hygiene, and general sections the pool is the
-                # right source: bedroom, corridor, and bathroom images are all
-                # editorially appropriate (guests want to verify room quality).
-                if single_pool.has_unused:
-                    url = single_pool.take_next()
-                    pool_fill_count += 1
-                    logger.info(
-                        "Section slot %r (type=%r) -> property's own pool",
-                        slot[:50], section_type,
-                    )
-                else:
-                    # Pool exhausted — themed search with property name + location.
-                    # For non-culinary/non-outdoor sections, other properties in the
-                    # same region are acceptable context (room-quality comparison).
-                    time.sleep(0.2)
-                    suffix = _SECTION_QUERY_SUFFIX.get(section_type, "")
-                    fallback_query = _build_query(f"{property_name} {slot} {suffix}".strip(), location)
-                    try:
-                        url = _best_image(
-                            fallback_query,
-                            location=location,
-                            used_urls=used_urls,
-                            reject_plumbing=reject_plumbing,
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        logger.warning("Themed search raised for slot %r on %r: %s", slot[:50], property_name, exc)
-                        url = None
-                    if url is not None:
-                        fallback_fill_count += 1
-                        used_urls.add(url)
-                        logger.info(
-                            "Section slot %r (type=%r) -> themed search fallback (query=%r)",
-                            slot[:50], section_type, fallback_query[:60],
-                        )
+                logger.warning(
+                    "Section slot %r (type=%r) -> property pool exhausted, leaving blank.",
+                    slot[:50], section_type,
+                )
 
             section_urls.append(url)
             if full_article_headings:

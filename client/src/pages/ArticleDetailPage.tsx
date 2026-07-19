@@ -111,7 +111,12 @@ function extractFigcaptions(html: string | null | undefined): string[] {
  */
 function isRenderable(url: string | null | undefined): boolean {
   if (!url) return false;
-  return url.startsWith("http://") || url.startsWith("https://");
+  // Accept both absolute HTTP(S) URLs and our own relative image-proxy paths
+  return (
+    url.startsWith("http://") ||
+    url.startsWith("https://") ||
+    url.startsWith("/api/image-proxy?url=")
+  );
 }
 
 export const ArticleDetailPage = (): JSX.Element => {

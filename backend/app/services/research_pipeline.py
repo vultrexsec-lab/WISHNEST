@@ -432,53 +432,29 @@ def _ensure_abcde_overall(raw: dict) -> None:
 
 def _apply_live_ratings(article: Article, property_matches: list[dict]) -> bool:
     """
-    Blend genuine Google Maps ratings for the live properties featured in
-    this article into the WishNest ABCDE scorecard, so the published grades
-    reflect real user consensus rather than a purely LLM-estimated score.
+    Record genuine Google Maps ratings for the live properties featured in
+    this article into the snapshot for transparent display in the UI.
+
+    We intentionally do NOT blend Google ratings into the ABCDE dimension
+    scores. Blending a single overall star rating (1-5★) into five distinct
+    editorial dimensions destroys the score variance the LLM carefully
+    computed: a 4.4★ hotel scaled to 8.8/10 pulls every dimension toward A-
+    regardless of whether connectivity is actually poor or dining is thin.
+    The LLM's per-dimension scoring (already validated and capped by
+    _enforce_grade_reality) is the right authoritative source; the Google
+    rating is shown separately in the property snapshot bar for transparency.
 
     property_matches: [{"name", "rating", "review_count", "maps_url"}, ...]
     as returned by `generate_article_images`. Ratings are on Google's native
-    1.0-5.0 scale; WishNest scores are 1.0-10.0, so we scale by 2x.
+    1.0-5.0 scale.
 
-    Blend, not override: each dimension score keeps 40% of the LLM's original
-    editorial judgement and takes 60% from the live rating, so a strong photo
-    gallery of well-reviewed properties visibly lifts the grade without
-    completely discarding the qualitative analysis. Also writes the raw
-    Google metrics into `property_snapshot` for transparency.
-
-    Returns True if the article's scores/snapshot were modified.
+    Returns True if the article's snapshot was modified.
     """
     ratings = [m["rating"] for m in property_matches if m.get("rating")]
     if not ratings:
         return False
 
     avg_google_rating = sum(ratings) / len(ratings)  # 1.0-5.0
-    live_score = avg_google_rating * 2.0             # scale to 1.0-10.0
-
-    changed = False
-    for field, grade_field in _SCORE_TO_GRADE.items():
-        existing = getattr(article, field)
-        if existing is not None:
-            blended = existing * 0.4 + live_score * 0.6
-        else:
-            blended = live_score
-        blended = round(max(1.0, min(10.0, blended)), 1)
-        if blended != existing:
-            setattr(article, field, blended)
-            setattr(article, grade_field, _score_to_grade(blended))
-            changed = True
-
-    if changed:
-        new_scores = [getattr(article, f) for f in _SCORE_TO_GRADE if getattr(article, f) is not None]
-        if new_scores:
-            article.abcde_overall = _score_to_grade(sum(new_scores) / len(new_scores))
-
-    # Re-apply hard editorial ceilings AFTER blending, because a typical
-    # Google rating of 4.2–4.5★ scales to 8.4–9.0/10 and will push every
-    # dimension back into A territory even when the LLM scores were correctly
-    # capped during normalisation. This call enforces the same ceiling and
-    # variance rules on the blended values.
-    _apply_grade_ceilings_to_article(article)
 
     snapshot = dict(article.property_snapshot or {})
     snapshot["google_live_rating"] = round(avg_google_rating, 1)
@@ -489,14 +465,14 @@ def _apply_live_ratings(article: Article, property_matches: list[dict]) -> bool:
         if m.get("name")
     ]
     article.property_snapshot = snapshot
-    changed = True
 
     logger.info(
-        "Applied live Google ratings to %r: avg %.1f★ across %d propert%s -> abcde_overall=%s",
+        "Recorded live Google ratings for %r: avg %.1f★ across %d propert%s "
+        "(ABCDE scores unchanged — LLM grades preserved)",
         article.headline[:50], avg_google_rating, len(ratings),
-        "y" if len(ratings) == 1 else "ies", article.abcde_overall,
+        "y" if len(ratings) == 1 else "ies",
     )
-    return changed
+    return True
 
 
 class ResearchPipelineError(RuntimeError):
