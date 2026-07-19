@@ -29,14 +29,6 @@ const footerColumns = [
   },
 ];
 
-const scores = [
-  { letter: "A", score: "8.2", title: "Architecture", width: "82%" },
-  { letter: "B", score: "8.0", title: "Biophilic & Landscape", width: "80%" },
-  { letter: "C", score: "7.5", title: "Connectivity & Access", width: "75%" },
-  { letter: "D", score: "7.8", title: "Delight / Guest Experience", width: "78%" },
-  { letter: "E", score: "7.5", title: "Eat & Explore", width: "75%" },
-];
-
 const stats = [
   { label: "ADR", value: "₹15,500" },
   { label: "ROOMS", value: "12" },
@@ -132,7 +124,7 @@ export const ArticlePage = (): JSX.Element => {
       {/* Main content */}
       <section className="py-24">
         <div className="mx-auto w-full max-w-[1166px] px-8">
-          <div className="grid gap-16 lg:grid-cols-[minmax(0,680px)_280px]">
+          <div className="mx-auto max-w-[680px]">
             {/* Article body */}
             <div>
               <p className="[font-family:'Inter',Helvetica] text-[17px] font-normal leading-[30px] text-[#1e1e1e]">
@@ -207,62 +199,6 @@ export const ArticlePage = (): JSX.Element => {
               </div>
             </div>
 
-            {/* Sidebar: ABCDE scores */}
-            <aside className="lg:pt-2">
-              <div className="sticky top-24 bg-white p-8">
-                <div className="[font-family:'Inter',Helvetica] text-[9px] font-normal tracking-[1.98px] text-[#6b6b6b]">
-                  ABCDE™ SCORE BREAKDOWN
-                </div>
-                <div className="mt-1 [font-family:'Playfair_Display',Helvetica] text-[52px] font-normal leading-[52px] text-[#2e4a3f]">
-                  B+
-                </div>
-                <div className="mt-6 space-y-4">
-                  {scores.map((item) => (
-                    <div key={item.letter}>
-                      <div className="mb-1 flex items-center justify-between">
-                        <span className="[font-family:'Inter',Helvetica] text-xs font-bold text-[#2e4a3f]">
-                          {item.letter}
-                        </span>
-                        <span className="[font-family:'Inter',Helvetica] text-[10px] text-[#6b6b6b]">
-                          {item.title}
-                        </span>
-                        <span className="[font-family:'Inter',Helvetica] text-xs text-[#6b6b6b]">
-                          {item.score}
-                        </span>
-                      </div>
-                      <div className="h-px w-full bg-[#1e1e1e1a]">
-                        <div
-                          className="h-px bg-[#2e4a3f]"
-                          style={{ width: item.width }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-8 space-y-3 border-t border-[#1e1e1e1a] pt-6">
-                  <div className="flex justify-between">
-                    <span className="[font-family:'Inter',Helvetica] text-[11px] text-[#6b6b6b]">Design Innovation</span>
-                    <span className="[font-family:'Inter',Helvetica] text-[11px] font-medium text-[#1e1e1e]">8.4</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="[font-family:'Inter',Helvetica] text-[11px] text-[#6b6b6b]">Value</span>
-                    <span className="[font-family:'Inter',Helvetica] text-[11px] font-medium text-[#1e1e1e]">7.2</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="[font-family:'Inter',Helvetica] text-[11px] text-[#6b6b6b]">Hospitality</span>
-                    <span className="[font-family:'Inter',Helvetica] text-[11px] font-medium text-[#1e1e1e]">8.1</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="[font-family:'Inter',Helvetica] text-[11px] text-[#6b6b6b]">Sustainability</span>
-                    <span className="[font-family:'Inter',Helvetica] text-[11px] font-medium text-[#1e1e1e]">6.9</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="[font-family:'Inter',Helvetica] text-[11px] text-[#6b6b6b]">Investment Potential</span>
-                    <span className="[font-family:'Inter',Helvetica] text-[11px] font-medium text-[#1e1e1e]">7.8</span>
-                  </div>
-                </div>
-              </div>
-            </aside>
           </div>
         </div>
       </section>

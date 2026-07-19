@@ -549,6 +549,18 @@ _CONNECTIVITY_HEADING_TOKENS: frozenset[str] = frozenset({
     "route", "routes", "directions", "reaching",
 })
 
+# Introduction / overview headings — should ALWAYS map to exterior/facade imagery.
+# A property pool image (Google Maps user-uploaded) is too unpredictable here:
+# it could be a bathroom, a corridor, or a random staff photo. Routing these
+# sections to an exterior search guarantees the opening image of the article
+# matches the introductory text (which describes the property's setting and
+# architecture, not its plumbing).
+_INTRO_HEADING_TOKENS: frozenset[str] = frozenset({
+    "introduction", "intro", "overview", "about", "background",
+    "welcome", "setting", "context", "preface", "prologue",
+    "location", "situated", "nestled", "perched", "hidden",
+})
+
 _OUTDOOR_HEADING_TOKENS: frozenset[str] = frozenset({
     "outdoor", "outdoors", "outside", "open-air", "openair",
     "garden", "gardens", "grounds", "lawn", "courtyard", "patio",
@@ -571,11 +583,24 @@ _ROOM_DESIGN_HEADING_TOKENS: frozenset[str] = frozenset({
 # Section-specific image-search query suffixes — appended when doing a
 # targeted search for a section so providers return contextually correct photos.
 _SECTION_QUERY_SUFFIX: dict[str, str] = {
+    "intro":         "exterior front entrance facade hotel building outside",
     "culinary":      "dining food restaurant cuisine kitchen",
     "outdoor":       "outdoor garden exterior grounds terrace pool",
     "room_design":   "room interior suite bedroom accommodation",
     "connectivity":  "exterior lobby entrance facade gate hotel front",
     "general":       "",
+}
+
+# Human-readable labels for figure captions — describe what TYPE of image
+# the section is expected to contain, so "Image: Introduction" becomes
+# "Exterior view — Introduction" instead of a plain section heading echo.
+_SECTION_CAPTION_PREFIX: dict[str, str] = {
+    "intro":         "Exterior view",
+    "culinary":      "Culinary experience",
+    "outdoor":       "Outdoor spaces",
+    "room_design":   "Room and amenities",
+    "connectivity":  "Entrance and access",
+    "general":       "Property feature",
 }
 
 # Property-neutral fallback queries used ONLY when the specific property's
@@ -621,6 +646,10 @@ def _classify_section(heading: str) -> str:
         return "room_design"
     if tokens & _CONNECTIVITY_HEADING_TOKENS:
         return "connectivity"
+    # Check intro LAST so specific types above take precedence (e.g. a heading
+    # like "Introduction to the Garden" should be "outdoor", not "intro").
+    if tokens & _INTRO_HEADING_TOKENS:
+        return "intro"
     return "general"
 
 
@@ -1103,7 +1132,15 @@ def _inject_images_into_html(
             return full_match
 
         alt = html.escape(heading_text[:120], quote=True)
-        caption = html.escape(f"Image: {heading_text[:80]}", quote=False)
+
+        # Build a descriptive caption that tells the reader WHAT TYPE of
+        # image is shown (exterior view, culinary experience, etc.) rather
+        # than just echoing the section heading.  This is the primary signal
+        # readers use to understand why a particular image appears here.
+        section_type_for_caption = _classify_section(heading_text)
+        caption_prefix = _SECTION_CAPTION_PREFIX.get(section_type_for_caption, "Property feature")
+        caption = html.escape(f"{caption_prefix} — {heading_text[:60]}", quote=False)
+
         figure = _FIGURE_TEMPLATE.format(url=safe_url, alt=alt, caption=caption)
         return full_match + "\n" + figure
 
@@ -1251,15 +1288,16 @@ def generate_article_images(
                             slot[:50], section_type,
                         )
 
-            elif section_type == "connectivity":
-                # ── Connectivity / Accessibility: exterior-focused search ─────
-                # These headings describe how to reach the property; the correct
-                # image is the building's entrance, facade, gate, or lobby —
-                # never a bedroom or interior pool. Bypass the property pool
-                # (which skews heavily toward interior photos) and search directly
-                # with exterior-specific terms.
+            elif section_type in ("connectivity", "intro"):
+                # ── Connectivity / Intro: exterior-focused search ─────────────
+                # "Connectivity and Accessibility" headings need the building
+                # entrance, facade, gate, or lobby.
+                # "Introduction / Overview" headings open the article — the image
+                # must show the property's exterior/setting, NEVER a bathroom or
+                # corridor picked at random from the Google Maps pool.
+                # Both section types share the same exterior-search strategy.
                 time.sleep(0.2)
-                suffix = _SECTION_QUERY_SUFFIX["connectivity"]
+                suffix = _SECTION_QUERY_SUFFIX[section_type]
                 ext_query = _build_query(f"{property_name} {suffix}".strip(), location)
                 try:
                     url = _best_image(
@@ -1269,7 +1307,7 @@ def generate_article_images(
                         reject_plumbing=True,
                     )
                 except Exception as exc:  # noqa: BLE001
-                    logger.warning("Exterior search raised for connectivity slot %r on %r: %s", slot[:50], property_name, exc)
+                    logger.warning("Exterior search raised for %r slot %r on %r: %s", section_type, slot[:50], property_name, exc)
                     url = None
                 if url is not None:
                     fallback_fill_count += 1
@@ -1280,8 +1318,8 @@ def generate_article_images(
                     )
                 else:
                     logger.warning(
-                        "No exterior image found for connectivity slot %r — leaving blank.",
-                        slot[:50],
+                        "No exterior image found for %r slot %r — leaving blank.",
+                        section_type, slot[:50],
                     )
 
             else:
@@ -1457,14 +1495,14 @@ def generate_article_images(
             # assess hygiene / sanitation quality.
             reject_plumbing = section_type != "room_design"
 
-            # Culinary, outdoor, and connectivity sections bypass the live mixed
-            # pool.  The multi-property live pool aggregates photos from several
-            # different businesses — we cannot tag-filter it, so any interior
-            # taken from the pool might be a random hotel's bathroom or bedroom.
-            # For culinary/outdoor/connectivity the risk of a contextual mismatch
+            # Culinary, outdoor, connectivity, and intro sections bypass the live
+            # mixed pool.  The multi-property live pool aggregates photos from
+            # several different businesses — we cannot tag-filter it, so any
+            # interior taken from the pool might be a random hotel's bathroom or
+            # bedroom.  For these section types the risk of a contextual mismatch
             # outweighs the benefit of live listing imagery.
             # Room-design and general sections use the pool first.
-            needs_pool_bypass = section_type in ("culinary", "outdoor", "connectivity")
+            needs_pool_bypass = section_type in ("culinary", "outdoor", "connectivity", "intro")
 
             url: str | None = None
             if not needs_pool_bypass:
@@ -1488,9 +1526,11 @@ def generate_article_images(
                     # never to pull another restaurant's dining room or resort pool.
                     search_query = _SECTION_NEUTRAL_FALLBACK[section_type]
                     search_location = None
-                elif section_type == "connectivity":
+                elif section_type in ("connectivity", "intro"):
                     # Exterior / entrance / facade search anchored to location.
-                    suffix = _SECTION_QUERY_SUFFIX["connectivity"]
+                    # "intro" sections open the article and must show the property
+                    # exterior — never a random interior from the mixed live pool.
+                    suffix = _SECTION_QUERY_SUFFIX[section_type]
                     search_query = _build_query(f"{heading} {suffix}".strip(), location)
                     search_location = location
                 else:
@@ -1528,10 +1568,10 @@ def generate_article_images(
                         "No food image found for heading %r — using curated food placeholder.",
                         heading[:50],
                     )
-                elif _landmark or section_type in ("outdoor", "connectivity"):
-                    # Landmark and outdoor/connectivity sections: leave the slot blank
-                    # rather than inserting a static hotel image with no connection
-                    # to the current heading context.
+                elif _landmark or section_type in ("outdoor", "connectivity", "intro"):
+                    # Landmark, outdoor, connectivity, and intro sections: leave the
+                    # slot blank rather than inserting a static hotel image with no
+                    # connection to the current heading context.
                     logger.warning(
                         "No contextually appropriate image found for heading %r (type=%r) — leaving blank.",
                         heading[:50], section_type,
