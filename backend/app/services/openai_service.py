@@ -174,7 +174,10 @@ REQUIRED JSON SHAPE
       "captions": [string, ...]
           One per image (match count to alt_text). 15-25 words, editorial copy.
 
-      "image_credits": [string, ...],
+      "image_credits": [string, ...]
+          MUST be a JSON array of strings — never a single string.
+          Example: ["Unsplash / John Doe", "Google Maps"]
+          Even if there is only one credit, wrap it: ["Single Credit"]
 
       ── REVIEW-ONLY FIELDS (null for standard articles) ──────────────────
       "property_snapshot": {{"summary": string, "key_facts": [string, ...]}} | null,

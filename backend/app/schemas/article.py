@@ -57,6 +57,15 @@ class ArticleBase(BaseModel):
     section_image_urls: Optional[list[str]] = None
     internal_links: Optional[list[InternalLink]] = None
 
+    @field_validator("image_credits", mode="before")
+    @classmethod
+    def coerce_image_credits_to_list(cls, v: object) -> object:
+        """Wrap a bare string in a list so the LLM returning a single credit
+        string doesn't cause a validation error."""
+        if isinstance(v, str):
+            return [v]
+        return v
+
     @field_validator("section_image_urls", mode="before")
     @classmethod
     def strip_null_image_urls(cls, v: object) -> object:
