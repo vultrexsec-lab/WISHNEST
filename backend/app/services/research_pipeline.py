@@ -143,25 +143,41 @@ _LUXURY_KEYWORDS: frozenset[str] = frozenset([
 # Reverse map: canonical letter grade → approximate numeric midpoint score.
 # Used by _ensure_abcde_overall to derive an overall grade when only letter
 # grades (not numeric scores) were returned by the LLM.
+# Midpoints match the revised _score_to_grade thresholds below.
 _GRADE_TO_SCORE: dict[str, float] = {
-    "A+": 9.5, "A": 8.5, "A-": 7.75,
-    "B+": 7.25, "B": 6.5, "B-": 5.75,
-    "C+": 5.25, "C": 4.5, "C-": 3.75,
-    "D+": 3.25, "D": 2.0,
+    "A+": 9.5, "A": 8.75, "A-": 8.25,
+    "B+": 7.75, "B": 7.25, "B-": 6.5,
+    "C+": 5.75, "C": 5.25, "C-": 4.25,
+    "D+": 3.75, "D": 2.0,
 }
 
 
 def _score_to_grade(score: float) -> str:
-    """Convert a 1.0–10.0 numeric score to a WishNest letter grade."""
+    """
+    Convert a 1.0–10.0 numeric score to a WishNest letter grade.
+
+    Thresholds (per WishNest editorial standard):
+      A+  ≥ 9.0   — exceptional, best-in-class
+      A   ≥ 8.5   — outstanding
+      A-  ≥ 8.0   — clearly above average, falls just short of outstanding
+      B+  ≥ 7.5   — above average for its category        ← 7.5 maps HERE (not A-)
+      B   ≥ 7.0   — solid, meets expectations
+      B-  ≥ 6.0   — average / unremarkable
+      C+  ≥ 5.5   — below average with notable gaps
+      C   ≥ 5.0   — significant shortcomings
+      C-  ≥ 4.0   — poor
+      D+  ≥ 3.0   — very poor
+      D   < 3.0   — failing
+    """
     if score >= 9.0:  return "A+"
-    if score >= 8.0:  return "A"
-    if score >= 7.5:  return "A-"
-    if score >= 7.0:  return "B+"
-    if score >= 6.0:  return "B"
-    if score >= 5.5:  return "B-"
-    if score >= 5.0:  return "C+"
-    if score >= 4.0:  return "C"
-    if score >= 3.5:  return "C-"
+    if score >= 8.5:  return "A"
+    if score >= 8.0:  return "A-"
+    if score >= 7.5:  return "B+"  # KEY FIX: 7.5 → B+, not A-
+    if score >= 7.0:  return "B"
+    if score >= 6.0:  return "B-"
+    if score >= 5.5:  return "C+"
+    if score >= 5.0:  return "C"
+    if score >= 4.0:  return "C-"
     if score >= 3.0:  return "D+"
     return "D"
 
