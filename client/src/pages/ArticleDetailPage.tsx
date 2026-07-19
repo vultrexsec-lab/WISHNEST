@@ -4,11 +4,8 @@ import { SiteNav } from "@/components/SiteNav";
 import { SiteFooter } from "@/components/SiteFooter";
 import { Loader2 } from "lucide-react";
 import {
-  ABCDE_GRADES,
-  ABCDE_SCORES,
   Article,
   formatDate,
-  overallGrade,
 } from "@/lib/article-types";
 
 /**
@@ -137,7 +134,6 @@ export const ArticleDetailPage = (): JSX.Element => {
     );
   }
 
-  const grade = overallGrade(article);
   const isReview = article.article_type === "review";
   const snapshot =
     (article.property_snapshot as Record<string, string | number>) ?? {};
@@ -346,43 +342,6 @@ export const ArticleDetailPage = (): JSX.Element => {
             {/* Sidebar */}
             <aside className="min-w-0 lg:pt-2">
               <div className="sticky top-24 space-y-8">
-                {grade && (
-                  <div className="bg-white p-8">
-                    <div className="[font-family:'Inter',Helvetica] text-[9px] font-normal tracking-[1.98px] text-[#6b6b6b]">
-                      ABCDE™ SCORE BREAKDOWN
-                    </div>
-                    <div className="mt-1 [font-family:'Playfair_Display',Helvetica] text-[52px] font-normal leading-[52px] text-[#2e4a3f]">
-                      {grade}
-                    </div>
-                    <div className="mt-6 space-y-3">
-                      {ABCDE_GRADES.map((g) => {
-                        const value = article[g.key] as string | null;
-                        if (!value) return null;
-                        return (
-                          /* Two-column CSS grid: label fills available width, grade value
-                             anchors to the right edge. Grid is unaffected by text length so
-                             grade values always stack flush-right regardless of label length. */
-                          <div
-                            key={g.key}
-                            className="grid grid-cols-[1fr_auto] items-baseline gap-3"
-                          >
-                            {/* Label: "B · Biophilic & Landscape & Sustainability" */}
-                            <span className="[font-family:'Inter',Helvetica] text-[10px] leading-[15px] text-[#6b6b6b]">
-                              <span className="font-bold text-[#2e4a3f]">{g.letter}</span>
-                              {" · "}
-                              {g.title}
-                            </span>
-                            {/* Grade value — always right-aligned */}
-                            <span className="[font-family:'Inter',Helvetica] text-xs font-medium text-[#2e4a3f]">
-                              {value}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
                 {!!(article.best_for?.length || article.not_ideal_for?.length) && (
                   <div className="bg-white p-8">
                     {article.best_for && article.best_for.length > 0 && (
@@ -440,74 +399,6 @@ export const ArticleDetailPage = (): JSX.Element => {
                   </div>
                 )}
 
-                {/* ABCDE™ Numeric Score Card — visible when LLM-generated scores exist */}
-                {ABCDE_SCORES.some(({ scoreKey }) => article[scoreKey] != null) && (
-                  <div className="overflow-hidden bg-[#1a2e28]">
-                    {/* Header */}
-                    <div className="flex items-end justify-between px-6 pb-4 pt-6">
-                      <div>
-                        <div className="[font-family:'Inter',Helvetica] text-[9px] font-normal tracking-[2px] text-[#ffffff66]">
-                          ABCDE™ SCORE
-                        </div>
-                        <div className="mt-0.5 [font-family:'Inter',Helvetica] text-[9px] font-normal tracking-[1.4px] text-[#ffffff40]">
-                          WISHNEST RATING FRAMEWORK
-                        </div>
-                      </div>
-                      {article.abcde_overall && (
-                        <div className="[font-family:'Playfair_Display',Helvetica] text-[44px] font-normal leading-none text-white">
-                          {article.abcde_overall}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Thin rule */}
-                    <div className="mx-6 border-t border-[#ffffff14]" />
-
-                    {/* Score rows */}
-                    <div className="space-y-5 px-6 pb-6 pt-5">
-                      {ABCDE_SCORES.map(({ scoreKey, letter, title }) => {
-                        const score = article[scoreKey] as number | null;
-                        if (score == null) return null;
-                        const pct = Math.round((score / 10) * 100);
-                        return (
-                          <div key={String(scoreKey)}>
-                            <div className="mb-2 flex items-center justify-between">
-                              <div className="flex items-center gap-2.5">
-                                {/* Letter badge */}
-                                <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center border border-[#ffffff30]">
-                                  <span className="[font-family:'Inter',Helvetica] text-[9px] font-bold text-[#ffffffb3]">
-                                    {letter}
-                                  </span>
-                                </div>
-                                <span className="[font-family:'Inter',Helvetica] text-[11px] font-normal leading-none text-[#ffffffb3]">
-                                  {letter} · {title}
-                                </span>
-                              </div>
-                              <span className="[font-family:'Playfair_Display',Helvetica] text-[15px] font-normal text-white">
-                                {score.toFixed(1)}
-                              </span>
-                            </div>
-                            {/* Track */}
-                            <div className="h-px w-full overflow-hidden bg-[#ffffff14]">
-                              <div
-                                className="h-full bg-[#ffffff80] transition-all"
-                                style={{ width: `${pct}%` }}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Footer note */}
-                    <div className="border-t border-[#ffffff0a] px-6 py-3">
-                      <p className="[font-family:'Inter',Helvetica] text-[9px] font-normal leading-[14px] text-[#ffffff33]">
-                        Scored across architecture, landscape, connectivity,
-                        guest delight & eat/explore. All scores 1–10.
-                      </p>
-                    </div>
-                  </div>
-                )}
               </div>
             </aside>
           </div>
