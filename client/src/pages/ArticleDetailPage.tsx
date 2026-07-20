@@ -6,7 +6,9 @@ import { SiteFooter } from "@/components/SiteFooter";
 import { Loader2 } from "lucide-react";
 import {
   Article,
+  ABCDE_SCORES,
   formatDate,
+  overallGrade,
 } from "@/lib/article-types";
 
 // Verified, always-public food placeholder — used as an onerror fallback
@@ -407,6 +409,76 @@ export const ArticleDetailPage = (): JSX.Element => {
             {/* Sidebar */}
             <aside className="min-w-0 lg:pt-2">
               <div className="sticky top-24 space-y-8">
+
+                {/* ── ABCDE™ Scorecard ─────────────────────────────────── */}
+                {isReview && ABCDE_SCORES.some(({ scoreKey }) => article[scoreKey] != null) && (() => {
+                  const overall = article.abcde_overall || overallGrade(article);
+                  return (
+                    <div className="bg-white p-8">
+                      {/* Overall badge */}
+                      <div className="mb-6 flex items-center justify-between">
+                        <div>
+                          <div className="[font-family:'Inter',Helvetica] text-[9px] font-normal tracking-[1.98px] text-[#6b6b6b]">
+                            WISHNEST ABCDE™ SCORE
+                          </div>
+                          <div className="mt-1 [font-family:'Playfair_Display',Helvetica] text-[13px] text-[#1e1e1e]">
+                            Overall Rating
+                          </div>
+                        </div>
+                        {overall && (
+                          <div className="flex h-12 w-12 items-center justify-center bg-[#2e4a3f]">
+                            <span className="[font-family:'Playfair_Display',Helvetica] text-[20px] font-normal text-white">
+                              {overall}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Per-dimension rows */}
+                      <div className="space-y-4">
+                        {ABCDE_SCORES.map(({ scoreKey, gradeKey, letter, title }) => {
+                          const score = article[scoreKey] as number | null;
+                          const grade = article[gradeKey] as string | null;
+                          if (score == null && grade == null) return null;
+                          const pct = score != null ? Math.round((score / 10) * 100) : null;
+                          return (
+                            <div key={letter}>
+                              <div className="flex items-center justify-between pb-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="inline-flex h-5 w-5 items-center justify-center bg-[#2e4a3f] [font-family:'Inter',Helvetica] text-[10px] font-medium text-white">
+                                    {letter}
+                                  </span>
+                                  <span className="[font-family:'Inter',Helvetica] text-[11px] text-[#1e1e1e]">
+                                    {title}
+                                  </span>
+                                </div>
+                                <span className="[font-family:'Inter',Helvetica] text-[12px] font-medium text-[#2e4a3f]">
+                                  {grade ?? "—"}
+                                </span>
+                              </div>
+                              {pct != null && (
+                                <div className="h-1 w-full rounded-full bg-[#e8e6e1]">
+                                  <div
+                                    className="h-1 rounded-full bg-[#2e4a3f] transition-all"
+                                    style={{ width: `${pct}%` }}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Score note */}
+                      <p className="mt-5 [font-family:'Inter',Helvetica] text-[9px] leading-[14px] text-[#6b6b6b]">
+                        Scored independently by WishNest editors across five
+                        dimensions: Architecture, Biophilic &amp; Landscape,
+                        Connectivity, Delight, and Eat &amp; Explore.
+                      </p>
+                    </div>
+                  );
+                })()}
+
                 {!!(article.best_for?.length || article.not_ideal_for?.length) && (
                   <div className="bg-white p-8">
                     {article.best_for && article.best_for.length > 0 && (
