@@ -1445,6 +1445,7 @@ def generate_article_images(
     article_type: str = "standard",
     full_article: str | None = None,
     category: str | None = None,
+    pre_fetched_listings: list | None = None,
 ) -> tuple[str | None, list[str], str | None, list[dict]]:
     """
     Fill every image slot for the article, preferring LIVE, real Google Maps
@@ -1608,110 +1609,174 @@ def generate_article_images(
     # -------------------------------------------------------------------
     # Broader multi-property path — standard articles (roundups covering
     # many locations/properties) or reviews where the exact named property
-    # couldn't be verified against a live provider. Falls through live pool
-    # -> dynamic search chain -> static safety net per slot, as before.
+    # couldn't be verified against a live provider.
+    #
+    # KEY DESIGN: when pre_fetched_listings are supplied (from the research
+    # pipeline, which already injected those property names into the OpenAI
+    # brief), we use NAME-MATCHING to assign each section's image to the
+    # exact property that section was written about.  This ensures the image
+    # and the article text always describe the same real business.
     # -------------------------------------------------------------------
 
-    # -- Live property pool: one Google Places/SerpApi lookup per article,
-    # sized to cover the hero slot plus every heading we expect to fill.
-    # Extra headroom (+3) absorbs listings that fail the photo check.
-    #
-    # For 'Best Places & Destinations' / 'destinations' category articles we
-    # query SerpApi for tourist attractions and landmarks instead of
-    # hotels/resorts — hotel interiors are semantically wrong for a monument
-    # or scenic-spot article (the root cause of the India Gate image bug).
+    # -- Build the authoritative list of available listings -----------------
+    # Prefer the pre-fetched set (already used to shape the OpenAI brief);
+    # fall back to a fresh SerpApi query if none were pre-fetched.
     expected_slots = 1 + (len(full_article_headings) if full_article_headings else 2)
     _landmark = _is_landmark_category(category)
-    if _landmark:
-        live_pool: _LivePropertyPool | _LandmarkPool = _LandmarkPool(location, limit=expected_slots + 3)
+
+    all_listings: list = []
+
+    if pre_fetched_listings:
+        all_listings = list(pre_fetched_listings)
         logger.info(
-            "Using landmark/attraction pool for category=%r article %r",
-            category, headline[:60],
+            "Multi-property path: using %d pre-fetched listings for %r",
+            len(all_listings), headline[:60],
+        )
+    elif _landmark:
+        lm_pool = _LandmarkPool(location, limit=max(expected_slots + 3, 12))
+        all_listings = lm_pool.listings
+        logger.info(
+            "Multi-property path: landmark pool (%d) for category=%r article %r",
+            len(all_listings), category, headline[:60],
         )
     else:
-        live_pool = _LivePropertyPool(location, limit=expected_slots + 3)
+        lp = _LivePropertyPool(location, limit=max(expected_slots + 3, 12))
+        all_listings = lp.listings
+        logger.info(
+            "Multi-property path: live pool (%d listings) for %r",
+            len(all_listings), headline[:60],
+        )
+
+    # -- Internal state for de-duplication and tracking ---------------------
+    _assigned_indices: set[int] = set()
+    _used_listings: list = []
+
+    def _take_by_name(heading_text: str):
+        """
+        Try to find a listing whose name appears verbatim in *heading_text*.
+        Returns (proxied_url, listing) on success, None if no name match.
+        Marks the matched listing as used so it is not reassigned.
+        """
+        heading_lower = heading_text.lower()
+        for i, listing in enumerate(all_listings):
+            if i in _assigned_indices:
+                continue
+            if not getattr(listing, "photo_url", None):
+                continue
+            name_lower = listing.name.lower()
+            # Match if the property name appears in the heading
+            if name_lower in heading_lower:
+                proxied = _proxied_url(listing.photo_url)
+                if proxied not in used_urls:
+                    _assigned_indices.add(i)
+                    used_urls.add(proxied)
+                    _used_listings.append(listing)
+                    logger.info(
+                        "Name-matched heading %r -> property %r",
+                        heading_text[:50], listing.name,
+                    )
+                    return proxied, listing
+        return None
+
+    def _take_sequential():
+        """
+        Return the next unused listing in sequential order (no name-matching).
+        Falls back to this when the heading doesn't contain a property name.
+        Returns (proxied_url, listing) or None when the pool is exhausted.
+        """
+        for i, listing in enumerate(all_listings):
+            if i in _assigned_indices:
+                continue
+            if not getattr(listing, "photo_url", None):
+                continue
+            proxied = _proxied_url(listing.photo_url)
+            if proxied not in used_urls:
+                _assigned_indices.add(i)
+                used_urls.add(proxied)
+                _used_listings.append(listing)
+                return proxied, listing
+        return None
 
     # -- Hero image ----------------------------------------------------------
-    # Safe routing: live pool -> dynamic search chain -> static safety net.
-    # Every layer is wrapped so a provider error never bubbles up and never
-    # leaves this slot empty.
-    static_fallback_index = 0
     hero_url: str | None = None
-    try:
-        hero_live = live_pool.take_next(used_urls)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Live pool lookup raised for hero slot (%r): %s", headline[:60], exc)
-        hero_live = None
-    if hero_live is not None:
-        hero_url, hero_listing = hero_live
+    # Try name-matching the headline first, then sequential.
+    hero_result = _take_by_name(headline) or _take_sequential()
+    if hero_result is not None:
+        hero_url, hero_listing = hero_result
         logger.info(
-            "Hero image resolved from live Google Maps listing %r (%.1f★) for %r",
+            "Hero image resolved from Google Maps listing %r (%.1f★) for %r",
             hero_listing.name, hero_listing.rating or 0.0, headline[:60],
         )
     else:
-        # No Google Maps photo available — leave hero blank.
-        # Stock/DDG/Pexels/Unsplash images are never used.
         logger.warning(
             "No Google Maps photo available for hero slot of %r — leaving blank.",
             headline[:60],
         )
 
-    # -- Section images -- one per heading in document order -----------------
-    section_urls: list[str] = []
-    heading_images: list[tuple[str, str]] = []
+    # -- Section images — one per heading, with name-matching ---------------
+    # Each heading_images entry is a 3-tuple: (heading_text, url, actual_tags)
+    # so _inject_images_into_html can derive accurate captions.
+    section_urls: list[str | None] = []
+    heading_images: list[tuple[str, str, list[str]]] = []
 
     if full_article_headings:
-        headings = full_article_headings
-        logger.info("Extracted %d headings from article %r", len(headings), headline[:50])
+        logger.info("Extracted %d headings from article %r", len(full_article_headings), headline[:50])
 
-        for heading in headings:
-            section_type = _classify_section(heading)
+        for heading in full_article_headings:
             url: str | None = None
 
-            # ALL section types: strictly from the Google Maps live pool.
-            # No DDG, Pexels, Unsplash, or stock fallback images are used.
-            # If the pool is exhausted the slot stays blank — a missing image
-            # is always preferable to a synthetic or unrelated photo.
-            try:
-                live_next = live_pool.take_next(used_urls)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Live pool lookup raised for heading %r: %s", heading[:50], exc)
-                live_next = None
-            if live_next is not None:
-                url, listing = live_next
+            # 1. Try to find a listing whose name appears in this heading.
+            # 2. Fall back to the next sequential listing when no name matches.
+            slot_result = _take_by_name(heading) or _take_sequential()
+            if slot_result is not None:
+                url, matched_listing = slot_result
                 logger.info(
-                    "Section image for heading %r (type=%r) -> Google Maps listing %r (%.1f★)",
-                    heading[:50], section_type, listing.name, listing.rating or 0.0,
+                    "Section %r -> Google Maps listing %r (%.1f★)",
+                    heading[:50], matched_listing.name, matched_listing.rating or 0.0,
                 )
             else:
                 logger.warning(
-                    "Section image for heading %r (type=%r) -> Google Maps pool exhausted, leaving blank.",
-                    heading[:50], section_type,
+                    "Section %r -> Google Maps pool exhausted, leaving blank.", heading[:50],
                 )
 
             section_urls.append(url)
-            heading_images.append((heading, url))
+            # Pass empty tags — multi-property pool has no per-photo tag data.
+            heading_images.append((heading, url, []))
 
     else:
         for suffix in ["exterior view", "interior ambiance"]:
-            url: str | None = None
-            try:
-                live_next = live_pool.take_next(used_urls)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Live pool lookup raised for slot %r: %s", suffix, exc)
-                live_next = None
-            if live_next is not None:
-                url, _listing = live_next
+            url = None
+            slot_result = _take_sequential()
+            if slot_result is not None:
+                url, _ = slot_result
             else:
-                # Google Maps pool exhausted — leave blank; no stock fallback.
                 logger.warning(
                     "No Google Maps photo available for slot %r — leaving blank.", suffix,
                 )
             section_urls.append(url)
 
-    property_matches = [_property_match_dict(l) for l in live_pool.used]
+    # -- Minimum 10 real images floor ---------------------------------------
+    # If the article has fewer headings than MIN_SINGLE_PROPERTY_IMAGES (10),
+    # pad section_urls with additional listings from the pool so the article
+    # always surfaces at least 10 verified Google Maps photos (hero + sections).
+    MIN_MULTI_PROPERTY_IMAGES = 10
+    total_so_far = (1 if hero_url else 0) + sum(1 for u in section_urls if u)
+    while total_so_far < MIN_MULTI_PROPERTY_IMAGES:
+        extra_result = _take_sequential()
+        if extra_result is None:
+            break  # pool exhausted
+        extra_url, _ = extra_result
+        section_urls.append(extra_url)
+        total_so_far += 1
+    if total_so_far < MIN_MULTI_PROPERTY_IMAGES:
+        logger.info(
+            "Could only source %d/%d images for %r — Google Maps pool exhausted.",
+            total_so_far, MIN_MULTI_PROPERTY_IMAGES, headline[:60],
+        )
 
-    injected_count = sum(1 for _, u in heading_images if u)
+    property_matches = [_property_match_dict(l) for l in _used_listings]
+
+    injected_count = sum(1 for _, u, _t in heading_images if u)
     enriched_html: str | None = None
     if full_article and heading_images:
         try:
@@ -1726,18 +1791,10 @@ def generate_article_images(
     elif full_article:
         enriched_html = full_article
 
-    # used_urls is a single set initialised at the top of this function and
-    # passed into every _best_image / _pick_static_fallback call for both the
-    # hero slot and all section/heading slots.  This guarantees that no image
-    # URL is reused anywhere within a single article generation pass.
-
-    # Strip any None entries — _best_image returns None when no real image is
-    # found; Pydantic's list[str] schema rejects None entries in the ARRAY col.
+    # Strip None entries — Pydantic's list[str] rejects None in the ARRAY col.
     section_urls_clean: list[str] = [u for u in section_urls if u is not None]
 
-    # Final hero-URL sanity check: must be our own proxy path or an absolute
-    # http(s) URL.  Anything else (empty string, log-line fragments, etc.) is
-    # discarded so the frontend never receives a non-image string as a src.
+    # Final hero-URL sanity check.
     if hero_url is not None:
         valid = (
             hero_url.startswith("/api/image-proxy?url=")

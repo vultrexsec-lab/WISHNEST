@@ -24,8 +24,67 @@ from app.schemas.article import ArticleCreate
 from app.services.firecrawl_service import FirecrawlError, search_and_scrape
 from app.services.image_service import generate_article_images
 from app.services.openai_service import generate_article_packages
+from app.services.places_service import PropertyListing, fetch_premium_stays
 
 logger = logging.getLogger("wishnest.research_pipeline")
+
+# ---------------------------------------------------------------------------
+# Location extraction from brief — used to pre-fetch live properties before
+# calling OpenAI so the article content is written about REAL, verified
+# businesses whose images we can actually source from Google Maps.
+# ---------------------------------------------------------------------------
+
+_LOCATION_RE = re.compile(
+    r"\bin\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)",
+)
+
+
+def _extract_location_hint(brief: str) -> str | None:
+    """
+    Pull a location name from a research brief (e.g. "Top hotels in Mussoorie"
+    → "Mussoorie"). Returns None when no capitalised location can be detected
+    or the matched term is too generic to be useful.
+    """
+    m = _LOCATION_RE.search(brief)
+    if not m:
+        return None
+    loc = m.group(1).strip()
+    # Skip single generic terms that would produce noise
+    if loc.lower() in {"india", "the", "a", "an", "this", "that"}:
+        return None
+    return loc
+
+
+def _enrich_brief_with_properties(
+    brief: str,
+    listings: list[PropertyListing],
+) -> str:
+    """
+    Append a LIVE PROPERTY ROSTER to *brief* so OpenAI writes each article
+    section specifically about one of the real Google Maps businesses we have
+    photos for. This guarantees that article text and images are always
+    describing the exact same property.
+    """
+    lines = ["", "", "## LIVE VERIFIED PROPERTIES FROM GOOGLE MAPS"]
+    lines.append(
+        "Structure the article so each main section (<h2>) is dedicated to "
+        "ONE of these real, currently operating businesses. Use each property's "
+        "EXACT name as the <h2> heading text — images will be sourced from "
+        "that business's own Google Maps photo gallery.\n"
+    )
+    for p in listings:
+        parts = [f"  • {p.name}"]
+        if p.rating:
+            parts.append(f"({p.rating:.1f}★)")
+        if p.address:
+            parts.append(f"— {p.address}")
+        lines.append(" ".join(parts))
+    lines.append(
+        "\nCRITICAL: Write each section specifically about that named property "
+        "using only facts from the research sources. Do NOT write generic "
+        "sections that could apply to any hotel."
+    )
+    return brief + "\n".join(lines)
 
 # ── SEO field coercion ────────────────────────────────────────────────────────
 _SEO_TITLE_MIN, _SEO_TITLE_MAX = 50, 60
@@ -646,6 +705,36 @@ def run_research_pipeline(
 
     source_urls = [s["url"] for s in sources]
 
+    # ── 1b. Pre-fetch live properties for roundup/standard articles ───────────
+    # For single-property review articles (place_id is set), the image service
+    # already uses _SinglePropertyPhotoPool which fetches the exact property's
+    # full photo gallery.  For roundup/standard articles (place_id is None) we
+    # pre-fetch real Google Maps listings BEFORE calling OpenAI so that:
+    #   a) OpenAI writes each section specifically about a real, named business
+    #   b) The image pipeline assigns each section the photo of that exact business
+    # This ensures image + article content always describe the same place.
+    pre_fetched_listings: list[PropertyListing] = []
+    if not place_id:
+        location_hint = _extract_location_hint(brief)
+        if location_hint:
+            try:
+                pre_fetched_listings = fetch_premium_stays(location_hint, limit=12)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Pre-fetch of live properties for %r failed: %s", location_hint, exc
+                )
+            if pre_fetched_listings:
+                logger.info(
+                    "Pre-fetched %d live properties for %r — enriching OpenAI brief.",
+                    len(pre_fetched_listings), location_hint,
+                )
+                brief = _enrich_brief_with_properties(brief, pre_fetched_listings)
+            else:
+                logger.info(
+                    "No live properties found for %r — OpenAI will use Firecrawl sources only.",
+                    location_hint,
+                )
+
     # ── 2. Draft article packages via OpenAI ─────────────────────────────────
     try:
         raw_packages = generate_article_packages(brief, sources, count=article_count)
@@ -765,12 +854,14 @@ def run_research_pipeline(
             except Exception:
                 pass
 
-    # ── 4. Fetch real images from DuckDuckGo and patch saved rows ────────────
+    # ── 4. Fetch real images from Google Maps and patch saved rows ───────────
     # Runs after all articles are committed, so a failure never blocks an
     # article from appearing. Each patch is committed individually.
-    # generate_article_images now returns a 3-tuple:
-    #   (hero_url, section_urls, enriched_full_article)
+    # generate_article_images now returns a 4-tuple:
+    #   (hero_url, section_urls, enriched_full_article, property_matches)
     # where enriched_full_article has <figure> blocks injected after each heading.
+    # pre_fetched_listings are passed in so image assignment is name-matched to
+    # the exact property each article section was written about.
     for article in created:
         try:
             hero_url, section_urls, enriched_html, property_matches = generate_article_images(
@@ -780,6 +871,7 @@ def run_research_pipeline(
                 article_type=article.article_type.value,
                 full_article=article.full_article,
                 category=article.category,
+                pre_fetched_listings=pre_fetched_listings or None,
             )
             html_changed = bool(enriched_html and enriched_html != article.full_article)
             ratings_changed = _apply_live_ratings(article, property_matches)
