@@ -104,6 +104,28 @@ _SCORE_SECTION_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+# ---------------------------------------------------------------------------
+# Objective / academic heading scrubber
+#
+# The LLM occasionally opens articles with an "Objective" or "Purpose" heading
+# despite the system prompt forbidding it.  Strip the heading + its content
+# block so the article always starts with a genuine editorial narrative.
+# ---------------------------------------------------------------------------
+
+_OBJECTIVE_HEADING_PAT = (
+    r"<h[23][^>]*>\s*(?:"
+    r"Objective|Objectives|Our\s+Objective"
+    r"|Purpose|About\s+This\s+Review"
+    r"|Overview\s+of\s+(?:the\s+)?(?:Review|Article|Report)"
+    r"|Introduction\s+and\s+Objective"
+    r")\s*</h[23]>"
+)
+
+_OBJECTIVE_SECTION_RE = re.compile(
+    _OBJECTIVE_HEADING_PAT + r".*?(?=<h[23][^>]*>|$)",
+    re.IGNORECASE | re.DOTALL,
+)
+
 
 def _strip_abcde_score_block(html: str | None) -> str | None:
     """
@@ -120,6 +142,24 @@ def _strip_abcde_score_block(html: str | None) -> str | None:
     if count:
         logger.info(
             "Stripped %d ABCDE score-block section(s) from full_article.", count
+        )
+    return cleaned
+
+
+def _strip_objective_headings(html: str | None) -> str | None:
+    """
+    Remove any "Objective" / "Purpose" / "About This Review" section that the
+    LLM injects despite the system prompt forbidding academic report headings.
+
+    Strips the offending heading tag and all content up to (but not including)
+    the next sibling <h2>/<h3>, leaving the rest of the article intact.
+    """
+    if not html:
+        return html
+    cleaned, count = _OBJECTIVE_SECTION_RE.subn("", html)
+    if count:
+        logger.info(
+            "Stripped %d Objective/Purpose heading(s) from full_article.", count
         )
     return cleaned
 
@@ -625,7 +665,8 @@ def run_research_pipeline(
         _normalise_grades(raw)      # catch any remaining letter-grade format quirks
         _ensure_abcde_overall(raw)  # guarantee abcde_overall is always a non-blank string
         _coerce_seo_fields(raw)     # auto-fix minor SEO length violations
-        raw["full_article"] = _strip_abcde_score_block(raw.get("full_article"))  # never show scores in body
+        raw["full_article"] = _strip_abcde_score_block(raw.get("full_article"))    # never show scores in body
+        raw["full_article"] = _strip_objective_headings(raw.get("full_article"))  # never show Objective headings
 
         try:
             validated = ArticleCreate(**raw)

@@ -745,7 +745,11 @@ _OUTDOOR_HEADING_TOKENS: frozenset[str] = frozenset({
 
 _ROOM_DESIGN_HEADING_TOKENS: frozenset[str] = frozenset({
     "room", "rooms", "suite", "suites", "comforts", "comfort",
-    "bedroom", "accommodation", "architecture", "architectural",
+    "bedroom", "accommodation",
+    # NOTE: "architecture" / "architectural" intentionally excluded here.
+    # Headings like "Architectural Marvel" describe the BUILDING DESIGN, not
+    # room comforts — they should receive an exterior/property photo (general),
+    # not a bedroom or bathroom image.  Those tokens now fall through to general.
     "design", "interior", "interiors", "amenities", "amenity",
     "stay", "lodging", "bathroom", "hygiene", "sanitation",
     "facility", "facilities", "spa", "wellness",

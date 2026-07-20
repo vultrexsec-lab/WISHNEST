@@ -130,6 +130,29 @@ export const ArticleDetailPage = (): JSX.Element => {
     queryKey: [`/api/articles/${id}`],
   });
 
+  // MUST be declared before any early return — React Rules of Hooks.
+  // Patch broken images inside the rendered article body so a failed proxy
+  // or stale URL never shows the browser's broken-image icon.
+  useEffect(() => {
+    if (!article?.full_article) return;
+    const body = document.querySelector<HTMLElement>(
+      '[data-testid="text-article-body"]',
+    );
+    if (!body) return;
+    const imgs = body.querySelectorAll<HTMLImageElement>("img");
+    imgs.forEach((img) => {
+      if (img.src === FOOD_IMAGE_FALLBACK) return;
+      img.addEventListener(
+        "error",
+        function onError() {
+          img.removeEventListener("error", onError);
+          img.src = FOOD_IMAGE_FALLBACK;
+        },
+        { once: true },
+      );
+    });
+  }, [article?.full_article]);
+
   if (isLoading) {
     return (
       <main className="min-h-screen bg-[#f8f7f4] text-[#1e1e1e]">
@@ -179,30 +202,7 @@ export const ArticleDetailPage = (): JSX.Element => {
     ([key]) => key !== "google_live_sources",
   );
 
-  // Patch any broken images inside the rendered article body so a failed proxy
-  // or stale URL never shows the browser's broken-image icon.  Runs after the
-  // dangerouslySetInnerHTML content mounts (or changes) and adds a one-shot
-  // onerror handler on every <img> inside the article body.
-  useEffect(() => {
-    if (!article.full_article) return;
-    const body = document.querySelector<HTMLElement>(
-      '[data-testid="text-article-body"]',
-    );
-    if (!body) return;
-    const imgs = body.querySelectorAll<HTMLImageElement>("img");
-    imgs.forEach((img) => {
-      // Guard: don't re-apply if the src is already the fallback.
-      if (img.src === FOOD_IMAGE_FALLBACK) return;
-      img.addEventListener(
-        "error",
-        function onError() {
-          img.removeEventListener("error", onError);
-          img.src = FOOD_IMAGE_FALLBACK;
-        },
-        { once: true },
-      );
-    });
-  }, [article.full_article]);
+  // useEffect moved above early returns to satisfy React Rules of Hooks.
 
   return (
     <main className="w-full max-w-full overflow-x-hidden bg-[#f8f7f4] text-[#1e1e1e]">
