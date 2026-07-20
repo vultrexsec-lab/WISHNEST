@@ -390,6 +390,16 @@ _OUTDOOR_PHOTO_TAG_TOKENS: frozenset[str] = frozenset({
     "nature", "landscape", "greenery", "valley", "forest",
 })
 
+# Tokens for hospitality/reception sections — lobby/entrance ONLY.
+# Deliberately does NOT include pool, garden, or terrace tokens so that
+# outdoor photos are NOT consumed by guest-experience sections first,
+# leaving them available for the actual Outdoor Spaces section.
+_HOSPITALITY_PREFERRED_PHOTO_TAG_TOKENS: frozenset[str] = frozenset({
+    "exterior", "front", "facade", "building", "outside", "outside view",
+    "front of property", "outside of building", "entrance", "gate", "driveway",
+    "lobby", "reception", "lounge", "concierge",
+})
+
 
 def _section_photo_preferences(
     section_type: str,
@@ -418,16 +428,21 @@ def _section_photo_preferences(
             _PORTRAIT_PHOTO_TAG_TOKENS | _ROOM_INTERIOR_PHOTO_TAG_TOKENS,
         )
     if section_type == "outdoor":
-        # Outdoor Spaces: garden/pool preferred; never portrait or kitchen.
+        # Outdoor Spaces: garden/pool preferred; NEVER portrait, kitchen, OR
+        # room/bathroom interior.  Adding _ROOM_INTERIOR_PHOTO_TAG_TOKENS to
+        # excluded is the critical fix that prevents bathtub photos from
+        # appearing under "Outdoor Spaces and Amenities".
         return (
             _OUTDOOR_PHOTO_TAG_TOKENS | _EXTERIOR_PHOTO_TAG_TOKENS,
-            _PORTRAIT_PHOTO_TAG_TOKENS | _CULINARY_PHOTO_TAG_TOKENS,
+            _PORTRAIT_PHOTO_TAG_TOKENS | _CULINARY_PHOTO_TAG_TOKENS | _ROOM_INTERIOR_PHOTO_TAG_TOKENS,
         )
     if section_type == "hospitality":
-        # Guest Experience: portraits allowed; exterior/lobby preferred;
-        # kitchen and bedroom excluded.
+        # Guest Experience: lobby/entrance/facade preferred — but deliberately
+        # NOT pool/garden/terrace.  Using _OUTDOOR_PHOTO_TAG_TOKENS here caused
+        # pool images to be consumed by this section first, leaving the actual
+        # Outdoor Spaces section with nothing but bathroom photos.
         return (
-            _EXTERIOR_PHOTO_TAG_TOKENS | _OUTDOOR_PHOTO_TAG_TOKENS,
+            _HOSPITALITY_PREFERRED_PHOTO_TAG_TOKENS,
             _CULINARY_PHOTO_TAG_TOKENS | _ROOM_INTERIOR_PHOTO_TAG_TOKENS,
         )
     if section_type == "room_design":
@@ -498,15 +513,18 @@ class _SinglePropertyPhotoPool:
     def unused_count(self) -> int:
         return max(0, len(self._photos) - len(self._used))
 
-    def _hand_out(self, index: int) -> str:
+    def _hand_out(self, index: int) -> tuple[str, list[str]]:
+        """Return (proxied_url, tags) and mark index as used."""
         self._used.add(index)
-        return _proxied_url(self._photos[index][0])
+        url = _proxied_url(self._photos[index][0])
+        tags = list(self._photos[index][1])  # copy of lowercased tags
+        return url, tags
 
-    def take_for_section(self, section_type: str) -> str | None:
+    def take_for_section(self, section_type: str) -> tuple[str, list[str]] | None:
         """
-        Return the best-matching photo URL for *section_type* using tag-based
-        smart routing, or None if the pool is exhausted or every remaining
-        photo has excluded tags for this section.
+        Return (proxied_url, actual_tags) for the best-matching photo for
+        *section_type* using tag-based smart routing, or None if the pool is
+        exhausted or every remaining photo has excluded tags for this section.
 
         Pass 1 — preferred tag match (and no excluded tags).
         Pass 2 — no excluded tags (any neutral/untagged photo is acceptable).
@@ -515,6 +533,9 @@ class _SinglePropertyPhotoPool:
         Photos skipped in Pass 3 remain in the pool for future sections that
         may accept them (e.g. a bedroom photo skipped for "Culinary" may still
         be used for "room_design").
+
+        Returns actual SerpApi tags alongside the URL so callers can generate
+        captions that reflect the real photo content rather than the section name.
         """
         prefer, exclude = _section_photo_preferences(section_type)
 
@@ -538,9 +559,10 @@ class _SinglePropertyPhotoPool:
         # Pass 3: only excluded-tag photos remain — leave slot blank
         return None
 
-    def take_any_remaining(self) -> str | None:
-        """Return next unused photo regardless of tags — used for padding
-        slots where any real photo is better than blank."""
+    def take_any_remaining(self) -> tuple[str, list[str]] | None:
+        """Return (proxied_url, actual_tags) for next unused photo regardless
+        of tags — used for padding slots where any real photo is better than
+        blank."""
         for i in range(len(self._photos)):
             if i not in self._used:
                 return self._hand_out(i)
@@ -784,6 +806,7 @@ _SECTION_QUERY_SUFFIX: dict[str, str] = {
 # Human-readable labels for figure captions — describe what TYPE of image
 # the section is expected to contain, so "Image: Introduction" becomes
 # "Exterior view — Introduction" instead of a plain section heading echo.
+# Used as the FALLBACK when actual photo tags are unavailable.
 _SECTION_CAPTION_PREFIX: dict[str, str] = {
     "intro":         "Exterior view",
     "culinary":      "Culinary experience",
@@ -793,6 +816,57 @@ _SECTION_CAPTION_PREFIX: dict[str, str] = {
     "hospitality":   "Guest experience",
     "general":       "Property feature",
 }
+
+
+def _caption_prefix_from_actual_tags(tags: list[str]) -> str | None:
+    """
+    Derive the most accurate caption prefix from the *actual* SerpApi tags of
+    the chosen photo rather than from the section heading type.
+
+    This prevents "Exterior view" being written under a bedroom photo, or
+    "Outdoor spaces" being written under a bathtub image.
+
+    Returns None when tags are empty or unrecognisable — the caller then falls
+    back to the section-type-derived prefix from _SECTION_CAPTION_PREFIX.
+
+    Tag priority (most specific first):
+      1. Bathroom / bathtub / plumbing  → "Bathroom and amenities"
+      2. Pool / outdoor / garden        → "Outdoor spaces"
+      3. Food / dining / kitchen        → "Culinary experience"
+      4. Bedroom / room / suite interior → "Room and amenities"
+      5. Exterior / facade / entrance   → "Exterior view"
+    """
+    if not tags:
+        return None
+    tag_set = set(tags)  # already lowercased by pool constructor
+    if tag_set & {
+        "bathroom", "washroom", "restroom", "bathtub", "bathing",
+        "shower", "toilet", "lavatory",
+    }:
+        return "Bathroom and amenities"
+    if tag_set & {
+        "pool", "swimming pool", "outdoor", "outdoors", "garden",
+        "terrace", "courtyard", "patio", "balcony", "veranda", "deck",
+        "open air", "landscape", "greenery",
+    }:
+        return "Outdoor spaces"
+    if tag_set & {
+        "food & drink", "food", "drinks", "beverages", "dining room",
+        "kitchen", "breakfast", "lunch", "dinner", "chef", "meal",
+        "cuisine", "cafe", "bar", "buffet", "restaurant",
+    }:
+        return "Culinary experience"
+    if tag_set & {
+        "rooms", "room", "bedroom", "suite", "interior", "accommodation",
+        "living room", "lounge", "corridor", "hallway",
+    }:
+        return "Room and amenities"
+    if tag_set & {
+        "exterior", "front", "facade", "building", "outside",
+        "front of property", "entrance", "gate", "driveway",
+    }:
+        return "Exterior view"
+    return None
 
 # Property-neutral fallback queries used ONLY when the specific property's
 # own verified photo pool is completely exhausted for culinary/outdoor sections.
@@ -1302,18 +1376,25 @@ _FIGURE_TEMPLATE = (
 
 def _inject_images_into_html(
     full_article_html: str,
-    heading_images: list[tuple[str, str]],   # [(heading_text, image_url), ...]  positional
+    heading_images: list[tuple[str, str, list[str]]],  # [(heading, url, actual_tags), ...]
 ) -> str:
     """
     Insert a <figure> block immediately *after* each closing </h2> or </h3> tag.
     Matches headings positionally so duplicate heading texts are handled correctly.
     All interpolated values are HTML-escaped to prevent XSS.
+
+    actual_tags (third element of each tuple) are the real SerpApi photo-category
+    tags from the chosen image.  They drive caption generation so the caption
+    accurately reflects the actual photo content (e.g. "Room and amenities" for
+    a bedroom photo, not "Exterior view" just because it's in an intro section).
+    Pass an empty list when tags are unavailable; the caption then falls back to
+    the section-type-derived prefix.
     """
     if not heading_images:
         return full_article_html
 
     img_iter = iter(heading_images)
-    current: tuple[str, str] | None = next(img_iter, None)
+    current: tuple[str, str, list[str]] | None = next(img_iter, None)
 
     def _replace_heading(match: re.Match) -> str:
         nonlocal current, img_iter
@@ -1326,7 +1407,7 @@ def _inject_images_into_html(
         if current is None:
             return full_match
 
-        _expected_text, url = current
+        _expected_text, url, actual_tags = current
         current = next(img_iter, None)
 
         safe_url = _safe_image_url(url)
@@ -1335,12 +1416,16 @@ def _inject_images_into_html(
 
         alt = html.escape(heading_text[:120], quote=True)
 
-        # Build a descriptive caption that tells the reader WHAT TYPE of
-        # image is shown (exterior view, culinary experience, etc.) rather
-        # than just echoing the section heading.  This is the primary signal
-        # readers use to understand why a particular image appears here.
-        section_type_for_caption = _classify_section(heading_text)
-        caption_prefix = _SECTION_CAPTION_PREFIX.get(section_type_for_caption, "Property feature")
+        # Caption priority:
+        #   1. Derive from the photo's actual SerpApi tags (most accurate).
+        #   2. Fall back to the section-type-derived label (e.g. "Exterior view"
+        #      for intro sections when no tags are available).
+        # This prevents captions like "Exterior view — Introduction to Amanbagh"
+        # appearing under a photo that is clearly an indoor bedroom.
+        caption_prefix = _caption_prefix_from_actual_tags(actual_tags)
+        if caption_prefix is None:
+            section_type_for_caption = _classify_section(heading_text)
+            caption_prefix = _SECTION_CAPTION_PREFIX.get(section_type_for_caption, "Property feature")
         caption = html.escape(f"{caption_prefix} — {heading_text[:60]}", quote=False)
 
         figure = _FIGURE_TEMPLATE.format(url=safe_url, alt=alt, caption=caption)
@@ -1420,22 +1505,26 @@ def generate_article_images(
     if single_pool is not None and single_pool.available:
         property_name = single_pool.listing.name
         # Hero: prefer exterior/facade shot (intro preference) for the opening image.
-        hero_url = single_pool.take_for_section("intro")
-        if hero_url:
+        hero_result = single_pool.take_for_section("intro")
+        if hero_result is not None:
+            hero_url, _hero_tags = hero_result
             used_urls.add(hero_url)
+        else:
+            hero_url = None
         logger.info(
             "Hero image resolved from strict single-property pool %r (%d photo(s) available) for %r",
             property_name, len(single_pool.listing.photo_urls), headline[:60],
         )
 
         section_urls = []
-        heading_images = []
+        heading_images: list[tuple[str, str, list[str]]] = []
         slots = full_article_headings if full_article_headings else ["exterior view", "interior ambiance"]
         pool_fill_count = 0
         fallback_fill_count = 0
         for slot in slots:
             section_type = _classify_section(slot)
             url: str | None = None
+            actual_tags: list[str] = []
 
             # ── ALL sections: tag-matched photo from property's Google Maps pool ─
             # Only real photos from this exact property are used.  The smart pool
@@ -1444,23 +1533,24 @@ def generate_article_images(
             # falls back to any untagged/neutral photo.  Portraits are excluded
             # from all non-hospitality sections; kitchen photos locked to Culinary.
             # Blank slot beats wrong content.
-            url = single_pool.take_for_section(section_type)
-            if url is not None:
+            slot_result = single_pool.take_for_section(section_type)
+            if slot_result is not None:
+                url, actual_tags = slot_result
                 pool_fill_count += 1
                 logger.info(
-                    "Section slot %r (type=%r) -> tag-matched Google Maps photo",
-                    slot[:50], section_type,
+                    "Section slot %r (type=%r) -> tag-matched Google Maps photo (tags=%r)",
+                    slot[:50], section_type, actual_tags[:5],
                 )
             else:
                 logger.warning(
                     "Section slot %r (type=%r) -> no suitable pool photo "
-                    "(portrait/kitchen excluded or pool exhausted), leaving blank.",
+                    "(portrait/kitchen/bathroom excluded or pool exhausted), leaving blank.",
                     slot[:50], section_type,
                 )
 
             section_urls.append(url)
             if full_article_headings:
-                heading_images.append((slot, url))
+                heading_images.append((slot, url, actual_tags))
 
         logger.info(
             "Filled %d section slot(s) for %r: %d from the property's own gallery, "
@@ -1479,9 +1569,10 @@ def generate_article_images(
         total_so_far = 1 + len(section_urls)  # hero + sections filled above
         padded_count = 0
         while total_so_far < MIN_SINGLE_PROPERTY_IMAGES and single_pool.has_unused:
-            padded_url = single_pool.take_any_remaining()
-            if padded_url is None:
+            padded_result = single_pool.take_any_remaining()
+            if padded_result is None:
                 break
+            padded_url, _padded_tags = padded_result
             section_urls.append(padded_url)
             total_so_far += 1
             padded_count += 1
@@ -1496,7 +1587,7 @@ def generate_article_images(
 
         # Skip straight to HTML injection / final validation below by
         # reusing the shared tail of the function.
-        injected_count = sum(1 for _, u in heading_images if u)
+        injected_count = sum(1 for _, u, _t in heading_images if u)
         enriched_html: str | None = None
         if full_article and heading_images:
             try:
