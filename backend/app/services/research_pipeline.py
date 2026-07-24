@@ -870,9 +870,10 @@ def run_research_pipeline(
                     if _assignments:
                         _SECTION_CAT_LABEL = {
                             "dining_food":            "FOOD/DINING",
-                            "rooms_stay":             "ROOMS/INTERIOR",
+                            "rooms_stay":             "ROOMS/BEDROOM INTERIOR",
+                            "bathroom_wc":            "BATHROOM/WC",
                             "outdoor_views":          "OUTDOOR/NATURE",
-                            "amenities_experience":   "AMENITIES/POOL",
+                            "amenities_experience":   "AMENITIES/GAME ROOM/LOUNGE",
                             "exterior_architecture":  "EXTERIOR/FACADE",
                             "unknown":                "GENERAL PROPERTY",
                         }
