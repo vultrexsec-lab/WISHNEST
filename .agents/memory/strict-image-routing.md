@@ -1,10 +1,10 @@
 ---
 name: Strict image routing
-description: Editorial image sections must fail closed when a category-specific photo is unavailable.
+description: Editorial image sections prefer exact matches but use safe classified property-gallery fallbacks.
 ---
 
-Strict editorial sections must return no image rather than borrowing a photo from another visual category. Face detection is an independent hard rejection signal, not a secondary label heuristic.
+Exact category matches should win, but a missing exact match must not blank a section. Use only quality-ranked, classified property-gallery fallbacks that do not cross a core category boundary; reuse an eligible fallback only when the gallery is smaller than the article.
 
-**Why:** Generic fallbacks caused bedrooms, outdoor scenes, buffet photos, and selfies to be assigned to visibly incompatible article sections.
+**Why:** Fully fail-closed routing produced zero rendered images for valid hotel galleries, while unrestricted fallbacks caused bedrooms, pool scenes, buffet photos, and selfies to appear under visibly incompatible sections.
 
-**How to apply:** Keep Culinary, Outdoor Spaces, Room Design, and Hospitality category-specific. Request and parse face detection separately from label detection, and reject any detected face/selfie before topic matching.
+**How to apply:** Keep bathroom/toilet and face/selfie detection as independent hard rejection signals. Keep food, rooms, and other core mismatches excluded; allow safe exterior, generic landscape, and decor/amenity fallbacks where the section permits them. Never use unknown or unrestricted photos as a section fallback.

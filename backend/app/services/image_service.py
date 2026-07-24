@@ -714,44 +714,64 @@ _SECTION_TO_VISION_CATEGORIES: dict[str, list[str]] = {
 # Strict exclusion — these categories MUST NOT appear in these sections.
 # PHOTO_CAT_BATHROOM is excluded from EVERY section (bathroom photos are
 # never editorially appropriate for any article section heading).
+#
+# These exclusions protect against *core* category mismatches.  They are
+# intentionally narrower than the preferred-category list: when an exact
+# match is unavailable, the safe fallback policy below may use an exterior,
+# landscape, or decor/amenity photo instead of leaving a section blank.
 _SECTION_EXCLUDED_VISION_CATS: dict[str, frozenset[str]] = {
-    # Culinary: ONLY dining — every other category excluded, incl. pool/outdoor.
+    # Culinary: never show rooms, bathrooms, or outdoor/pool imagery as food.
+    # Exterior architecture is an acceptable neutral property fallback.
     "culinary": frozenset({
-        PHOTO_CAT_ROOMS, PHOTO_CAT_BATHROOM, PHOTO_CAT_OUTDOOR,
-        PHOTO_CAT_EXTERIOR, PHOTO_CAT_AMENITY,
+        PHOTO_CAT_ROOMS, PHOTO_CAT_BATHROOM, PHOTO_CAT_AMENITY,
     }),
-    # Outdoor Spaces: only outdoor/nature imagery; no rooms, dining, generic
-    # amenities, or building-only exteriors.
+    # Outdoor Spaces: never show rooms, food, or bathrooms.  Exterior and
+    # amenity/decor photos are safe neutral fallbacks.
     "outdoor": frozenset({
         PHOTO_CAT_DINING, PHOTO_CAT_ROOMS, PHOTO_CAT_BATHROOM,
-        PHOTO_CAT_AMENITY, PHOTO_CAT_EXTERIOR,
     }),
-    # Connectivity: entrance/amenity (game room/lounge) — no rooms, food,
-    # outdoor nature, or bathroom.
+    # Connectivity: prefer entrance/amenity, but landscape/exterior is a safe
+    # property-context fallback when access-specific imagery is unavailable.
     "connectivity": frozenset({
-        PHOTO_CAT_ROOMS, PHOTO_CAT_BATHROOM, PHOTO_CAT_DINING, PHOTO_CAT_OUTDOOR,
+        PHOTO_CAT_ROOMS, PHOTO_CAT_BATHROOM, PHOTO_CAT_DINING,
     }),
-    # Room Design: STRICTLY bedroom interior — no outdoor, no exterior, no
-    # dining, and critically NO BATHROOM (toilet/shower photos excluded).
+    # Room Design: prefer bedroom interior, but do not leave the section blank
+    # for a safe exterior/landscape/decor image. Never use food or bathrooms.
     "room_design": frozenset({
-        PHOTO_CAT_OUTDOOR, PHOTO_CAT_EXTERIOR, PHOTO_CAT_DINING, PHOTO_CAT_BATHROOM,
+        PHOTO_CAT_DINING, PHOTO_CAT_BATHROOM,
     }),
     # Intro / General: no rooms, no bathroom, no dining.
     "intro": frozenset({PHOTO_CAT_ROOMS, PHOTO_CAT_BATHROOM, PHOTO_CAT_DINING}),
     "general": frozenset({PHOTO_CAT_ROOMS, PHOTO_CAT_BATHROOM, PHOTO_CAT_DINING}),
-    # Hospitality: no bathroom, dining, rooms, or outdoor nature. A reception,
-    # lounge, entrance, or other service/amenity photo is the only valid match.
+    # Hospitality: no bathroom, dining, or rooms. Exterior, landscape, and
+    # decor/amenity imagery are safe property-context fallbacks.
     "hospitality": frozenset({
-        PHOTO_CAT_BATHROOM, PHOTO_CAT_DINING, PHOTO_CAT_ROOMS, PHOTO_CAT_OUTDOOR,
+        PHOTO_CAT_BATHROOM, PHOTO_CAT_DINING, PHOTO_CAT_ROOMS,
     }),
 }
 
-# These section types describe a specific visual subject. If that subject is
-# unavailable, returning a blank is safer than silently showing a visibly
-# wrong photo from another category.
+# These section types have a protected core category.  They still receive a
+# safe fallback when the core category is unavailable; this set is retained
+# as a policy marker for callers that need to distinguish protected sections.
 _STRICT_SECTION_TYPES: frozenset[str] = frozenset({
     "culinary", "outdoor", "room_design", "hospitality",
 })
+
+# Ordered neutral fallbacks used after preferred categories are exhausted.
+# Every category here is a real property-gallery category and is already
+# filtered for faces, selfies, and low quality during pool construction.
+# Bathroom and unknown photos are deliberately absent.
+_SAFE_FALLBACK_VISION_CATS: dict[str, tuple[str, ...]] = {
+    # Generic landscape/exterior context is acceptable when no dining photo
+    # exists, but _is_safe_section_fallback rejects pool-specific imagery.
+    "culinary": (PHOTO_CAT_EXTERIOR, PHOTO_CAT_OUTDOOR),
+    "outdoor": (PHOTO_CAT_OUTDOOR, PHOTO_CAT_EXTERIOR, PHOTO_CAT_AMENITY),
+    "room_design": (PHOTO_CAT_ROOMS, PHOTO_CAT_EXTERIOR, PHOTO_CAT_OUTDOOR, PHOTO_CAT_AMENITY),
+    "connectivity": (PHOTO_CAT_EXTERIOR, PHOTO_CAT_AMENITY, PHOTO_CAT_OUTDOOR),
+    "hospitality": (PHOTO_CAT_EXTERIOR, PHOTO_CAT_AMENITY, PHOTO_CAT_OUTDOOR),
+    "intro": (PHOTO_CAT_EXTERIOR, PHOTO_CAT_OUTDOOR, PHOTO_CAT_AMENITY),
+    "general": (PHOTO_CAT_EXTERIOR, PHOTO_CAT_OUTDOOR, PHOTO_CAT_AMENITY),
+}
 
 
 @dataclass
@@ -763,6 +783,26 @@ class _ClassifiedPhoto:
     vision_category: str    # one of the PHOTO_CAT_* constants or "unknown"
     quality_score: float    # 0.0–1.0 from Vision label confidence
     is_selfie: bool = False
+
+
+def _is_safe_section_fallback(
+    photo: _ClassifiedPhoto,
+    section_type: str,
+    selection_label: str,
+) -> bool:
+    """Reject visually specific fallback photos that would mislead a section."""
+    if "fallback" not in selection_label:
+        return True
+
+    tags = {tag.lower() for tag in photo.serpapi_tags}
+    if section_type == "culinary" and tags & {
+        "pool",
+        "swimming pool",
+        "infinity pool",
+        "water feature",
+    }:
+        return False
+    return True
 
 
 def _classify_photo_vision_category(
@@ -1025,22 +1065,21 @@ class SmartPhotoPool:
         self,
         section_type: str,
         global_used: set[str] | None = None,
+        allow_reuse: bool = False,
     ) -> tuple[str, str] | None:
         """
         Return (proxied_url, vision_category) for the best matching photo for
-        *section_type*, or None ONLY when the pool is completely exhausted.
+        *section_type*, or None when no eligible photo exists.
 
-        Strategy — always fill, never blank:
-          Pass 1 — strict preferred category match (best quality first).
-        Pass 2 — unknown / unclassified photos only for non-strict sections.
-        Strict sections stop after their preferred category is exhausted.
-        This is deliberate: a blank "Room Design" slot is safer than an
-        outdoor photo, and a blank "Culinary" slot is safer than a buffet
-        appearing under Hospitality.
+        Strategy:
+          Pass 1 — preferred category match (best quality first).
+          Pass 2 — approved neutral property-gallery fallback categories.
+          Pass 3 — if allow_reuse is true, reuse the highest-quality eligible
+                   preferred/safe photo after unique photos are exhausted.
 
         Hard rejections happen upstream during pool construction (faces,
         selfies, and low_quality/dark/blurry photos are filtered before photos
-        are stored). Strict section exclusions are also enforced here.
+        are stored). Core section exclusions are enforced here as well.
         """
         avoid = global_used or set()
         preferred = _SECTION_TO_VISION_CATEGORIES.get(
@@ -1056,92 +1095,68 @@ class SmartPhotoPool:
             )
             return photo.proxied_url, photo.vision_category
 
-        # Pass 1: preferred categories, best quality first
-        for cat in preferred:
-            for photo in self._by_category.get(cat, []):
-                if self._unused(photo, avoid):
-                    return _log_and_return(photo, "preferred")
+        # A category can only be considered a fallback when it is not a core
+        # mismatch for this section. Keep this guard close to selection so a
+        # future fallback-list edit cannot accidentally re-enable a banned
+        # category.
+        safe_fallback = _SAFE_FALLBACK_VISION_CATS.get(
+            section_type,
+            (PHOTO_CAT_EXTERIOR, PHOTO_CAT_OUTDOOR, PHOTO_CAT_AMENITY),
+        )
 
-        # Pass 2: unclassified-but-real property photos. Strict sections do
-        # not use this fallback because "unknown" can conceal the very mismatch
-        # this routing layer exists to prevent.
-        # Skipped for content-strict sections where a mis-classified photo
-        # (pool at night → "unknown", dark bedroom → "unknown") would cause a
-        # visible section mismatch.  These sections must fall through to Pass 3
-        # which only allows explicitly non-excluded categories.
-        _SKIP_UNKNOWN_PASS2 = {"culinary", "room_design", "outdoor"}
-        if section_type not in _SKIP_UNKNOWN_PASS2:
-            for photo in self._by_category.get("unknown", []):
-                if self._unused(photo, avoid):
-                    return _log_and_return(photo, "unknown-fallback")
-
-        if section_type in _STRICT_SECTION_TYPES:
-            logger.warning(
-                "SmartPhotoPool: no strict category match for section=%r; "
-                "leaving slot blank instead of using an incompatible photo.",
-                section_type,
-            )
+        def _pick_unused(categories: tuple[str, ...], label: str):
+            for cat in categories:
+                if cat in excluded or cat == PHOTO_CAT_BATHROOM:
+                    continue
+                for photo in self._by_category.get(cat, []):
+                    if not _is_safe_section_fallback(photo, section_type, label):
+                        continue
+                    if self._unused(photo, avoid):
+                        return _log_and_return(photo, label)
             return None
 
-        # Pass 3: any category not in this section's hard exclusions.
-        # This opens up the remaining pool (amenity, exterior, outdoor, rooms)
-        # as alternatives — a garden or lobby photo works for most sections.
-        for cat, bucket in self._by_category.items():
-            if cat in excluded or cat == "unknown":
-                continue
-            for photo in bucket:
-                if self._unused(photo, avoid):
-                    return _log_and_return(photo, "cross-cat-fallback")
+        # Exact matches win. For sections whose preferred list includes
+        # multiple categories, preserve that editorial priority.
+        exact = _pick_unused(tuple(preferred), "preferred")
+        if exact is not None:
+            return exact
 
-        # Pass 4: smart attractive-property fallback.
-        # Respects the section's hard exclusion set so outdoor/exterior photos
-        # never end up in room_design and dining photos never end up in outdoor.
-        # For culinary sections with no food photo, prefer AMENITY (indoor seating,
-        # bar, terrace dining area) before resorting to EXTERIOR building shots.
-        if section_type == "culinary":
-            _ATTRACTIVE_ORDER_FOR_SECTION = [
-                PHOTO_CAT_DINING,    # reattempt in case pool state changed
-                PHOTO_CAT_AMENITY,   # indoor seating / terrace / bar — best culinary stand-in
-                PHOTO_CAT_EXTERIOR,  # lobby / entrance — last resort before rooms
-                PHOTO_CAT_ROOMS,     # interior — imperfect but still property content
-                PHOTO_CAT_OUTDOOR,   # outdoor nature — lowest priority for culinary
-            ]
-        else:
-            _ATTRACTIVE_ORDER_FOR_SECTION = [
-                PHOTO_CAT_EXTERIOR,   # façade, entrance, architecture
-                PHOTO_CAT_OUTDOOR,    # garden, pool, terrace
-                PHOTO_CAT_AMENITY,    # lobby, spa, common areas
-                PHOTO_CAT_ROOMS,      # bedroom, bathroom — still property content
-                PHOTO_CAT_DINING,     # only used here as absolute last resort
-            ]
-        skip_dining = section_type != "culinary"
-        for cat in _ATTRACTIVE_ORDER_FOR_SECTION:
-            if skip_dining and cat == PHOTO_CAT_DINING:
-                continue
-            # Honour hard cross-category exclusions — never return a category
-            # that is forbidden for this section type (e.g. EXTERIOR for room_design,
-            # OUTDOOR for culinary).
-            if cat in excluded:
-                continue
-            for photo in self._by_category.get(cat, []):
-                if self._unused(photo, avoid):
-                    return _log_and_return(photo, "attractive-fallback")
+        # Never use unclassified photos for a protected section: an unknown
+        # label can hide a pool, bathroom, or portrait. Use only classified,
+        # quality-ranked safe property categories.
+        fallback = _pick_unused(tuple(safe_fallback), "safe-fallback")
+        if fallback is not None:
+            return fallback
 
-        # Pass 5: absolute last resort — any unused photo, skipping bathroom
-        # photos (they are never editorially appropriate for any section, even
-        # as a last resort). Unknown photos are also used here for strict
-        # sections that skipped them in Pass 2.
-        all_photos: list[_ClassifiedPhoto] = []
-        for cat, bucket in self._by_category.items():
-            if cat == PHOTO_CAT_BATHROOM:
-                continue  # bathroom photos never appear in article sections
-            all_photos.extend(bucket)
-        all_photos.sort(key=lambda p: p.quality_score, reverse=True)
-        for photo in all_photos:
-            if self._unused(photo, avoid):
-                return _log_and_return(photo, "last-resort-any")
+        if allow_reuse:
+            # Small galleries can have fewer photos than article sections.
+            # Reuse only an eligible preferred/safe photo, never a bathroom,
+            # unknown, or category excluded above.
+            for categories, label in (
+                (tuple(preferred), "preferred-reuse"),
+                (tuple(safe_fallback), "safe-fallback-reuse"),
+            ):
+                reusable_candidates: list[_ClassifiedPhoto] = []
+                for cat in categories:
+                    if cat in excluded or cat == PHOTO_CAT_BATHROOM:
+                        continue
+                    reusable_candidates.extend(
+                        photo
+                        for photo in self._by_category.get(cat, [])
+                        if _is_safe_section_fallback(photo, section_type, label)
+                    )
+                reusable_candidates.sort(
+                    key=lambda photo: photo.quality_score,
+                    reverse=True,
+                )
+                if reusable_candidates:
+                    return _log_and_return(reusable_candidates[0], label)
 
-        # Pool fully exhausted — every photo already assigned to another section.
+        logger.warning(
+            "SmartPhotoPool: no eligible photo for section=%r; "
+            "all remaining gallery photos are excluded or unavailable.",
+            section_type,
+        )
         return None
 
     def pick_any(self, global_used: set[str] | None = None) -> str | None:
@@ -1584,18 +1599,12 @@ def build_deep_gallery_photo_assignments(
     results: list[dict] = []
 
     for section_type in section_types:
-        pick = pool.pick_for_section(section_type, used)
+        pick = pool.pick_for_section(section_type, used, allow_reuse=True)
         if pick is not None:
             url, cat = pick
         else:
-            # Deep-gallery assignments are used to ground section writing, so
-            # never give the LLM a photo from the wrong visual category.
-            if section_type not in _STRICT_SECTION_TYPES:
-                url = pool.pick_any(used)
-                cat = "unknown"
-            else:
-                url = None
-                cat = "unknown"
+            url = None
+            cat = "unknown"
             if url is None:
                 continue
         used.add(url)
@@ -1664,8 +1673,10 @@ def generate_article_images(
     Every image slot is filled exclusively from the named property's own
     Google Maps photo gallery (via SerpApi). No external image sources are
     ever used. If the gallery has no exact-match photo for a section type,
-    another real photo from the same property is used instead. A slot is only
-    left blank when the entire property gallery has been exhausted.
+    the selector uses a classified, quality-ranked safe fallback from the
+    same property, reusing one only when the gallery is smaller than the
+    article. A slot is only left blank when no eligible non-banned photo
+    exists.
     """
     used_urls: set[str] = set()
 
@@ -1735,12 +1746,12 @@ def generate_article_images(
             vision_cat = "unknown"
 
             if smart_pool and smart_pool.available:
-                result = smart_pool.pick_for_section(section_type, used_urls)
+                result = smart_pool.pick_for_section(
+                    section_type, used_urls, allow_reuse=True
+                )
                 if result is not None:
-                    # SmartPhotoPool's multi-pass system (passes 1-5) already
-                    # handles fallback from preferred → neutral → any-property-photo.
-                    # Accept whatever real property photo it returns — no external
-                    # sources are ever consulted.
+                    # SmartPhotoPool handles preferred → safe fallback routing.
+                    # No external sources are ever consulted.
                     url, vision_cat = result
                     used_urls.add(url)
                     pool_fill_count += 1
@@ -1749,24 +1760,9 @@ def generate_article_images(
                         slot[:50], section_type, vision_cat, url[:60],
                     )
                 else:
-                    # Strict sections must remain blank when their exact
-                    # category is unavailable. Reusing an outdoor/food/room
-                    # photo here is precisely how the reported swaps occurred.
-                    if section_type not in _STRICT_SECTION_TYPES:
-                        any_url = smart_pool.pick_any(used_urls)
-                        if any_url:
-                            url = any_url
-                            vision_cat = "unknown"
-                            used_urls.add(any_url)
-                            pool_fill_count += 1
-                            logger.info(
-                                "Section %r (type=%r) → strict category unavailable; "
-                                "using generic fallback for non-strict section.",
-                                slot[:50], section_type,
-                            )
                     if url is None:
                         logger.warning(
-                            "Section %r (type=%r) → no strict category match; "
+                            "Section %r (type=%r) → no eligible safe gallery photo; "
                             "slot left blank.",
                             slot[:50], section_type,
                         )
@@ -1906,7 +1902,9 @@ def generate_article_images(
             pool = _get_or_build_smart_pool(i)
             if pool is None or not pool.available:
                 continue
-            result = pool.pick_for_section(section_type, used_urls)
+            result = pool.pick_for_section(
+                section_type, used_urls, allow_reuse=True
+            )
             if result is not None:
                 url, vision_cat = result
                 _assigned_indices.add(i)
@@ -1933,7 +1931,9 @@ def generate_article_images(
             pool = _get_or_build_smart_pool(i)
             if pool is None or not pool.available:
                 continue
-            result = pool.pick_for_section(section_type, used_urls)
+            result = pool.pick_for_section(
+                section_type, used_urls, allow_reuse=True
+            )
             if result is not None:
                 url, vision_cat = result
                 _assigned_indices.add(i)
@@ -1980,26 +1980,26 @@ def generate_article_images(
                     heading[:50], section_type, matched_listing.name, vision_cat,
                 )
             else:
-                # All named-listing pools exhausted. Only non-strict sections
-                # may use a generic property fallback; strict sections must not
-                # inherit a photo from another visual category.
+                # All named-listing pools exhausted for the preferred category.
+                # Revisit each property gallery with the same safe fallback
+                # policy; never use unrestricted pick_any here.
                 fallback_url: str | None = None
-                if section_type not in _STRICT_SECTION_TYPES:
-                    for _fb_idx in range(len(all_listings)):
-                        _fb_pool = _get_or_build_smart_pool(_fb_idx)
-                        if _fb_pool is None:
-                            continue
-                        _fb_pick = _fb_pool.pick_any(used_urls)
-                        if _fb_pick is not None:
-                            fallback_url = _fb_pick
-                            used_urls.add(_fb_pick)
-                            break
+                for _fb_idx in range(len(all_listings)):
+                    _fb_pool = _get_or_build_smart_pool(_fb_idx)
+                    if _fb_pool is None:
+                        continue
+                    _fb_result = _fb_pool.pick_for_section(
+                        section_type, used_urls, allow_reuse=True
+                    )
+                    if _fb_result is not None:
+                        fallback_url, vision_cat = _fb_result
+                        used_urls.add(fallback_url)
+                        break
                 if fallback_url:
                     url = fallback_url
-                    vision_cat = "unknown"
                     logger.info(
-                        "Section %r (type=%r) → sequential pool exhausted; "
-                        "recycled photo from a Google Maps listing pool.",
+                        "Section %r (type=%r) → safe fallback from a "
+                        "Google Maps listing pool.",
                         heading[:50], section_type,
                     )
                 else:
