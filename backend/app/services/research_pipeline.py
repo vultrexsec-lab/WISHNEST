@@ -736,6 +736,38 @@ def run_research_pipeline(
                     location_hint,
                 )
 
+    # ── 1c. Vision grounding — inject what's ACTUALLY in the photos into the brief
+    # Scan sample photos from each pre-fetched listing with the Vision API so
+    # OpenAI writes every section based on what is visually present in the
+    # matched image — guaranteeing 100% image-text alignment.
+    # This step is skipped gracefully when GOOGLE_CLOUD_VISION_API_KEY is absent.
+    if pre_fetched_listings:
+        from app.config import get_settings as _get_settings
+        _settings = _get_settings()
+        if _settings.google_cloud_vision_api_key:
+            try:
+                from app.services.vision_service import (
+                    VisionResult,
+                    build_vision_context_for_llm,
+                    scan_image,
+                )
+                vision_scan_results: list[VisionResult] = []
+                for listing in pre_fetched_listings[:6]:   # cap at 6 to control latency
+                    if listing.photo_url:
+                        vr = scan_image(listing.photo_url)
+                        if vr and vr.labels:
+                            vision_scan_results.append(vr)
+                if vision_scan_results:
+                    vision_context = build_vision_context_for_llm(vision_scan_results)
+                    brief = brief + "\n\n" + vision_context
+                    logger.info(
+                        "Vision grounding: scanned %d listing photo(s) and injected "
+                        "visual context into OpenAI brief for grounded article writing.",
+                        len(vision_scan_results),
+                    )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Vision grounding step failed (non-blocking): %s", exc)
+
     # ── 2. Draft article packages via OpenAI ─────────────────────────────────
     try:
         raw_packages = generate_article_packages(brief, sources, count=article_count)

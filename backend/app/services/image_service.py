@@ -49,9 +49,12 @@ import urllib.parse
 
 import requests
 
+from dataclasses import dataclass, field
+
 from app.config import get_settings
 from app.services.places_service import (
     PropertyListing,
+    _serpapi_maps_photos_gallery,
     fetch_landmark_attractions,
     fetch_premium_stays,
     fetch_property_by_name,
@@ -569,6 +572,444 @@ class _SinglePropertyPhotoPool:
         return None
 
 
+# ===========================================================================
+# Smart Category-Based Photo Pool — Vision-API-powered image selection
+# ===========================================================================
+#
+# Replaces the simple sequential/tag-based photo selection with a pipeline
+# that:
+#   1. Classifies every fetched photo into one of 5 editorial categories using
+#      Google Cloud Vision API (primary) or SerpApi tags (fallback).
+#   2. Filters out selfies, close-up portraits, and blurry customer snapshots.
+#   3. For each article section, picks the single BEST quality photo that
+#      strictly matches the section's content category.
+#   4. Enforces hard cross-category exclusions (e.g. NEVER puts a dining photo
+#      under an Outdoor section).
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# 5 canonical photo categories used throughout WishNest editorial articles
+# ---------------------------------------------------------------------------
+PHOTO_CAT_DINING   = "dining_food"           # Rooms — Local dishes, dining area, kitchen
+PHOTO_CAT_ROOMS    = "rooms_stay"            # Bedrooms, room interiors, bathrooms
+PHOTO_CAT_OUTDOOR  = "outdoor_views"         # Gardens, mountains, landscape, nature
+PHOTO_CAT_AMENITY  = "amenities_experience"  # Pool, spa, activities, terrace, deck
+PHOTO_CAT_EXTERIOR = "exterior_architecture" # Building facade, entrance, lobby
+
+# ---------------------------------------------------------------------------
+# Google Cloud Vision API label → WishNest photo category
+# Covers the most common labels returned for hotel/resort photography.
+# ---------------------------------------------------------------------------
+_VISION_LABEL_TO_CATEGORY: dict[str, str] = {
+    # ── Dining & Food ──────────────────────────────────────────────────────
+    "food": PHOTO_CAT_DINING, "dish": PHOTO_CAT_DINING, "meal": PHOTO_CAT_DINING,
+    "cuisine": PHOTO_CAT_DINING, "restaurant": PHOTO_CAT_DINING, "dining room": PHOTO_CAT_DINING,
+    "breakfast": PHOTO_CAT_DINING, "lunch": PHOTO_CAT_DINING, "dinner": PHOTO_CAT_DINING,
+    "kitchen": PHOTO_CAT_DINING, "café": PHOTO_CAT_DINING, "cafe": PHOTO_CAT_DINING,
+    "buffet": PHOTO_CAT_DINING, "tableware": PHOTO_CAT_DINING, "plate": PHOTO_CAT_DINING,
+    "bowl": PHOTO_CAT_DINING, "cooking": PHOTO_CAT_DINING, "beverage": PHOTO_CAT_DINING,
+    "drink": PHOTO_CAT_DINING, "food and drink": PHOTO_CAT_DINING, "cutlery": PHOTO_CAT_DINING,
+    "brunch": PHOTO_CAT_DINING, "baking": PHOTO_CAT_DINING, "chef": PHOTO_CAT_DINING,
+    "dessert": PHOTO_CAT_DINING, "bakery": PHOTO_CAT_DINING, "bar": PHOTO_CAT_DINING,
+    "coffee": PHOTO_CAT_DINING, "tea": PHOTO_CAT_DINING, "cocktail": PHOTO_CAT_DINING,
+    "appetizer": PHOTO_CAT_DINING, "salad": PHOTO_CAT_DINING, "soup": PHOTO_CAT_DINING,
+    # ── Rooms & Stay ───────────────────────────────────────────────────────
+    "bedroom": PHOTO_CAT_ROOMS, "bed": PHOTO_CAT_ROOMS, "pillow": PHOTO_CAT_ROOMS,
+    "room": PHOTO_CAT_ROOMS, "suite": PHOTO_CAT_ROOMS, "mattress": PHOTO_CAT_ROOMS,
+    "bathroom": PHOTO_CAT_ROOMS, "bathtub": PHOTO_CAT_ROOMS, "shower": PHOTO_CAT_ROOMS,
+    "towel": PHOTO_CAT_ROOMS, "sofa": PHOTO_CAT_ROOMS, "furniture": PHOTO_CAT_ROOMS,
+    "interior design": PHOTO_CAT_ROOMS, "ceiling": PHOTO_CAT_ROOMS, "floor": PHOTO_CAT_ROOMS,
+    "closet": PHOTO_CAT_ROOMS, "wardrobe": PHOTO_CAT_ROOMS, "mirror": PHOTO_CAT_ROOMS,
+    "curtain": PHOTO_CAT_ROOMS, "nightstand": PHOTO_CAT_ROOMS, "lamp": PHOTO_CAT_ROOMS,
+    "accommodation": PHOTO_CAT_ROOMS, "lodging": PHOTO_CAT_ROOMS,
+    # ── Outdoor & Views ────────────────────────────────────────────────────
+    "sky": PHOTO_CAT_OUTDOOR, "mountain": PHOTO_CAT_OUTDOOR, "nature": PHOTO_CAT_OUTDOOR,
+    "landscape": PHOTO_CAT_OUTDOOR, "forest": PHOTO_CAT_OUTDOOR, "tree": PHOTO_CAT_OUTDOOR,
+    "valley": PHOTO_CAT_OUTDOOR, "hill": PHOTO_CAT_OUTDOOR, "garden": PHOTO_CAT_OUTDOOR,
+    "lawn": PHOTO_CAT_OUTDOOR, "flower": PHOTO_CAT_OUTDOOR, "plant": PHOTO_CAT_OUTDOOR,
+    "sunset": PHOTO_CAT_OUTDOOR, "sunrise": PHOTO_CAT_OUTDOOR, "cloud": PHOTO_CAT_OUTDOOR,
+    "river": PHOTO_CAT_OUTDOOR, "lake": PHOTO_CAT_OUTDOOR, "waterfall": PHOTO_CAT_OUTDOOR,
+    "vegetation": PHOTO_CAT_OUTDOOR, "scenery": PHOTO_CAT_OUTDOOR, "panorama": PHOTO_CAT_OUTDOOR,
+    "wildlife": PHOTO_CAT_OUTDOOR, "jungle": PHOTO_CAT_OUTDOOR, "meadow": PHOTO_CAT_OUTDOOR,
+    "field": PHOTO_CAT_OUTDOOR, "water": PHOTO_CAT_OUTDOOR, "rock": PHOTO_CAT_OUTDOOR,
+    "snow": PHOTO_CAT_OUTDOOR, "fog": PHOTO_CAT_OUTDOOR, "mist": PHOTO_CAT_OUTDOOR,
+    # ── Amenities & Experience ─────────────────────────────────────────────
+    "swimming pool": PHOTO_CAT_AMENITY, "pool": PHOTO_CAT_AMENITY,
+    "spa": PHOTO_CAT_AMENITY, "gym": PHOTO_CAT_AMENITY, "fitness centre": PHOTO_CAT_AMENITY,
+    "terrace": PHOTO_CAT_AMENITY, "balcony": PHOTO_CAT_AMENITY, "deck": PHOTO_CAT_AMENITY,
+    "patio": PHOTO_CAT_AMENITY, "jacuzzi": PHOTO_CAT_AMENITY, "hot tub": PHOTO_CAT_AMENITY,
+    "yoga": PHOTO_CAT_AMENITY, "wellness": PHOTO_CAT_AMENITY, "sauna": PHOTO_CAT_AMENITY,
+    "recreation": PHOTO_CAT_AMENITY, "leisure": PHOTO_CAT_AMENITY, "courtyard": PHOTO_CAT_AMENITY,
+    "infinity pool": PHOTO_CAT_AMENITY, "rooftop": PHOTO_CAT_AMENITY,
+    # ── Exterior & Architecture ────────────────────────────────────────────
+    "building": PHOTO_CAT_EXTERIOR, "architecture": PHOTO_CAT_EXTERIOR,
+    "facade": PHOTO_CAT_EXTERIOR, "entrance": PHOTO_CAT_EXTERIOR,
+    "hotel": PHOTO_CAT_EXTERIOR, "resort": PHOTO_CAT_EXTERIOR, "lobby": PHOTO_CAT_EXTERIOR,
+    "reception": PHOTO_CAT_EXTERIOR, "driveway": PHOTO_CAT_EXTERIOR, "gate": PHOTO_CAT_EXTERIOR,
+    "roof": PHOTO_CAT_EXTERIOR, "structure": PHOTO_CAT_EXTERIOR, "corridor": PHOTO_CAT_EXTERIOR,
+    "hallway": PHOTO_CAT_EXTERIOR, "staircase": PHOTO_CAT_EXTERIOR, "balustrade": PHOTO_CAT_EXTERIOR,
+    "property": PHOTO_CAT_EXTERIOR, "estate": PHOTO_CAT_EXTERIOR,
+}
+
+# Vision labels that strongly indicate a selfie / close-up portrait
+_SELFIE_VISION_LABELS: frozenset[str] = frozenset({
+    "nose", "forehead", "chin", "cheek", "ear", "lip", "selfie",
+    "close-up", "closeup", "headshot", "tooth", "teeth", "eyebrow",
+    "eyelash", "skin", "wrinkle", "pore",
+})
+
+# Top-level Vision labels that identify a photo as primarily about people
+_PERSON_VISION_LABELS: frozenset[str] = frozenset({
+    "person", "people", "human", "face", "man", "woman", "child",
+    "boy", "girl", "gentleman", "lady", "crowd", "selfie",
+})
+
+# ---------------------------------------------------------------------------
+# Section type → ordered list of preferred Vision photo categories
+# The pool picks from Pass-1 categories first, then falls through.
+# Cross-category exclusions: culinary sections NEVER get outdoor/rooms,
+# outdoor sections NEVER get dining/rooms, etc.
+# ---------------------------------------------------------------------------
+_SECTION_TO_VISION_CATEGORIES: dict[str, list[str]] = {
+    "culinary":     [PHOTO_CAT_DINING],
+    "outdoor":      [PHOTO_CAT_OUTDOOR, PHOTO_CAT_AMENITY],
+    "room_design":  [PHOTO_CAT_ROOMS, PHOTO_CAT_AMENITY],
+    "connectivity": [PHOTO_CAT_EXTERIOR],
+    "intro":        [PHOTO_CAT_EXTERIOR, PHOTO_CAT_OUTDOOR],
+    "hospitality":  [PHOTO_CAT_EXTERIOR, PHOTO_CAT_ROOMS],
+    "general":      [PHOTO_CAT_EXTERIOR, PHOTO_CAT_OUTDOOR, PHOTO_CAT_AMENITY],
+}
+
+# Strict exclusion — these categories MUST NOT appear in these sections
+# (blank photo beats wrong photo)
+_SECTION_EXCLUDED_VISION_CATS: dict[str, frozenset[str]] = {
+    "culinary":  frozenset({PHOTO_CAT_ROOMS, PHOTO_CAT_OUTDOOR}),
+    "outdoor":   frozenset({PHOTO_CAT_DINING, PHOTO_CAT_ROOMS}),
+}
+
+
+@dataclass
+class _ClassifiedPhoto:
+    """A photo that has been classified into a WishNest editorial category."""
+    raw_url: str
+    proxied_url: str
+    serpapi_tags: list[str]
+    vision_category: str    # one of the PHOTO_CAT_* constants or "unknown"
+    quality_score: float    # 0.0–1.0 from Vision label confidence
+    is_selfie: bool = False
+
+
+def _classify_photo_vision_category(
+    raw_url: str,
+    serpapi_tags: list[str],
+) -> tuple[str, float, bool]:
+    """
+    Classify a single photo into a WishNest editorial category.
+
+    Priority order:
+      1. Google Cloud Vision API labels (if GOOGLE_CLOUD_VISION_API_KEY is set)
+      2. SerpApi category tags (fast, no extra API call)
+      3. "unknown" (unclassified — treated as generic)
+
+    Returns (category, quality_score, is_selfie).
+
+    Never raises — Vision failures fall back to tag-based classification.
+    """
+    # ── Vision API (primary) ─────────────────────────────────────────────
+    settings = get_settings()
+    if raw_url and settings.google_cloud_vision_api_key:
+        try:
+            from app.services.vision_service import scan_image  # lazy import
+            vr = scan_image(raw_url)
+            if vr and vr.labels:
+                label_names_scored = [(lb.description.lower(), lb.score) for lb in vr.labels]
+                all_label_names = {n for n, _ in label_names_scored}
+
+                # Check for selfie: top label is person AND a close-up body-part label present
+                top_label = label_names_scored[0][0] if label_names_scored else ""
+                if (
+                    top_label in _PERSON_VISION_LABELS
+                    and all_label_names & _SELFIE_VISION_LABELS
+                ):
+                    return "selfie", 0.0, True
+                # If every top-3 label is person-related → selfie
+                top3 = {n for n, _ in label_names_scored[:3]}
+                if top3.issubset(_PERSON_VISION_LABELS | _SELFIE_VISION_LABELS):
+                    return "selfie", 0.0, True
+
+                # Score each category by summing matching label confidences
+                cat_scores: dict[str, float] = {}
+                for label_desc, score in label_names_scored:
+                    cat = _VISION_LABEL_TO_CATEGORY.get(label_desc)
+                    if cat:
+                        cat_scores[cat] = cat_scores.get(cat, 0.0) + score
+
+                if cat_scores:
+                    best_cat = max(cat_scores, key=lambda c: cat_scores[c])
+                    quality = min(1.0, cat_scores[best_cat])
+                    return best_cat, quality, False
+
+                # Has labels but no category match — still a real photo
+                return "unknown", label_names_scored[0][1] if label_names_scored else 0.3, False
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Vision classify failed for %s: %s", raw_url[:60], exc)
+
+    # ── SerpApi tag fallback ─────────────────────────────────────────────
+    if serpapi_tags:
+        tag_set = {t.lower() for t in serpapi_tags}
+        if tag_set & _PORTRAIT_PHOTO_TAG_TOKENS:
+            return "selfie", 0.0, True
+        if tag_set & _CULINARY_PHOTO_TAG_TOKENS:
+            return PHOTO_CAT_DINING, 0.7, False
+        if tag_set & _OUTDOOR_PHOTO_TAG_TOKENS:
+            return PHOTO_CAT_OUTDOOR, 0.7, False
+        if tag_set & _ROOM_INTERIOR_PHOTO_TAG_TOKENS:
+            return PHOTO_CAT_ROOMS, 0.7, False
+        if tag_set & _EXTERIOR_PHOTO_TAG_TOKENS:
+            return PHOTO_CAT_EXTERIOR, 0.7, False
+        return "unknown", 0.4, False
+
+    return "unknown", 0.3, False
+
+
+class SmartPhotoPool:
+    """
+    Vision-API-powered photo pool that classifies every photo by content
+    category and enforces strict section–category matching.
+
+    Construction:
+      photos: list[{"url": str, "tags": list[str]}]  — from SerpApi gallery
+      max_vision_calls: cap Vision API calls per pool build (default 25)
+
+    Usage:
+      pool.pick_for_section(section_type, used_urls) → (proxied_url, category) | None
+      pool.pick_any(used_urls) → proxied_url | None
+
+    Selfies and close-up portraits are filtered out during construction and
+    are never returned by any pick method.
+    """
+
+    def __init__(
+        self,
+        photos: list[dict],
+        max_vision_calls: int = 25,
+    ) -> None:
+        self._by_category: dict[str, list[_ClassifiedPhoto]] = {
+            PHOTO_CAT_DINING:   [],
+            PHOTO_CAT_ROOMS:    [],
+            PHOTO_CAT_OUTDOOR:  [],
+            PHOTO_CAT_AMENITY:  [],
+            PHOTO_CAT_EXTERIOR: [],
+            "unknown":          [],
+        }
+        self._used_proxied: set[str] = set()
+        self._total = 0
+
+        for i, photo in enumerate(photos):
+            raw_url = photo.get("url", "")
+            tags: list[str] = photo.get("tags") or []
+            if not raw_url:
+                continue
+
+            proxied = _proxied_url(raw_url)
+            safe = _safe_image_url(proxied)
+            if not safe:
+                continue
+
+            # Only run Vision API on first max_vision_calls photos;
+            # the rest get tag-only classification to keep latency manageable.
+            classify_url = raw_url if i < max_vision_calls else ""
+            cat, quality, is_selfie = _classify_photo_vision_category(classify_url, tags)
+
+            if is_selfie or cat == "selfie":
+                logger.debug("SmartPhotoPool: filtered selfie/portrait — %s", raw_url[:60])
+                continue
+
+            cp = _ClassifiedPhoto(
+                raw_url=raw_url,
+                proxied_url=proxied,
+                serpapi_tags=tags,
+                vision_category=cat,
+                quality_score=quality,
+            )
+            self._by_category.setdefault(cat, []).append(cp)
+            self._total += 1
+
+        # Sort each bucket by quality score descending so best photos surface first
+        for bucket in self._by_category.values():
+            bucket.sort(key=lambda p: p.quality_score, reverse=True)
+
+        logger.info(
+            "SmartPhotoPool built: %d photos | dining=%d rooms=%d outdoor=%d "
+            "amenity=%d exterior=%d unknown=%d",
+            self._total,
+            len(self._by_category[PHOTO_CAT_DINING]),
+            len(self._by_category[PHOTO_CAT_ROOMS]),
+            len(self._by_category[PHOTO_CAT_OUTDOOR]),
+            len(self._by_category[PHOTO_CAT_AMENITY]),
+            len(self._by_category[PHOTO_CAT_EXTERIOR]),
+            len(self._by_category["unknown"]),
+        )
+
+    @property
+    def available(self) -> bool:
+        return self._total > 0
+
+    def _unused(self, photo: _ClassifiedPhoto, global_used: set[str]) -> bool:
+        """True when this photo has not been handed out yet (locally or globally)."""
+        return (
+            photo.proxied_url not in self._used_proxied
+            and photo.proxied_url not in global_used
+        )
+
+    def pick_for_section(
+        self,
+        section_type: str,
+        global_used: set[str] | None = None,
+    ) -> tuple[str, str] | None:
+        """
+        Return (proxied_url, vision_category) for the best matching photo
+        for *section_type*, or None if no suitable photo is available.
+
+        Pass 1 — strict preferred category match for this section type.
+        Pass 2 — "unknown" category (unclassified real photos).
+        Pass 3 — any non-excluded category (for low-stakes sections only).
+
+        Photos excluded by hard cross-category rules are NEVER returned
+        (e.g. dining photos are never returned for outdoor sections).
+        """
+        avoid = global_used or set()
+        preferred = _SECTION_TO_VISION_CATEGORIES.get(
+            section_type, [PHOTO_CAT_EXTERIOR, PHOTO_CAT_OUTDOOR]
+        )
+        excluded = _SECTION_EXCLUDED_VISION_CATS.get(section_type, frozenset())
+
+        # Pass 1: preferred categories, best quality first
+        for cat in preferred:
+            for photo in self._by_category.get(cat, []):
+                if self._unused(photo, avoid):
+                    self._used_proxied.add(photo.proxied_url)
+                    logger.info(
+                        "SmartPhotoPool: section=%r → cat=%r (q=%.2f)",
+                        section_type, cat, photo.quality_score,
+                    )
+                    return photo.proxied_url, cat
+
+        # Pass 2: unknown category (unclassified but real photos)
+        for photo in self._by_category.get("unknown", []):
+            if self._unused(photo, avoid):
+                self._used_proxied.add(photo.proxied_url)
+                logger.info(
+                    "SmartPhotoPool: section=%r → unknown fallback (q=%.2f)",
+                    section_type, photo.quality_score,
+                )
+                return photo.proxied_url, "unknown"
+
+        # Pass 3: any non-excluded category (only for low-stakes sections)
+        if section_type not in ("culinary", "outdoor"):
+            for cat, bucket in self._by_category.items():
+                if cat in excluded or cat == "unknown":
+                    continue
+                for photo in bucket:
+                    if self._unused(photo, avoid):
+                        self._used_proxied.add(photo.proxied_url)
+                        logger.info(
+                            "SmartPhotoPool: section=%r → cross-cat fallback cat=%r",
+                            section_type, cat,
+                        )
+                        return photo.proxied_url, cat
+
+        # No suitable photo
+        return None
+
+    def pick_any(self, global_used: set[str] | None = None) -> str | None:
+        """Return any available photo (for padding / hero fallback)."""
+        avoid = global_used or set()
+        all_photos: list[_ClassifiedPhoto] = []
+        for bucket in self._by_category.values():
+            all_photos.extend(bucket)
+        all_photos.sort(key=lambda p: p.quality_score, reverse=True)
+        for photo in all_photos:
+            if self._unused(photo, avoid):
+                self._used_proxied.add(photo.proxied_url)
+                return photo.proxied_url
+        return None
+
+    def category_breakdown(self) -> dict[str, int]:
+        return {cat: len(bucket) for cat, bucket in self._by_category.items()}
+
+
+def _build_smart_pool_for_listing(
+    listing: PropertyListing,
+    max_photos: int = 30,
+) -> SmartPhotoPool | None:
+    """
+    Fetch the full Google Maps photo gallery for *listing* (via SerpApi's
+    google_maps_photos engine using the listing's data_id / place_id) and
+    return a SmartPhotoPool ready for section-level selection.
+
+    Returns None when:
+      - No SerpApi key is configured.
+      - The listing has no data_id (only happens when a listing was sourced
+        from a context that doesn't supply data_ids, e.g. pre-fetched listings
+        without enrichment).
+      - SerpApi returns an empty gallery.
+    """
+    data_id = getattr(listing, "place_id", None)
+    api_key = get_settings().serpapi_key
+    if not data_id or not api_key:
+        return None
+
+    tagged = _serpapi_maps_photos_gallery(data_id, api_key, max_photos=max_photos)
+    if not tagged:
+        # Fall back to the single thumbnail the listing already carries
+        if listing.photo_url:
+            tagged = [{"url": listing.photo_url, "tags": []}]
+        else:
+            return None
+
+    return SmartPhotoPool(tagged)
+
+
+def _build_smart_pool_from_listing_photos(listing: PropertyListing) -> SmartPhotoPool | None:
+    """
+    Build a SmartPhotoPool from the photo_urls + photo_tags already stored on a
+    PropertyListing (i.e. from the _SinglePropertyPhotoPool source). Used for
+    the single-property (review) path where the gallery was fetched during
+    `fetch_property_by_name()`.
+    """
+    raw_urls: list[str] = getattr(listing, "photo_urls", None) or []
+    raw_tags: list[list[str]] = getattr(listing, "photo_tags", None) or [[] for _ in raw_urls]
+    if listing.photo_url and not raw_urls:
+        raw_urls = [listing.photo_url]
+        raw_tags = [[]]
+
+    photos = [
+        {"url": url, "tags": tags}
+        for url, tags in zip(raw_urls, raw_tags)
+        if url
+    ]
+    if not photos:
+        return None
+
+    return SmartPhotoPool(photos)
+
+
+def _smart_pool_caption_label(vision_category: str) -> str:
+    """Human-readable caption prefix from a Vision photo category."""
+    return {
+        PHOTO_CAT_DINING:   "Culinary experience",
+        PHOTO_CAT_ROOMS:    "Room and amenities",
+        PHOTO_CAT_OUTDOOR:  "Outdoor spaces",
+        PHOTO_CAT_AMENITY:  "Amenities and experience",
+        PHOTO_CAT_EXTERIOR: "Exterior view",
+        "unknown":          "Property feature",
+    }.get(vision_category, "Property feature")
+
+
+# ---------------------------------------------------------------------------
+
+
 def _build_query(subject: str, location: str | None) -> str:
     """
     Build a targeted image-search query for the given subject + location.
@@ -820,24 +1261,39 @@ _SECTION_CAPTION_PREFIX: dict[str, str] = {
 
 def _caption_prefix_from_actual_tags(tags: list[str]) -> str | None:
     """
-    Derive the most accurate caption prefix from the *actual* SerpApi tags of
-    the chosen photo rather than from the section heading type.
+    Derive the most accurate caption prefix from the *actual* tags of the
+    chosen photo (either SerpApi category tags or Vision category labels).
 
-    This prevents "Exterior view" being written under a bedroom photo, or
-    "Outdoor spaces" being written under a bathtub image.
+    Priority (most specific first):
+      0. Direct Vision-category label  → pass through unchanged
+      1. Bathroom / bathtub / plumbing → "Bathroom and amenities"
+      2. Pool / outdoor / garden       → "Outdoor spaces"
+      3. Food / dining / kitchen       → "Culinary experience"
+      4. Bedroom / room / suite        → "Room and amenities"
+      5. Exterior / facade / entrance  → "Exterior view"
 
-    Returns None when tags are empty or unrecognisable — the caller then falls
-    back to the section-type-derived prefix from _SECTION_CAPTION_PREFIX.
-
-    Tag priority (most specific first):
-      1. Bathroom / bathtub / plumbing  → "Bathroom and amenities"
-      2. Pool / outdoor / garden        → "Outdoor spaces"
-      3. Food / dining / kitchen        → "Culinary experience"
-      4. Bedroom / room / suite interior → "Room and amenities"
-      5. Exterior / facade / entrance   → "Exterior view"
+    Returns None when tags are empty or unrecognisable — the caller then
+    falls back to the section-type-derived prefix from _SECTION_CAPTION_PREFIX.
     """
     if not tags:
         return None
+
+    # Pass 0: tags may already be human-readable Vision category labels
+    # (e.g. "Culinary experience", "Outdoor spaces") — return them directly.
+    _VISION_LABEL_PASSTHROUGH: dict[str, str] = {
+        "culinary experience":       "Culinary experience",
+        "room and amenities":        "Room and amenities",
+        "outdoor spaces":            "Outdoor spaces",
+        "amenities and experience":  "Amenities and experience",
+        "exterior view":             "Exterior view",
+        "property feature":          "Property feature",
+        "bathroom and amenities":    "Bathroom and amenities",
+    }
+    for tag in tags:
+        result = _VISION_LABEL_PASSTHROUGH.get(tag.lower())
+        if result:
+            return result
+
     tag_set = set(tags)  # already lowercased by pool constructor
     if tag_set & {
         "bathroom", "washroom", "restroom", "bathtub", "bathing",
@@ -1505,94 +1961,107 @@ def generate_article_images(
 
     if single_pool is not None and single_pool.available:
         property_name = single_pool.listing.name
-        # Hero: prefer exterior/facade shot (intro preference) for the opening image.
-        hero_result = single_pool.take_for_section("intro")
-        if hero_result is not None:
-            hero_url, _hero_tags = hero_result
-            used_urls.add(hero_url)
-        else:
-            hero_url = None
+
+        # ── Build SmartPhotoPool from the property's fetched gallery ──────────
+        # SmartPhotoPool classifies every photo via Vision API (or SerpApi tags
+        # as fallback), filters selfies, and enforces strict section–category
+        # matching. This replaces the old tag-only routing.
+        smart_pool = _build_smart_pool_from_listing_photos(single_pool.listing)
+        if smart_pool is None or not smart_pool.available:
+            # Fallback: build from the single thumbnail if gallery data absent
+            if single_pool.listing.photo_url:
+                smart_pool = SmartPhotoPool(
+                    [{"url": single_pool.listing.photo_url, "tags": []}]
+                )
         logger.info(
-            "Hero image resolved from strict single-property pool %r (%d photo(s) available) for %r",
-            property_name, len(single_pool.listing.photo_urls), headline[:60],
+            "SmartPhotoPool built for single-property %r: %s",
+            property_name, smart_pool.category_breakdown() if smart_pool else "empty",
+        )
+
+        # Hero: prefer exterior/facade shot for the article header
+        hero_url: str | None = None
+        if smart_pool and smart_pool.available:
+            hero_url = smart_pool.pick_any(used_urls)
+            if hero_url:
+                used_urls.add(hero_url)
+
+        logger.info(
+            "Hero image resolved for %r: %s",
+            headline[:60], "found" if hero_url else "not found",
         )
 
         section_urls = []
         heading_images: list[tuple[str, str, list[str]]] = []
         slots = full_article_headings if full_article_headings else ["exterior view", "interior ambiance"]
         pool_fill_count = 0
-        fallback_fill_count = 0
+
         for slot in slots:
             section_type = _classify_section(slot)
             url: str | None = None
-            actual_tags: list[str] = []
+            vision_cat = "unknown"
 
-            # ── ALL sections: tag-matched photo from property's Google Maps pool ─
-            # Only real photos from this exact property are used.  The smart pool
-            # scanner first finds photos whose SerpApi tags match the section type
-            # (exterior for Accessibility/Conclusion, food for Culinary, etc.) then
-            # falls back to any untagged/neutral photo.  Portraits are excluded
-            # from all non-hospitality sections; kitchen photos locked to Culinary.
-            # Blank slot beats wrong content.
-            slot_result = single_pool.take_for_section(section_type)
-            if slot_result is not None:
-                url, actual_tags = slot_result
-                pool_fill_count += 1
-                logger.info(
-                    "Section slot %r (type=%r) -> tag-matched Google Maps photo (tags=%r)",
-                    slot[:50], section_type, actual_tags[:5],
-                )
-            else:
-                logger.warning(
-                    "Section slot %r (type=%r) -> no suitable pool photo "
-                    "(portrait/kitchen/bathroom excluded or pool exhausted), leaving blank.",
-                    slot[:50], section_type,
-                )
+            if smart_pool and smart_pool.available:
+                result = smart_pool.pick_for_section(section_type, used_urls)
+                if result is not None:
+                    url, vision_cat = result
+                    if url:
+                        used_urls.add(url)
+                        pool_fill_count += 1
+                        logger.info(
+                            "Section %r (type=%r) → Vision cat=%r",
+                            slot[:50], section_type, vision_cat,
+                        )
+                else:
+                    logger.warning(
+                        "Section %r (type=%r) → no matching photo in SmartPool, slot left blank.",
+                        slot[:50], section_type,
+                    )
 
             section_urls.append(url)
             if full_article_headings:
-                heading_images.append((slot, url, actual_tags))
+                # Pass vision_category as a single-element "tag list" so the
+                # caption generator can use it via _smart_pool_caption_label.
+                heading_images.append((slot, url, [vision_cat]))
 
         logger.info(
-            "Filled %d section slot(s) for %r: %d from the property's own gallery, "
-            "%d via property-neutral stock fallback",
-            len(section_urls), property_name, pool_fill_count, fallback_fill_count,
+            "SmartPhotoPool filled %d/%d section slot(s) for %r",
+            pool_fill_count, len(slots), property_name,
         )
 
         # -- Pad with extra real photos up to MIN_SINGLE_PROPERTY_IMAGES --
-        # Short articles (few headings) would otherwise under-use a rich
-        # gallery — e.g. a property with 15 verified photos but only 4
-        # headings previously surfaced just 5 images total (hero + 4). These
-        # extra slots have no associated heading, so they are appended to
-        # section_urls only (no <figure> injection into the article body,
-        # since there's no heading position to inject after) and still
-        # strictly belong to this same verified property.
-        total_so_far = 1 + len(section_urls)  # hero + sections filled above
+        total_so_far = (1 if hero_url else 0) + sum(1 for u in section_urls if u)
         padded_count = 0
-        while total_so_far < MIN_SINGLE_PROPERTY_IMAGES and single_pool.has_unused:
-            padded_result = single_pool.take_any_remaining()
-            if padded_result is None:
-                break
-            padded_url, _padded_tags = padded_result
-            section_urls.append(padded_url)
-            total_so_far += 1
-            padded_count += 1
+        if smart_pool:
+            while total_so_far < MIN_SINGLE_PROPERTY_IMAGES:
+                padded_url = smart_pool.pick_any(used_urls)
+                if padded_url is None:
+                    break
+                used_urls.add(padded_url)
+                section_urls.append(padded_url)
+                total_so_far += 1
+                padded_count += 1
         if padded_count:
             logger.info(
-                "Padded %r with %d extra real photo(s) from its own gallery to reach the %d-image floor "
-                "(final total: %d).",
-                property_name, padded_count, MIN_SINGLE_PROPERTY_IMAGES, total_so_far,
+                "Padded %r with %d extra real photo(s) to reach %d-image floor.",
+                property_name, padded_count, MIN_SINGLE_PROPERTY_IMAGES,
             )
 
         property_matches = [_property_match_dict(single_pool.listing)]
 
-        # Skip straight to HTML injection / final validation below by
-        # reusing the shared tail of the function.
+        # HTML injection with Vision-derived captions
         injected_count = sum(1 for _, u, _t in heading_images if u)
         enriched_html: str | None = None
         if full_article and heading_images:
+            # Build (heading, url, caption_prefix_as_tag) tuples for injection.
+            # _inject_images_into_html uses the tag list to derive captions;
+            # we pass the Vision category so _caption_prefix_from_actual_tags
+            # picks the right label.
+            _hi_for_inject = [
+                (h, u, [_smart_pool_caption_label(t[0]) if t else "Property feature"])
+                for h, u, t in heading_images
+            ]
             try:
-                enriched_html = _inject_images_into_html(full_article, heading_images)
+                enriched_html = _inject_images_into_html(full_article, _hi_for_inject)
                 logger.info(
                     "Injected %d/%d images into article HTML for %r",
                     injected_count, len(heading_images), headline[:50],
@@ -1651,58 +2120,79 @@ def generate_article_images(
     _assigned_indices: set[int] = set()
     _used_listings: list = []
 
-    def _take_by_name(heading_text: str):
+    # Per-listing SmartPhotoPool cache (keyed by listing index) — avoids
+    # fetching the same gallery multiple times within one article generation.
+    _listing_smart_pools: dict[int, SmartPhotoPool | None] = {}
+
+    def _get_or_build_smart_pool(listing_idx: int) -> SmartPhotoPool | None:
+        """Build (or retrieve cached) SmartPhotoPool for the listing at index."""
+        if listing_idx in _listing_smart_pools:
+            return _listing_smart_pools[listing_idx]
+        listing = all_listings[listing_idx]
+        pool = _build_smart_pool_for_listing(listing, max_photos=30)
+        if pool is None and getattr(listing, "photo_url", None):
+            # Fallback: single-thumbnail pool (no gallery available)
+            pool = SmartPhotoPool([{"url": listing.photo_url, "tags": []}])
+        _listing_smart_pools[listing_idx] = pool
+        return pool
+
+    def _take_by_name_smart(heading_text: str, section_type: str):
         """
-        Try to find a listing whose name appears verbatim in *heading_text*.
-        Returns (proxied_url, listing) on success, None if no name match.
-        Marks the matched listing as used so it is not reassigned.
+        Find a listing whose name appears in *heading_text*, fetch its full
+        gallery, build a SmartPhotoPool, and pick the best-matching photo for
+        *section_type*. Returns (proxied_url, listing, vision_cat) or None.
         """
         heading_lower = heading_text.lower()
         for i, listing in enumerate(all_listings):
             if i in _assigned_indices:
                 continue
-            if not getattr(listing, "photo_url", None):
-                continue
             name_lower = listing.name.lower()
-            # Match if the property name appears in the heading
-            if name_lower in heading_lower:
-                proxied = _proxied_url(listing.photo_url)
-                if proxied not in used_urls:
-                    _assigned_indices.add(i)
-                    used_urls.add(proxied)
-                    _used_listings.append(listing)
-                    logger.info(
-                        "Name-matched heading %r -> property %r",
-                        heading_text[:50], listing.name,
-                    )
-                    return proxied, listing
+            if name_lower not in heading_lower:
+                continue
+            pool = _get_or_build_smart_pool(i)
+            if pool is None or not pool.available:
+                continue
+            result = pool.pick_for_section(section_type, used_urls)
+            if result is not None:
+                url, vision_cat = result
+                _assigned_indices.add(i)
+                used_urls.add(url)
+                _used_listings.append(listing)
+                logger.info(
+                    "Name-matched %r → listing %r → Vision cat=%r",
+                    heading_text[:50], listing.name, vision_cat,
+                )
+                return url, listing, vision_cat
+            # Listing matched by name but its pool has no suitable photo for
+            # this section type → do NOT block; try next name-matched listing.
         return None
 
-    def _take_sequential():
+    def _take_sequential_smart(section_type: str):
         """
-        Return the next unused listing in sequential order (no name-matching).
-        Falls back to this when the heading doesn't contain a property name.
-        Returns (proxied_url, listing) or None when the pool is exhausted.
+        Pick the next unused listing in order, build/reuse its SmartPhotoPool,
+        and return the best-matching photo for *section_type*.
+        Returns (proxied_url, listing, vision_cat) or None when exhausted.
         """
         for i, listing in enumerate(all_listings):
             if i in _assigned_indices:
                 continue
-            if not getattr(listing, "photo_url", None):
+            pool = _get_or_build_smart_pool(i)
+            if pool is None or not pool.available:
                 continue
-            proxied = _proxied_url(listing.photo_url)
-            if proxied not in used_urls:
+            result = pool.pick_for_section(section_type, used_urls)
+            if result is not None:
+                url, vision_cat = result
                 _assigned_indices.add(i)
-                used_urls.add(proxied)
+                used_urls.add(url)
                 _used_listings.append(listing)
-                return proxied, listing
+                return url, listing, vision_cat
         return None
 
     # -- Hero image ----------------------------------------------------------
     hero_url: str | None = None
-    # Try name-matching the headline first, then sequential.
-    hero_result = _take_by_name(headline) or _take_sequential()
+    hero_result = _take_by_name_smart(headline, "intro") or _take_sequential_smart("intro")
     if hero_result is not None:
-        hero_url, hero_listing = hero_result
+        hero_url, hero_listing, _hero_cat = hero_result
         logger.info(
             "Hero image resolved from Google Maps listing %r (%.1f★) for %r",
             hero_listing.name, hero_listing.rating or 0.0, headline[:60],
@@ -1713,9 +2203,7 @@ def generate_article_images(
             headline[:60],
         )
 
-    # -- Section images — one per heading, with name-matching ---------------
-    # Each heading_images entry is a 3-tuple: (heading_text, url, actual_tags)
-    # so _inject_images_into_html can derive accurate captions.
+    # -- Section images — one per heading, with name-matching + SmartPool ---
     section_urls: list[str | None] = []
     heading_images: list[tuple[str, str, list[str]]] = []
 
@@ -1724,48 +2212,42 @@ def generate_article_images(
 
         for heading in full_article_headings:
             url: str | None = None
+            vision_cat = "unknown"
 
-            # 1. Try to find a listing whose name appears in this heading.
-            # 2. Fall back to the next sequential listing when no name matches.
-            slot_result = _take_by_name(heading) or _take_sequential()
+            section_type = _classify_section(heading)
+            slot_result = (
+                _take_by_name_smart(heading, section_type)
+                or _take_sequential_smart(section_type)
+            )
             if slot_result is not None:
-                url, matched_listing = slot_result
+                url, matched_listing, vision_cat = slot_result
                 logger.info(
-                    "Section %r -> Google Maps listing %r (%.1f★)",
-                    heading[:50], matched_listing.name, matched_listing.rating or 0.0,
+                    "Section %r (type=%r) → listing %r vision_cat=%r",
+                    heading[:50], section_type, matched_listing.name, vision_cat,
                 )
             else:
-                logger.warning(
-                    "Section %r -> Google Maps pool exhausted, leaving blank.", heading[:50],
-                )
+                logger.warning("Section %r → pool exhausted, slot blank.", heading[:50])
 
             section_urls.append(url)
-            # Pass empty tags — multi-property pool has no per-photo tag data.
-            heading_images.append((heading, url, []))
+            heading_images.append((heading, url, [_smart_pool_caption_label(vision_cat)]))
 
     else:
-        for suffix in ["exterior view", "interior ambiance"]:
+        for section_type in ("intro", "general"):
             url = None
-            slot_result = _take_sequential()
-            if slot_result is not None:
-                url, _ = slot_result
-            else:
-                logger.warning(
-                    "No Google Maps photo available for slot %r — leaving blank.", suffix,
-                )
+            slot_result = _take_sequential_smart(section_type)
+            if slot_result:
+                url, _, vc = slot_result
+                heading_images.append(("", url, [_smart_pool_caption_label(vc)]))
             section_urls.append(url)
 
     # -- Minimum 10 real images floor ---------------------------------------
-    # If the article has fewer headings than MIN_SINGLE_PROPERTY_IMAGES (10),
-    # pad section_urls with additional listings from the pool so the article
-    # always surfaces at least 10 verified Google Maps photos (hero + sections).
     MIN_MULTI_PROPERTY_IMAGES = 10
     total_so_far = (1 if hero_url else 0) + sum(1 for u in section_urls if u)
     while total_so_far < MIN_MULTI_PROPERTY_IMAGES:
-        extra_result = _take_sequential()
+        extra_result = _take_sequential_smart("general")
         if extra_result is None:
-            break  # pool exhausted
-        extra_url, _ = extra_result
+            break
+        extra_url, _, _ = extra_result
         section_urls.append(extra_url)
         total_so_far += 1
     if total_so_far < MIN_MULTI_PROPERTY_IMAGES:
