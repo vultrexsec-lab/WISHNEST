@@ -720,15 +720,20 @@ _SECTION_TO_VISION_CATEGORIES: dict[str, list[str]] = {
 # match is unavailable, the safe fallback policy below may use an exterior,
 # landscape, or decor/amenity photo instead of leaving a section blank.
 _SECTION_EXCLUDED_VISION_CATS: dict[str, frozenset[str]] = {
-    # Culinary: never show rooms, bathrooms, or outdoor/pool imagery as food.
-    # Exterior architecture is an acceptable neutral property fallback.
+    # Culinary: only dining photos preferred; OUTDOOR also excluded because
+    # pool/garden photos classify as outdoor and are editorially wrong for
+    # a dining section.  Only EXTERIOR (building facade) is a safe neutral
+    # fallback when no dining photo exists.
     "culinary": frozenset({
         PHOTO_CAT_ROOMS, PHOTO_CAT_BATHROOM, PHOTO_CAT_AMENITY,
+        PHOTO_CAT_OUTDOOR,   # pools / gardens must never appear as food
     }),
-    # Outdoor Spaces: never show rooms, food, or bathrooms.  Exterior and
-    # amenity/decor photos are safe neutral fallbacks.
+    # Outdoor Spaces: rooms, food, bathrooms, AND amenity photos excluded.
+    # Amenity can include lobby/lounge interior shots that look nothing like
+    # outdoor spaces — only actual outdoor and exterior photos are safe here.
     "outdoor": frozenset({
         PHOTO_CAT_DINING, PHOTO_CAT_ROOMS, PHOTO_CAT_BATHROOM,
+        PHOTO_CAT_AMENITY,   # interior amenity shots must not appear as outdoors
     }),
     # Connectivity: prefer entrance/amenity, but landscape/exterior is a safe
     # property-context fallback when access-specific imagery is unavailable.
@@ -762,10 +767,12 @@ _STRICT_SECTION_TYPES: frozenset[str] = frozenset({
 # filtered for faces, selfies, and low quality during pool construction.
 # Bathroom and unknown photos are deliberately absent.
 _SAFE_FALLBACK_VISION_CATS: dict[str, tuple[str, ...]] = {
-    # Generic landscape/exterior context is acceptable when no dining photo
-    # exists, but _is_safe_section_fallback rejects pool-specific imagery.
-    "culinary": (PHOTO_CAT_EXTERIOR, PHOTO_CAT_OUTDOOR),
-    "outdoor": (PHOTO_CAT_OUTDOOR, PHOTO_CAT_EXTERIOR, PHOTO_CAT_AMENITY),
+    # Culinary fallback: ONLY exterior/facade — outdoor category includes
+    # pool and garden shots that are wrong for a dining section.
+    "culinary": (PHOTO_CAT_EXTERIOR,),
+    # Outdoor fallback: only actual outdoor and exterior shots.  Amenity
+    # photos (lobby, lounge) must not appear as "Outdoor Spaces".
+    "outdoor": (PHOTO_CAT_OUTDOOR, PHOTO_CAT_EXTERIOR),
     "room_design": (PHOTO_CAT_ROOMS, PHOTO_CAT_EXTERIOR, PHOTO_CAT_OUTDOOR, PHOTO_CAT_AMENITY),
     "connectivity": (PHOTO_CAT_EXTERIOR, PHOTO_CAT_AMENITY, PHOTO_CAT_OUTDOOR),
     "hospitality": (PHOTO_CAT_EXTERIOR, PHOTO_CAT_AMENITY, PHOTO_CAT_OUTDOOR),
@@ -790,18 +797,60 @@ def _is_safe_section_fallback(
     section_type: str,
     selection_label: str,
 ) -> bool:
-    """Reject visually specific fallback photos that would mislead a section."""
-    if "fallback" not in selection_label:
+    """
+    Return False for fallback photos whose content would visibly mislead
+    readers of *section_type*.  Applies to any selection pass labelled with
+    'fallback' or 'last-resort' — exact-match preferred picks are always safe.
+
+    Checks BOTH SerpApi tags (fast, string-based) AND Vision category
+    (authoritative content signal) so that mis-tagged photos are still
+    rejected.
+    """
+    is_fallback = "fallback" in selection_label or "last-resort" in selection_label
+    if not is_fallback:
         return True
 
     tags = {tag.lower() for tag in photo.serpapi_tags}
-    if section_type == "culinary" and tags & {
-        "pool",
-        "swimming pool",
-        "infinity pool",
-        "water feature",
-    }:
-        return False
+    vc = photo.vision_category
+
+    # ── Culinary section ─────────────────────────────────────────────────
+    # Pool, swimming pool, garden/outdoor photos must never appear as food.
+    # Reject by SerpApi pool tag OR by Vision outdoor/amenity category.
+    if section_type == "culinary":
+        if tags & {"pool", "swimming pool", "infinity pool", "water feature",
+                   "outdoor", "garden", "terrace", "poolside", "garden dining"}:
+            return False
+        if vc in {PHOTO_CAT_OUTDOOR, PHOTO_CAT_AMENITY}:
+            return False
+
+    # ── Outdoor section ───────────────────────────────────────────────────
+    # Room interiors and amenity lobby shots must not appear as outdoor spaces.
+    if section_type == "outdoor":
+        if vc in {PHOTO_CAT_ROOMS, PHOTO_CAT_AMENITY, PHOTO_CAT_BATHROOM,
+                  PHOTO_CAT_DINING}:
+            return False
+        if tags & {"bedroom", "room", "suite", "interior", "lobby",
+                   "lounge", "bathroom", "toilet", "shower"}:
+            return False
+
+    # ── Room Design section ───────────────────────────────────────────────
+    # Bathroom photos must never appear as room design.  Outdoor / pool also
+    # excluded — handled by _SECTION_EXCLUDED_VISION_CATS but double-checked
+    # here for belt-and-braces coverage.
+    if section_type == "room_design":
+        if vc == PHOTO_CAT_BATHROOM:
+            return False
+        if tags & {"bathroom", "bathtub", "toilet", "shower", "washroom",
+                   "pool", "swimming pool", "outdoor"}:
+            return False
+
+    # ── Connectivity section ──────────────────────────────────────────────
+    # Person-dominated photos (gazebo portrait, guest candid) are wrong for
+    # an accessibility/transport section.
+    if section_type == "connectivity":
+        if vc in {PHOTO_CAT_DINING, PHOTO_CAT_BATHROOM}:
+            return False
+
     return True
 
 
@@ -855,6 +904,22 @@ def _classify_photo_vision_category(
                 top3 = {n for n, _ in label_names_scored[:3]}
                 if top3.issubset(_PERSON_VISION_LABELS | _SELFIE_VISION_LABELS):
                     return "selfie", 0.0, True
+
+                # ── Bathroom override (before category scoring) ───────────
+                # If ANY specific bathroom fixture label appears in the top 8
+                # Vision labels, classify the photo as PHOTO_CAT_BATHROOM —
+                # regardless of what other labels scored higher.  This catches
+                # marble bathroom photos where "luxury", "interior design", or
+                # "room" rank above "bathtub" or "sink" and would otherwise
+                # sneak into the Room Design pool.
+                _BATHROOM_OVERRIDE_LABELS: frozenset[str] = frozenset({
+                    "bathtub", "toilet", "shower", "bidet", "urinal",
+                    "faucet", "plumbing fixture", "bathing", "lavatory",
+                    "bathroom cabinet", "mirror cabinet",
+                })
+                top8_names = {n for n, _ in label_names_scored[:8]}
+                if top8_names & _BATHROOM_OVERRIDE_LABELS:
+                    return PHOTO_CAT_BATHROOM, 0.7, False
 
                 # Score each category by summing matching label confidences
                 cat_scores: dict[str, float] = {}
@@ -918,13 +983,20 @@ def _classify_photo_vision_category(
                             label_names_scored[0][0] in _PERSON_VISION_LABELS
                             if label_names_scored else False
                         )
-                        if top_label_is_person:
-                            # Primary subject is a person — treat as selfie/portrait
+                        second_label_is_person = (
+                            len(label_names_scored) > 1
+                            and label_names_scored[1][0] in _PERSON_VISION_LABELS
+                        )
+                        if top_label_is_person or second_label_is_person:
+                            # Primary subject is a person — treat as selfie/portrait.
+                            # Also reject when person is the 2nd label (e.g. a
+                            # gazebo photo where "woman" is label 2 after "outdoor").
                             return "selfie", 0.0, True
-                        # Person present but not the primary subject (background
-                        # guest / staff).  Keep with reduced quality so
-                        # people-free photos of the same category surface first.
-                        return best_cat, quality * 0.5, False
+                        # Person visible in background (label 3+) but not the
+                        # primary subject.  Apply a strong quality penalty so these
+                        # photos rank far below people-free shots of the same
+                        # category and are only chosen as a genuine last resort.
+                        return best_cat, quality * 0.15, False
                     return best_cat, quality, False
 
                 # No editorial category matched — use top-label confidence as
