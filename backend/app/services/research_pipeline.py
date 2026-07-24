@@ -23,9 +23,9 @@ from app.models.article import Article, ArticleStatus, ArticleType
 from app.schemas.article import ArticleCreate
 from app.services.fact_checker_service import fact_check_article
 from app.services.firecrawl_service import FirecrawlError, search_and_scrape
-from app.services.image_service import generate_article_images
+from app.services.image_service import build_deep_gallery_photo_assignments, generate_article_images
 from app.services.openai_service import generate_article_packages
-from app.services.places_service import PropertyListing, fetch_premium_stays
+from app.services.places_service import PropertyListing, _serpapi_maps_photos_gallery, fetch_premium_stays
 
 logger = logging.getLogger("wishnest.research_pipeline")
 
@@ -830,6 +830,92 @@ def run_research_pipeline(
                     )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Vision grounding step failed (non-blocking): %s", exc)
+
+    # ── 1d. Deep gallery Vision grounding for single-property (review) articles ─
+    # When a specific place_id (SerpApi data_id) is known, fetch the full 75-photo
+    # deep gallery for that property, pre-assign the best unique photo to each
+    # editorial section type, Vision-scan each assigned photo, and inject a
+    # per-section "Photo Writing Guide" into the LLM brief.  This ensures the
+    # article paragraph for every section describes what the reader will actually
+    # see in that section's real, unique photograph — not generic prose.
+    if place_id:
+        try:
+            from app.config import get_settings as _get_settings_dg
+            _dg_settings = _get_settings_dg()
+            if _dg_settings.serpapi_key:
+                _tagged_photos = _serpapi_maps_photos_gallery(
+                    place_id, _dg_settings.serpapi_key, max_photos=75
+                )
+                if _tagged_photos:
+                    # Build a PropertyListing wrapper around the deep gallery so
+                    # build_deep_gallery_photo_assignments can classify and assign.
+                    _pseudo_listing = PropertyListing(
+                        name=brief.split("\n")[0][:100].strip(),
+                        photo_url=_tagged_photos[0]["url"],
+                        rating=None,
+                        review_count=None,
+                        address=None,
+                        maps_url=None,
+                        place_id=place_id,
+                        photo_urls=[p["url"] for p in _tagged_photos],
+                        photo_tags=[p["tags"] for p in _tagged_photos],
+                    )
+                    _section_types = [
+                        "intro", "outdoor", "culinary", "room_design",
+                        "hospitality", "connectivity", "general",
+                    ]
+                    _assignments = build_deep_gallery_photo_assignments(
+                        _pseudo_listing, _section_types
+                    )
+                    if _assignments:
+                        _SECTION_CAT_LABEL = {
+                            "dining_food":            "FOOD/DINING",
+                            "rooms_stay":             "ROOMS/INTERIOR",
+                            "outdoor_views":          "OUTDOOR/NATURE",
+                            "amenities_experience":   "AMENITIES/POOL",
+                            "exterior_architecture":  "EXTERIOR/FACADE",
+                            "unknown":                "GENERAL PROPERTY",
+                        }
+                        _section_lines: list[str] = []
+                        for _a in _assignments:
+                            _labels_str = (
+                                ", ".join(_a["vision_labels"])
+                                if _a["vision_labels"]
+                                else "general property photo"
+                            )
+                            _cat_label = _SECTION_CAT_LABEL.get(
+                                _a["category"], "GENERAL PROPERTY"
+                            )
+                            _section_lines.append(
+                                f"  • {_a['section_type'].upper().replace('_', ' ')} section "
+                                f"→ Vision-confirmed {_cat_label} photo\n"
+                                f"    Exact Vision labels: {_labels_str}\n"
+                                f"    → Write this section describing EXACTLY these visual "
+                                f"elements as the reader will see them in the photograph"
+                            )
+                        _deep_brief = (
+                            "\n\n## DEEP GALLERY PHOTO ASSIGNMENTS"
+                            " — WRITE EACH SECTION FOR ITS EXACT UNIQUE PHOTO\n"
+                            f"A {len(_tagged_photos)}-photo deep gallery was fetched and "
+                            "every photo is unique. Each article section has been "
+                            "pre-assigned a different real photograph, scanned by "
+                            "Google Cloud Vision API. You MUST write every section "
+                            "paragraph to match its assigned photo's visual content "
+                            "— describe only what those Vision labels confirm is "
+                            "actually present; do NOT invent visual details not "
+                            "supported by the labels below:\n\n"
+                            + "\n".join(_section_lines)
+                        )
+                        brief = brief + _deep_brief
+                        logger.info(
+                            "Deep gallery Vision grounding: %d photos fetched, "
+                            "%d per-section assignments injected for place_id=%r",
+                            len(_tagged_photos), len(_assignments), place_id,
+                        )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Deep gallery Vision grounding failed (non-blocking): %s", exc
+            )
 
     # ── 2. Draft article packages via OpenAI ─────────────────────────────────
     try:

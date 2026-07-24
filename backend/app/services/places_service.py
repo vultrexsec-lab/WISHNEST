@@ -296,7 +296,7 @@ def fetch_landmark_attractions(location: str | None, limit: int = 8) -> list[Pro
 # ---------------------------------------------------------------------------
 
 def fetch_property_by_name(
-    name: str, location: str | None = None, max_photos: int = 15,
+    name: str, location: str | None = None, max_photos: int = 75,
 ) -> PropertyListing | None:
     """
     Look up ONE specific, named business (e.g. "Hyatt Dehradun") and return a
@@ -421,7 +421,7 @@ def search_properties(query: str, limit: int = 20) -> list[PropertyListing]:
     return listings
 
 
-def text_search_place(query: str, max_photos: int = 15) -> PropertyListing | None:
+def text_search_place(query: str, max_photos: int = 75) -> PropertyListing | None:
     """
     Resolve a free-form text query (e.g. "Top 5 star hotel in Mussoorie" or
     "Amanbagh Rajasthan") to the single best matching Google Maps business

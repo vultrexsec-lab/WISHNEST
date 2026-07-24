@@ -483,7 +483,7 @@ class _SinglePropertyPhotoPool:
             # 20 photos gives more headroom for tag-based filtering — extra
             # photos ensure that even after excluding portraits/kitchens for
             # unsuitable sections there are real photos remaining.
-            self.listing = fetch_property_by_name(headline, location, max_photos=20)
+            self.listing = fetch_property_by_name(headline, location, max_photos=75)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Single-property lookup raised for %r: %s", headline[:60], exc)
             self.listing = None
@@ -798,7 +798,7 @@ class SmartPhotoPool:
     def __init__(
         self,
         photos: list[dict],
-        max_vision_calls: int = 25,
+        max_vision_calls: int = 50,
     ) -> None:
         self._by_category: dict[str, list[_ClassifiedPhoto]] = {
             PHOTO_CAT_DINING:   [],
@@ -953,7 +953,7 @@ class SmartPhotoPool:
 
 def _build_smart_pool_for_listing(
     listing: PropertyListing,
-    max_photos: int = 30,
+    max_photos: int = 75,
 ) -> SmartPhotoPool | None:
     """
     Fetch the full Google Maps photo gallery for *listing* (via SerpApi's
@@ -1015,8 +1015,8 @@ def _smart_pool_caption_label(vision_category: str) -> str:
         PHOTO_CAT_OUTDOOR:  "Outdoor spaces",
         PHOTO_CAT_AMENITY:  "Amenities and experience",
         PHOTO_CAT_EXTERIOR: "Exterior view",
-        "unknown":          "Property feature",
-    }.get(vision_category, "Property feature")
+        "unknown":          "",
+    }.get(vision_category, "")
 
 
 # ---------------------------------------------------------------------------
@@ -1267,7 +1267,7 @@ _SECTION_CAPTION_PREFIX: dict[str, str] = {
     "room_design":   "Room and amenities",
     "connectivity":  "Entrance and access",
     "hospitality":   "Guest experience",
-    "general":       "Property feature",
+    "general":       "",
 }
 
 
@@ -1298,7 +1298,7 @@ def _caption_prefix_from_actual_tags(tags: list[str]) -> str | None:
         "outdoor spaces":            "Outdoor spaces",
         "amenities and experience":  "Amenities and experience",
         "exterior view":             "Exterior view",
-        "property feature":          "Property feature",
+        "property feature":          "",
         "bathroom and amenities":    "Bathroom and amenities",
     }
     for tag in tags:
@@ -1893,13 +1893,115 @@ def _inject_images_into_html(
         caption_prefix = _caption_prefix_from_actual_tags(actual_tags)
         if caption_prefix is None:
             section_type_for_caption = _classify_section(heading_text)
-            caption_prefix = _SECTION_CAPTION_PREFIX.get(section_type_for_caption, "Property feature")
-        caption = html.escape(f"{caption_prefix} — {heading_text[:60]}", quote=False)
+            caption_prefix = _SECTION_CAPTION_PREFIX.get(section_type_for_caption, "")
+        # Only prepend the prefix when it adds information; never emit the bare
+        # "Property feature" label that was previously used as a generic fallback.
+        if caption_prefix:
+            caption = html.escape(f"{caption_prefix} — {heading_text[:60]}", quote=False)
+        else:
+            caption = html.escape(heading_text[:60], quote=False)
 
         figure = _FIGURE_TEMPLATE.format(url=safe_url, alt=alt, caption=caption)
         return full_match + "\n" + figure
 
     return _HEADING_RE.sub(_replace_heading, full_article_html)
+
+
+# ---------------------------------------------------------------------------
+# Deep gallery URL helpers
+# ---------------------------------------------------------------------------
+
+def _decode_proxy_url(proxied_url: str) -> str | None:
+    """
+    Decode a ``/api/image-proxy?url=<encoded>`` URL back to the original
+    upstream URL so it can be re-submitted to the Vision API.
+    Returns the URL unchanged when it is already a direct http(s) URL.
+    """
+    if not proxied_url:
+        return None
+    prefix = "/api/image-proxy?url="
+    if proxied_url.startswith(prefix):
+        return urllib.parse.unquote(proxied_url[len(prefix):])
+    return proxied_url
+
+
+def build_deep_gallery_photo_assignments(
+    listing: "PropertyListing",
+    section_types: list[str],
+) -> list[dict]:
+    """
+    Pre-assign the best unique photo from a property's deep gallery (75+ photos)
+    to each requested editorial section type, then Vision-scan each assigned photo
+    to get its exact Google Cloud Vision labels.
+
+    This is called by the research pipeline BEFORE article text is drafted so the
+    LLM can write each section paragraph to match its specific pre-assigned photo.
+
+    Returns a list of dicts in input order::
+
+        [
+          {
+            "section_type": str,   # e.g. "culinary"
+            "url": str,            # proxied URL for frontend rendering
+            "raw_url": str,        # original URL for Vision re-scanning
+            "category": str,       # one of the PHOTO_CAT_* constants or "unknown"
+            "vision_labels": list[str],  # top-8 Vision API label descriptions
+          },
+          ...
+        ]
+
+    Gracefully degrades: returns an empty list when the pool is unavailable,
+    SERPAPI_KEY is not configured, or every Vision API call fails.
+    Never raises.
+    """
+    # Build pool from already-fetched gallery photos stored on the listing;
+    # if only a thumbnail exists, fall back to a fresh gallery fetch.
+    pool = _build_smart_pool_from_listing_photos(listing)
+    if pool is None or not pool.available:
+        pool = _build_smart_pool_for_listing(listing, max_photos=75)
+    if pool is None or not pool.available:
+        return []
+
+    used: set[str] = set()
+    settings = get_settings()
+    results: list[dict] = []
+
+    for section_type in section_types:
+        pick = pool.pick_for_section(section_type, used)
+        if pick is not None:
+            url, cat = pick
+        else:
+            # Any unused photo beats an empty slot for LLM grounding purposes.
+            url = pool.pick_any(used)
+            cat = "unknown"
+            if url is None:
+                continue
+        used.add(url)
+
+        raw_url = _decode_proxy_url(url) or url
+        vision_labels: list[str] = []
+
+        if raw_url and settings.google_cloud_vision_api_key:
+            try:
+                from app.services.vision_service import scan_image  # lazy import
+                vr = scan_image(raw_url)
+                if vr and vr.labels:
+                    vision_labels = [lb.description for lb in vr.labels[:8]]
+            except Exception as exc:  # noqa: BLE001
+                logger.debug(
+                    "Vision scan failed for deep gallery photo %s: %s",
+                    raw_url[:60], exc,
+                )
+
+        results.append({
+            "section_type": section_type,
+            "url": url,
+            "raw_url": raw_url,
+            "category": cat,
+            "vision_labels": vision_labels,
+        })
+
+    return results
 
 
 # ---------------------------------------------------------------------------
@@ -2084,7 +2186,7 @@ def generate_article_images(
             # we pass the Vision category so _caption_prefix_from_actual_tags
             # picks the right label.
             _hi_for_inject = [
-                (h, u, [_smart_pool_caption_label(t[0]) if t else "Property feature"])
+                (h, u, [_smart_pool_caption_label(t[0]) if t else ""])
                 for h, u, t in heading_images
             ]
             try:
@@ -2156,7 +2258,7 @@ def generate_article_images(
         if listing_idx in _listing_smart_pools:
             return _listing_smart_pools[listing_idx]
         listing = all_listings[listing_idx]
-        pool = _build_smart_pool_for_listing(listing, max_photos=30)
+        pool = _build_smart_pool_for_listing(listing, max_photos=75)
         if pool is None and getattr(listing, "photo_url", None):
             # Fallback: single-thumbnail pool (no gallery available)
             pool = SmartPhotoPool([{"url": listing.photo_url, "tags": []}])
