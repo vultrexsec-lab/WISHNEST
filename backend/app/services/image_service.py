@@ -900,11 +900,18 @@ def _classify_photo_vision_category(
                     if all_top3_unusable:
                         return "low_quality", 0.0, False
                     # ── People / portrait rejection ───────────────────────────
-                    # If "person" or "people" is the single TOP label the photo
-                    # is dominated by a human subject (e.g. a guest standing at
-                    # a billiard table, a posed portrait).  Reject outright —
-                    # these photos degrade editorial quality regardless of the
-                    # secondary content (game room, pool, lobby).
+                    # Only reject when the PRIMARY subject is a person (top
+                    # Vision label).  Hotel photos routinely contain guests in
+                    # the background — a lobby shot with staff, a terrace with
+                    # diners — and those are editorially valuable.  Rejecting
+                    # every photo that contains ANY person label was wiping out
+                    # the majority of the property gallery.
+                    #
+                    # Hard rejects:  selfie / close-up face labels (handled
+                    # above), or top label is a person.
+                    # Soft penalty:  person present but not primary subject —
+                    # keep the photo with a reduced quality score so it ranks
+                    # below people-free shots of the same category.
                     people_present = bool(all_label_names & _PERSON_VISION_LABELS)
                     if people_present:
                         top_label_is_person = (
@@ -914,10 +921,10 @@ def _classify_photo_vision_category(
                         if top_label_is_person:
                             # Primary subject is a person — treat as selfie/portrait
                             return "selfie", 0.0, True
-                        # A person is still a disallowed editorial subject. Do
-                        # not keep it as a last-resort candidate where a later
-                        # fallback could put it in General Overview.
-                        return "selfie", 0.0, True
+                        # Person present but not the primary subject (background
+                        # guest / staff).  Keep with reduced quality so
+                        # people-free photos of the same category surface first.
+                        return best_cat, quality * 0.5, False
                     return best_cat, quality, False
 
                 # No editorial category matched — use top-label confidence as
@@ -1121,17 +1128,28 @@ class SmartPhotoPool:
         if exact is not None:
             return exact
 
-        # Never use unclassified photos for a protected section: an unknown
-        # label can hide a pool, bathroom, or portrait. Use only classified,
-        # quality-ranked safe property categories.
+        # Use classified safe-fallback categories first.
         fallback = _pick_unused(tuple(safe_fallback), "safe-fallback")
         if fallback is not None:
             return fallback
 
+        # Pass 3: try "unknown"-category photos as an additional safe fallback.
+        # These are real property-gallery photos that Vision couldn't classify
+        # into a named category (e.g. abstract decor, dim corridor, unusual
+        # angle).  They are not selfies or low-quality (those were filtered at
+        # pool construction time).  Better than a blank slot, ranked below any
+        # classified photo of the right type.
+        if "unknown" not in excluded:
+            for photo in self._by_category.get("unknown", []):
+                if not _is_safe_section_fallback(photo, section_type, "safe-fallback"):
+                    continue
+                if self._unused(photo, avoid):
+                    return _log_and_return(photo, "unknown-fallback")
+
         if allow_reuse:
             # Small galleries can have fewer photos than article sections.
             # Reuse only an eligible preferred/safe photo, never a bathroom,
-            # unknown, or category excluded above.
+            # or a category hard-excluded above.
             for categories, label in (
                 (tuple(preferred), "preferred-reuse"),
                 (tuple(safe_fallback), "safe-fallback-reuse"),
@@ -1152,9 +1170,27 @@ class SmartPhotoPool:
                 if reusable_candidates:
                     return _log_and_return(reusable_candidates[0], label)
 
+        # Pass 4: absolute last resort — any unused non-bathroom property photo.
+        # A real photo from the property gallery always beats a blank section slot.
+        # Culinary still blocks pool photos via _is_safe_section_fallback; all
+        # other categories accept any real gallery photo here.
+        for cat, bucket in self._by_category.items():
+            if cat == PHOTO_CAT_BATHROOM:
+                continue
+            for photo in bucket:
+                if not _is_safe_section_fallback(photo, section_type, "safe-fallback"):
+                    continue
+                if self._unused(photo, avoid):
+                    logger.warning(
+                        "SmartPhotoPool: section=%r using last-resort photo "
+                        "(cat=%r) — no better match available.",
+                        section_type, cat,
+                    )
+                    return _log_and_return(photo, "last-resort")
+
         logger.warning(
             "SmartPhotoPool: no eligible photo for section=%r; "
-            "all remaining gallery photos are excluded or unavailable.",
+            "pool fully exhausted or every photo is excluded.",
             section_type,
         )
         return None
