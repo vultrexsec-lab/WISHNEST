@@ -149,6 +149,7 @@ class VisionResult:
     image_url: str
     labels: list[VisionLabel] = field(default_factory=list)
     objects: list[VisionObject] = field(default_factory=list)
+    face_count: int = 0
     ocr_text: str = ""
     web_entities: list[str] = field(default_factory=list)
     is_valid: bool = True
@@ -190,6 +191,7 @@ def _call_vision_api(image_url: str) -> dict:
                     {"type": "TEXT_DETECTION", "maxResults": 5},
                     {"type": "WEB_DETECTION", "maxResults": 10},
                     {"type": "OBJECT_LOCALIZATION", "maxResults": 10},
+                    {"type": "FACE_DETECTION", "maxResults": 10},
                 ],
             }
         ]
@@ -229,6 +231,7 @@ def _call_vision_api_base64(image_bytes: bytes) -> dict:
                     {"type": "TEXT_DETECTION", "maxResults": 5},
                     {"type": "WEB_DETECTION", "maxResults": 10},
                     {"type": "OBJECT_LOCALIZATION", "maxResults": 10},
+                    {"type": "FACE_DETECTION", "maxResults": 10},
                 ],
             }
         ]
@@ -270,6 +273,12 @@ def _parse_vision_response(image_url: str, response: dict) -> VisionResult:
             name=obj.get("name", ""),
             confidence=obj.get("score", 0.0),
         ))
+
+    # Face detection is intentionally treated as a hard editorial signal. A
+    # close-up face/selfie can be missed by label detection when the image
+    # also contains a hotel or landscape, so FACE_DETECTION must be requested
+    # and parsed independently.
+    result.face_count = len(response.get("faceAnnotations", []))
 
     # OCR text — first full-text annotation
     full_text = response.get("fullTextAnnotation", {})
@@ -338,6 +347,28 @@ def _validate_topic_match(result: VisionResult, section_topic: str) -> tuple[boo
     """
     detected = set(result.label_names())
     detected.update(obj.name.lower() for obj in result.objects)
+
+    # Strict face/person filtering. Do this before topic matching so a selfie
+    # cannot pass simply because the background happens to match the heading.
+    if result.face_count:
+        return False, (
+            f"Image contains {result.face_count} detected face"
+            f"{'s' if result.face_count != 1 else ''}; "
+            "close-up faces and selfies are not permitted."
+        )
+
+    face_signal_labels = {
+        "face", "selfie", "headshot", "close-up", "closeup",
+        "portrait", "nose", "forehead", "chin", "cheek", "eyebrow",
+        "eyelash", "lip", "skin", "wrinkle", "pore",
+    }
+    face_signals = detected & face_signal_labels
+    if face_signals:
+        return False, (
+            "Image contains face/selfie signals "
+            f"({', '.join(sorted(face_signals)[:4])}); "
+            "close-up faces and selfies are not permitted."
+        )
 
     # Always reject images with negative labels
     for label in detected:
@@ -426,17 +457,29 @@ def scan_image(image_url: str) -> VisionResult:
     try:
         raw = _call_vision_api(image_url)
         result = _parse_vision_response(image_url, raw)
+        if result.face_count:
+            result.is_valid = False
+            result.rejection_reason = (
+                f"Image contains {result.face_count} detected face"
+                f"{'s' if result.face_count != 1 else ''}; "
+                "close-up faces and selfies are not permitted."
+            )
         logger.info(
-            "Vision scan complete for %s: %d labels, %d objects, OCR=%s",
+            "Vision scan complete for %s: %d labels, %d objects, faces=%d, OCR=%s",
             image_url[:60], len(result.labels), len(result.objects),
-            bool(result.ocr_text),
+            result.face_count, bool(result.ocr_text),
         )
         return result
     except Exception as exc:  # noqa: BLE001
         logger.warning("Vision API scan failed for %s: %s", image_url[:60], exc)
-        # Return a fallback that accepts the image (non-blocking)
-        return VisionResult(image_url=image_url, is_valid=True,
-                            context_summary="Vision scan unavailable.")
+        # Keep the result non-throwing so tag-based gallery classification can
+        # continue, but do not claim an unscanned image passed verification.
+        return VisionResult(
+            image_url=image_url,
+            is_valid=False,
+            rejection_reason="Vision scan unavailable; image could not be verified.",
+            context_summary="Vision scan unavailable.",
+        )
 
 
 def validate_image_for_section(image_url: str, section_topic: str) -> VisionResult:

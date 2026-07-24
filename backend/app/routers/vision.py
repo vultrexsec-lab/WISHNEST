@@ -84,6 +84,7 @@ class VisionResultOut(BaseModel):
     image_url: str
     labels: list[VisionLabelOut]
     objects: list[VisionObjectOut]
+    face_count: int
     ocr_text: str
     web_entities: list[str]
     is_valid: bool
@@ -125,6 +126,7 @@ def _vision_result_to_out(r: VisionResult) -> VisionResultOut:
                 for lb in r.labels],
         objects=[VisionObjectOut(name=obj.name, confidence=obj.confidence)
                  for obj in r.objects],
+        face_count=r.face_count,
         ocr_text=r.ocr_text,
         web_entities=r.web_entities,
         is_valid=r.is_valid,

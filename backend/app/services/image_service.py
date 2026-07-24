@@ -250,6 +250,7 @@ _OUTDOOR_PHOTO_TAG_TOKENS: frozenset[str] = frozenset({
     "outdoor", "outdoors", "open air", "garden", "pool", "swimming pool",
     "terrace", "balcony", "patio", "veranda", "deck", "courtyard",
     "nature", "landscape", "greenery", "valley", "forest",
+    "tent", "tents", "camp", "campsite", "camping", "glamping",
 })
 
 # Tokens for hospitality/reception sections — lobby/entrance ONLY.
@@ -693,8 +694,9 @@ _PERSON_VISION_LABELS: frozenset[str] = frozenset({
 _SECTION_TO_VISION_CATEGORIES: dict[str, list[str]] = {
     # Culinary: food/dining/plated images ONLY — no pool, no bedroom.
     "culinary":     [PHOTO_CAT_DINING],
-    # Outdoor: garden/pool/landscape first, then spa/pool amenity shots.
-    "outdoor":      [PHOTO_CAT_OUTDOOR, PHOTO_CAT_AMENITY],
+    # Outdoor Spaces: only garden/lawn/landscape/camping imagery. Pools and
+    # generic amenities are deliberately not accepted as a substitute.
+    "outdoor":      [PHOTO_CAT_OUTDOOR],
     # Room Design: STRICTLY bedroom interiors — bathroom is now a SEPARATE
     # category (PHOTO_CAT_BATHROOM) and is EXCLUDED from this section.
     "room_design":  [PHOTO_CAT_ROOMS],
@@ -702,7 +704,10 @@ _SECTION_TO_VISION_CATEGORIES: dict[str, list[str]] = {
     # lounge / reception / parking (AMENITY). No outdoor nature shots.
     "connectivity": [PHOTO_CAT_EXTERIOR, PHOTO_CAT_AMENITY],
     "intro":        [PHOTO_CAT_EXTERIOR, PHOTO_CAT_OUTDOOR],
-    "hospitality":  [PHOTO_CAT_EXTERIOR, PHOTO_CAT_ROOMS],
+    # Hospitality is a service/arrival section, not a food or bedroom section.
+    # Amenity photos cover reception, lounges, and guest-service areas without
+    # borrowing the dining or outdoor pools.
+    "hospitality":  [PHOTO_CAT_EXTERIOR, PHOTO_CAT_AMENITY],
     "general":      [PHOTO_CAT_EXTERIOR, PHOTO_CAT_OUTDOOR, PHOTO_CAT_AMENITY],
 }
 
@@ -715,9 +720,11 @@ _SECTION_EXCLUDED_VISION_CATS: dict[str, frozenset[str]] = {
         PHOTO_CAT_ROOMS, PHOTO_CAT_BATHROOM, PHOTO_CAT_OUTDOOR,
         PHOTO_CAT_EXTERIOR, PHOTO_CAT_AMENITY,
     }),
-    # Outdoor Spaces: never indoor rooms, bathroom, or food.
+    # Outdoor Spaces: only outdoor/nature imagery; no rooms, dining, generic
+    # amenities, or building-only exteriors.
     "outdoor": frozenset({
         PHOTO_CAT_DINING, PHOTO_CAT_ROOMS, PHOTO_CAT_BATHROOM,
+        PHOTO_CAT_AMENITY, PHOTO_CAT_EXTERIOR,
     }),
     # Connectivity: entrance/amenity (game room/lounge) — no rooms, food,
     # outdoor nature, or bathroom.
@@ -732,9 +739,19 @@ _SECTION_EXCLUDED_VISION_CATS: dict[str, frozenset[str]] = {
     # Intro / General: no rooms, no bathroom, no dining.
     "intro": frozenset({PHOTO_CAT_ROOMS, PHOTO_CAT_BATHROOM, PHOTO_CAT_DINING}),
     "general": frozenset({PHOTO_CAT_ROOMS, PHOTO_CAT_BATHROOM, PHOTO_CAT_DINING}),
-    # Hospitality: no bathroom, no dining.
-    "hospitality": frozenset({PHOTO_CAT_BATHROOM, PHOTO_CAT_DINING}),
+    # Hospitality: no bathroom, dining, rooms, or outdoor nature. A reception,
+    # lounge, entrance, or other service/amenity photo is the only valid match.
+    "hospitality": frozenset({
+        PHOTO_CAT_BATHROOM, PHOTO_CAT_DINING, PHOTO_CAT_ROOMS, PHOTO_CAT_OUTDOOR,
+    }),
 }
+
+# These section types describe a specific visual subject. If that subject is
+# unavailable, returning a blank is safer than silently showing a visibly
+# wrong photo from another category.
+_STRICT_SECTION_TYPES: frozenset[str] = frozenset({
+    "culinary", "outdoor", "room_design", "hospitality",
+})
 
 
 @dataclass
@@ -770,9 +787,22 @@ def _classify_photo_vision_category(
         try:
             from app.services.vision_service import scan_image  # lazy import
             vr = scan_image(raw_url)
+            if vr:
+                # FACE_DETECTION is authoritative and independent of label
+                # ordering. A person can be visually prominent while Vision's
+                # top label is "hotel", "room", or "landscape".
+                if getattr(vr, "face_count", 0):
+                    return "selfie", 0.0, True
+
             if vr and vr.labels:
                 label_names_scored = [(lb.description.lower(), lb.score) for lb in vr.labels]
                 all_label_names = {n for n, _ in label_names_scored}
+
+                # Any explicit face/selfie signal is a hard rejection. The old
+                # implementation only rejected a face when "person" was first,
+                # which allowed a bedroom/background label to mask a selfie.
+                if all_label_names & (_SELFIE_VISION_LABELS | {"face", "portrait"}):
+                    return "selfie", 0.0, True
 
                 # Check for selfie: top label is person AND a close-up body-part label present
                 top_label = label_names_scored[0][0] if label_names_scored else ""
@@ -792,6 +822,24 @@ def _classify_photo_vision_category(
                     cat = _VISION_LABEL_TO_CATEGORY.get(label_desc)
                     if cat:
                         cat_scores[cat] = cat_scores.get(cat, 0.0) + score
+
+                # Outdoor evidence wins over weak indoor/furniture labels. This
+                # prevents a garden table/umbrella photo from being classified
+                # as a room merely because Vision also returned "furniture",
+                # "table", or "design".
+                outdoor_signals = {
+                    PHOTO_CAT_OUTDOOR,
+                    PHOTO_CAT_AMENITY,
+                    PHOTO_CAT_EXTERIOR,
+                }
+                if cat_scores.get(PHOTO_CAT_OUTDOOR, 0.0) > 0 and (
+                    cat_scores.get(PHOTO_CAT_ROOMS, 0.0) < 0.75
+                    or cat_scores[PHOTO_CAT_OUTDOOR] >= cat_scores.get(PHOTO_CAT_ROOMS, 0.0)
+                ):
+                    for outdoor_cat in outdoor_signals:
+                        if outdoor_cat != PHOTO_CAT_OUTDOOR:
+                            cat_scores.pop(outdoor_cat, None)
+                    cat_scores[PHOTO_CAT_OUTDOOR] += 0.5
 
                 # ── Quality gate (applied before category return) ─────────
                 # Reject photos whose top-3 Vision labels are all unusable
@@ -826,8 +874,10 @@ def _classify_photo_vision_category(
                         if top_label_is_person:
                             # Primary subject is a person — treat as selfie/portrait
                             return "selfie", 0.0, True
-                        # Person present but not the dominant label — strong penalty
-                        quality *= 0.25  # push to bottom of bucket; only picked as last resort
+                        # A person is still a disallowed editorial subject. Do
+                        # not keep it as a last-resort candidate where a later
+                        # fallback could put it in General Overview.
+                        return "selfie", 0.0, True
                     return best_cat, quality, False
 
                 # No editorial category matched — use top-label confidence as
@@ -857,6 +907,10 @@ def _classify_photo_vision_category(
             return PHOTO_CAT_BATHROOM, 0.7, False
         if tag_set & _OUTDOOR_PHOTO_TAG_TOKENS:
             return PHOTO_CAT_OUTDOOR, 0.7, False
+        # Lobby/reception/lounge photos belong to guest experience/amenities,
+        # not Room Design. Keep this before the broad room-interior check.
+        if tag_set & {"lobby", "reception", "concierge", "lounge", "common area"}:
+            return PHOTO_CAT_AMENITY, 0.7, False
         if tag_set & _ROOM_INTERIOR_PHOTO_TAG_TOKENS:
             return PHOTO_CAT_ROOMS, 0.7, False
         if tag_set & _EXTERIOR_PHOTO_TAG_TOKENS:
@@ -978,22 +1032,15 @@ class SmartPhotoPool:
 
         Strategy — always fill, never blank:
           Pass 1 — strict preferred category match (best quality first).
-          Pass 2 — unknown / unclassified real property photos (safe fallback
-                   for every section; Vision couldn't classify them but they
-                   are still real photos from the property gallery).
-          Pass 3 — any non-dining category not in the section's hard exclusions.
-          Pass 4 — smart attractive-property fallback: iterates categories in
-                   a visually-safe priority order, skipping only dining for
-                   non-culinary sections (a food photo under "Connectivity" is
-                   the only truly confusing substitution to avoid).
-          Pass 5 — absolute last resort: any unused photo in the pool,
-                   regardless of category. A real property photo always beats
-                   a blank section slot.
+        Pass 2 — unknown / unclassified photos only for non-strict sections.
+        Strict sections stop after their preferred category is exhausted.
+        This is deliberate: a blank "Room Design" slot is safer than an
+        outdoor photo, and a blank "Culinary" slot is safer than a buffet
+        appearing under Hospitality.
 
-        Hard rejections happen upstream during pool construction (selfies and
-        low_quality/dark/blurry photos are filtered before photos are stored).
-        No photo is rejected here solely because its category doesn't match —
-        visual engagement always wins over an empty section.
+        Hard rejections happen upstream during pool construction (faces,
+        selfies, and low_quality/dark/blurry photos are filtered before photos
+        are stored). Strict section exclusions are also enforced here.
         """
         avoid = global_used or set()
         preferred = _SECTION_TO_VISION_CATEGORIES.get(
@@ -1015,7 +1062,9 @@ class SmartPhotoPool:
                 if self._unused(photo, avoid):
                     return _log_and_return(photo, "preferred")
 
-        # Pass 2: unclassified-but-real property photos.
+        # Pass 2: unclassified-but-real property photos. Strict sections do
+        # not use this fallback because "unknown" can conceal the very mismatch
+        # this routing layer exists to prevent.
         # Skipped for content-strict sections where a mis-classified photo
         # (pool at night → "unknown", dark bedroom → "unknown") would cause a
         # visible section mismatch.  These sections must fall through to Pass 3
@@ -1025,6 +1074,14 @@ class SmartPhotoPool:
             for photo in self._by_category.get("unknown", []):
                 if self._unused(photo, avoid):
                     return _log_and_return(photo, "unknown-fallback")
+
+        if section_type in _STRICT_SECTION_TYPES:
+            logger.warning(
+                "SmartPhotoPool: no strict category match for section=%r; "
+                "leaving slot blank instead of using an incompatible photo.",
+                section_type,
+            )
+            return None
 
         # Pass 3: any category not in this section's hard exclusions.
         # This opens up the remaining pool (amenity, exterior, outdoor, rooms)
@@ -1531,9 +1588,14 @@ def build_deep_gallery_photo_assignments(
         if pick is not None:
             url, cat = pick
         else:
-            # Any unused photo beats an empty slot for LLM grounding purposes.
-            url = pool.pick_any(used)
-            cat = "unknown"
+            # Deep-gallery assignments are used to ground section writing, so
+            # never give the LLM a photo from the wrong visual category.
+            if section_type not in _STRICT_SECTION_TYPES:
+                url = pool.pick_any(used)
+                cat = "unknown"
+            else:
+                url = None
+                cat = "unknown"
             if url is None:
                 continue
         used.add(url)
@@ -1649,7 +1711,11 @@ def generate_article_images(
         # Hero: prefer exterior/facade shot for the article header
         hero_url: str | None = None
         if smart_pool and smart_pool.available:
-            hero_url = smart_pool.pick_any(used_urls)
+            # Use the same intro-safe routing as the multi-property path so
+            # the hero does not consume the only bedroom, dining, or outdoor
+            # image needed by a later strict section.
+            hero_result = smart_pool.pick_for_section("intro", used_urls)
+            hero_url = hero_result[0] if hero_result else smart_pool.pick_any(used_urls)
             if hero_url:
                 used_urls.add(hero_url)
 
@@ -1683,24 +1749,25 @@ def generate_article_images(
                         slot[:50], section_type, vision_cat, url[:60],
                     )
                 else:
-                    # pick_for_section returned None (pool fully exhausted for unique
-                    # photos). Try pick_any which may reuse already-returned photos
-                    # — a real property photo is always preferable to a blank slot.
-                    any_url = smart_pool.pick_any(used_urls)
-                    if any_url:
-                        url = any_url
-                        vision_cat = "unknown"
-                        used_urls.add(any_url)
-                        pool_fill_count += 1
-                        logger.info(
-                            "Section %r (type=%r) → pool pick_for_section exhausted; "
-                            "using next available Google Maps property photo.",
-                            slot[:50], section_type,
-                        )
-                    else:
+                    # Strict sections must remain blank when their exact
+                    # category is unavailable. Reusing an outdoor/food/room
+                    # photo here is precisely how the reported swaps occurred.
+                    if section_type not in _STRICT_SECTION_TYPES:
+                        any_url = smart_pool.pick_any(used_urls)
+                        if any_url:
+                            url = any_url
+                            vision_cat = "unknown"
+                            used_urls.add(any_url)
+                            pool_fill_count += 1
+                            logger.info(
+                                "Section %r (type=%r) → strict category unavailable; "
+                                "using generic fallback for non-strict section.",
+                                slot[:50], section_type,
+                            )
+                    if url is None:
                         logger.warning(
-                            "Section %r (type=%r) → Google Maps property gallery fully "
-                            "exhausted; slot left blank.",
+                            "Section %r (type=%r) → no strict category match; "
+                            "slot left blank.",
                             slot[:50], section_type,
                         )
 
@@ -1913,19 +1980,20 @@ def generate_article_images(
                     heading[:50], section_type, matched_listing.name, vision_cat,
                 )
             else:
-                # All named-listing pools exhausted. Try any remaining photo
-                # from any listing pool (including already-assigned ones) —
-                # a real Google Maps property photo always beats a blank slot.
+                # All named-listing pools exhausted. Only non-strict sections
+                # may use a generic property fallback; strict sections must not
+                # inherit a photo from another visual category.
                 fallback_url: str | None = None
-                for _fb_idx in range(len(all_listings)):
-                    _fb_pool = _get_or_build_smart_pool(_fb_idx)
-                    if _fb_pool is None:
-                        continue
-                    _fb_pick = _fb_pool.pick_any(used_urls)
-                    if _fb_pick is not None:
-                        fallback_url = _fb_pick
-                        used_urls.add(_fb_pick)
-                        break
+                if section_type not in _STRICT_SECTION_TYPES:
+                    for _fb_idx in range(len(all_listings)):
+                        _fb_pool = _get_or_build_smart_pool(_fb_idx)
+                        if _fb_pool is None:
+                            continue
+                        _fb_pick = _fb_pool.pick_any(used_urls)
+                        if _fb_pick is not None:
+                            fallback_url = _fb_pick
+                            used_urls.add(_fb_pick)
+                            break
                 if fallback_url:
                     url = fallback_url
                     vision_cat = "unknown"
