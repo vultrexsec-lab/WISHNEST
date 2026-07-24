@@ -526,16 +526,15 @@ class _SinglePropertyPhotoPool:
     def take_for_section(self, section_type: str) -> tuple[str, list[str]] | None:
         """
         Return (proxied_url, actual_tags) for the best-matching photo for
-        *section_type* using tag-based smart routing, or None if the pool is
-        exhausted or every remaining photo has excluded tags for this section.
+        *section_type* using tag-based smart routing, or None only when the
+        pool is fully exhausted.
 
         Pass 1 — preferred tag match (and no excluded tags).
         Pass 2 — no excluded tags (any neutral/untagged photo is acceptable).
-        Pass 3 — all remaining photos are excluded → return None (blank slot).
-
-        Photos skipped in Pass 3 remain in the pool for future sections that
-        may accept them (e.g. a bedroom photo skipped for "Culinary" may still
-        be used for "room_design").
+        Pass 3 — last resort: any remaining unused photo from the property's
+                  own gallery, regardless of tags. Exterior/entrance/grounds
+                  photos are preferred as universally appropriate fallbacks.
+                  Any real property photo beats a blank slot.
 
         Returns actual SerpApi tags alongside the URL so callers can generate
         captions that reflect the real photo content rather than the section name.
@@ -565,7 +564,20 @@ class _SinglePropertyPhotoPool:
             if not (set(tags) & exclude):
                 return self._hand_out(i)
 
-        # Pass 3: only excluded-tag photos remain — leave slot blank
+        # Pass 3: last resort — exterior/grounds photos are preferred but any
+        # unused real property photo is better than a blank section.
+        # Culinary sections never reach here (returned None above).
+        # Prefer exterior/facade/outdoor tags first, then accept anything.
+        _EXTERIOR_PREFER = _EXTERIOR_PHOTO_TAG_TOKENS | _OUTDOOR_PHOTO_TAG_TOKENS
+        for i, (_, tags) in enumerate(self._photos):
+            if i in self._used:
+                continue
+            if set(tags) & _EXTERIOR_PREFER:
+                return self._hand_out(i)
+        # Absolute last resort: any unused photo from the property gallery.
+        for i in range(len(self._photos)):
+            if i not in self._used:
+                return self._hand_out(i)
         return None
 
     def take_any_remaining(self) -> tuple[str, list[str]] | None:
@@ -997,7 +1009,36 @@ class SmartPhotoPool:
                         )
                         return photo.proxied_url, cat
 
-        # No suitable photo
+        # Pass 4 (Last Resort): every section — including strict sections like
+        # "connectivity" and "outdoor" — should receive a real photo rather than
+        # a blank slot. If the pool still has unused photos, return the best one.
+        #
+        # Priority order: exterior/amenity first (visually neutral), then rooms,
+        # then anything. Dining photos are excluded for non-culinary sections to
+        # avoid a food image under a "Connectivity" or "Outdoor" heading.
+        # Culinary sections never reach this pass (they returned None above after
+        # Pass 1 failed to find a food photo).
+        _LAST_RESORT_PREFER_ORDER = [
+            PHOTO_CAT_EXTERIOR,
+            PHOTO_CAT_OUTDOOR,
+            PHOTO_CAT_AMENITY,
+            PHOTO_CAT_ROOMS,
+            "unknown",
+        ]
+        _skip_dining_for = section_type != "culinary"
+        for cat in _LAST_RESORT_PREFER_ORDER:
+            if _skip_dining_for and cat == PHOTO_CAT_DINING:
+                continue
+            for photo in self._by_category.get(cat, []):
+                if self._unused(photo, avoid):
+                    self._used_proxied.add(photo.proxied_url)
+                    logger.info(
+                        "SmartPhotoPool: section=%r → last-resort fallback cat=%r (q=%.2f)",
+                        section_type, cat, photo.quality_score,
+                    )
+                    return photo.proxied_url, cat
+
+        # Pool fully exhausted for this article
         return None
 
     def pick_any(self, global_used: set[str] | None = None) -> str | None:
@@ -1951,15 +1992,21 @@ def _inject_images_into_html(
         alt = html.escape(heading_text[:120], quote=True)
 
         # Caption priority:
-        #   1. Derive from the photo's actual SerpApi tags (most accurate).
-        #   2. Fall back to the section-type-derived label (e.g. "Exterior view"
-        #      for intro sections when no tags are available).
-        # This prevents captions like "Exterior view — Introduction to Amanbagh"
-        # appearing under a photo that is clearly an indoor bedroom.
+        #   1. Derive from the photo's actual SerpApi / Vision tags (most accurate).
+        #   2. Fall back to the section-type-derived label ONLY when actual_tags
+        #      is completely empty (i.e. no tag information whatsoever). When
+        #      tags are non-empty but unrecognised, use an empty prefix so the
+        #      caption shows just the heading — this prevents a bedroom photo from
+        #      being mislabelled "Exterior view" because it landed in an intro slot.
         caption_prefix = _caption_prefix_from_actual_tags(actual_tags)
         if caption_prefix is None:
-            section_type_for_caption = _classify_section(heading_text)
-            caption_prefix = _SECTION_CAPTION_PREFIX.get(section_type_for_caption, "")
+            if not actual_tags:
+                # Truly no tag information — fall back to section-type label.
+                section_type_for_caption = _classify_section(heading_text)
+                caption_prefix = _SECTION_CAPTION_PREFIX.get(section_type_for_caption, "")
+            else:
+                # Tags present but unrecognised — don't guess; show heading only.
+                caption_prefix = ""
         # Only prepend the prefix when it adds information; never emit the bare
         # "Property feature" label that was previously used as a generic fallback.
         if caption_prefix:
