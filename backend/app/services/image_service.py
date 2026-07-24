@@ -454,20 +454,55 @@ class _SinglePropertyPhotoPool:
         # Pass 3: smart visual fallback — attractive property photos preferred.
         # Priority: exterior façade/entrance → outdoor garden/pool/terrace →
         # common-area / amenity → any other tagged photo.
-        # Only hard mismatch skipped: an indoor-bed photo is never shown for
-        # an Outdoor section; a food-close-up is never shown for a non-culinary
-        # section with abundant other options.
+        # Hard skips prevent the worst editorial mismatches per section type.
         _APPEAL_PREFER = (
             _EXTERIOR_PHOTO_TAG_TOKENS
             | _OUTDOOR_PHOTO_TAG_TOKENS
             | frozenset({"pool", "terrace", "patio", "garden", "courtyard",
                          "lobby", "lounge", "reception", "common area"})
         )
-        # Per-section single hard skip: only the most confusing tag combos.
+
+        # Per-section hard skips: all tag tokens that must NEVER appear for
+        # that section type, even in the "attractive fallback" pass.
+        #
+        # room_design: strictly indoor — ALL outdoor / exterior tokens blocked.
+        #   Outdoor lawn, cottage exterior, garden, or pool photos must never
+        #   appear under "Room Design and Comfort" even as a last-resort fallback.
+        #
+        # culinary: ALL building-exterior / landscape tokens blocked.
+        #   When no food photo exists, indoor seating / amenity photos are
+        #   preferred (handled by _APPEAL_PREFER tokens that remain: lobby,
+        #   lounge, reception, courtyard, terrace, patio, pool). Only pure
+        #   exterior facade and nature-landscape tokens are hard-blocked here
+        #   so that a terrace-dining photo can still surface as a culinary
+        #   stand-in, but a shot of the building front or a mountain valley
+        #   can never be shown under a "Culinary Delights" section.
         _HARD_SKIP: dict[str, frozenset[str]] = {
-            "outdoor":     frozenset({"bedroom", "bed", "bathtub", "toilet", "shower"}),
-            "room_design": frozenset({"street", "road", "parking"}),
-            "culinary":    frozenset({"bedroom", "bed", "pool", "garden", "exterior"}),
+            "outdoor": frozenset({
+                "bedroom", "bed", "bathtub", "toilet", "shower",
+            }),
+            "room_design": frozenset(
+                # Block every outdoor / exterior token so lawn, cottage
+                # exterior, and garden photos never land in room sections.
+                _OUTDOOR_PHOTO_TAG_TOKENS
+                | _EXTERIOR_PHOTO_TAG_TOKENS
+                | frozenset({"street", "road", "parking", "scenic",
+                             "panoramic view", "landscape", "valley",
+                             "forest", "nature", "greenery", "lawn",
+                             "grounds", "approach", "scenic view"})
+            ),
+            "culinary": frozenset({
+                "bedroom", "bed",
+                # Hard-block exterior building / facade tokens for culinary.
+                # Terrace, patio, courtyard are NOT blocked — they can be
+                # legitimate outdoor-dining seating areas.
+                "exterior", "outside", "outside view", "building", "facade",
+                "front of property", "outside of building", "property exterior",
+                "street view", "approach", "driveway", "gate", "gate house",
+                # Large-landscape / pure-nature tokens — never culinary.
+                "landscape", "valley", "forest", "nature", "greenery",
+                "lawn", "grounds", "panoramic view", "scenic",
+            }),
         }
         hard_skip = _HARD_SKIP.get(section_type, frozenset())
 
@@ -934,20 +969,34 @@ class SmartPhotoPool:
                     return _log_and_return(photo, "cross-cat-fallback")
 
         # Pass 4: smart attractive-property fallback.
-        # Iterates the full pool in a visually-appealing priority order.
-        # Only dining photos are skipped for non-culinary sections — a food
-        # close-up under "Connectivity" or "Room Design" is the one genuinely
-        # confusing substitution. Rooms/outdoor/exterior work under any heading.
-        _ATTRACTIVE_ORDER = [
-            PHOTO_CAT_EXTERIOR,   # façade, entrance, architecture
-            PHOTO_CAT_OUTDOOR,    # garden, pool, terrace
-            PHOTO_CAT_AMENITY,    # lobby, spa, common areas
-            PHOTO_CAT_ROOMS,      # bedroom, bathroom — still property content
-            PHOTO_CAT_DINING,     # only used here for culinary sections
-        ]
+        # Respects the section's hard exclusion set so outdoor/exterior photos
+        # never end up in room_design and dining photos never end up in outdoor.
+        # For culinary sections with no food photo, prefer AMENITY (indoor seating,
+        # bar, terrace dining area) before resorting to EXTERIOR building shots.
+        if section_type == "culinary":
+            _ATTRACTIVE_ORDER_FOR_SECTION = [
+                PHOTO_CAT_DINING,    # reattempt in case pool state changed
+                PHOTO_CAT_AMENITY,   # indoor seating / terrace / bar — best culinary stand-in
+                PHOTO_CAT_EXTERIOR,  # lobby / entrance — last resort before rooms
+                PHOTO_CAT_ROOMS,     # interior — imperfect but still property content
+                PHOTO_CAT_OUTDOOR,   # outdoor nature — lowest priority for culinary
+            ]
+        else:
+            _ATTRACTIVE_ORDER_FOR_SECTION = [
+                PHOTO_CAT_EXTERIOR,   # façade, entrance, architecture
+                PHOTO_CAT_OUTDOOR,    # garden, pool, terrace
+                PHOTO_CAT_AMENITY,    # lobby, spa, common areas
+                PHOTO_CAT_ROOMS,      # bedroom, bathroom — still property content
+                PHOTO_CAT_DINING,     # only used here as absolute last resort
+            ]
         skip_dining = section_type != "culinary"
-        for cat in _ATTRACTIVE_ORDER:
+        for cat in _ATTRACTIVE_ORDER_FOR_SECTION:
             if skip_dining and cat == PHOTO_CAT_DINING:
+                continue
+            # Honour hard cross-category exclusions — never return a category
+            # that is forbidden for this section type (e.g. EXTERIOR for room_design,
+            # OUTDOOR for culinary).
+            if cat in excluded:
                 continue
             for photo in self._by_category.get(cat, []):
                 if self._unused(photo, avoid):
