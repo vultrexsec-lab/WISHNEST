@@ -140,32 +140,64 @@ def _serpapi_maps_photos_gallery(data_id: str, api_key: str, max_photos: int) ->
     Fetch up to *max_photos* real photo URLs from SerpApi's dedicated
     `google_maps_photos` engine for the business identified by *data_id* —
     the same public photo gallery a user sees on that business's Google Maps
-    listing (exteriors, rooms, pool, dining, etc). Returns [] on any
-    failure or empty response; never raises.
+    listing (exteriors, rooms, pool, dining, etc).
+
+    Paginates automatically using SerpApi's `next_page_token` so that large
+    galleries (50+ photos) are fully harvested rather than capped at the
+    default first-page size (~10 results). Returns [] on any failure or empty
+    response; never raises.
     """
+    _MAX_PAGES = 6  # hard cap — prevents runaway API spend (6 × ~10 = up to 60 photos)
     try:
-        resp = requests.get(
-            "https://serpapi.com/search.json",
-            params={
+        result: list[dict] = []
+        next_page_token: str | None = None
+        pages_fetched = 0
+
+        while len(result) < max_photos and pages_fetched < _MAX_PAGES:
+            params: dict = {
                 "engine": "google_maps_photos",
                 "data_id": data_id,
                 "api_key": api_key,
-            },
-            timeout=_REQUEST_TIMEOUT,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        photos = data.get("photos") or []
-        result: list[dict] = []
-        for photo in photos[:max_photos]:
-            url = photo.get("thumbnail") or photo.get("image")
-            if url:
-                # SerpApi returns tags as a list or single string — normalise.
-                raw_tag = photo.get("tag") or photo.get("tags") or []
-                if isinstance(raw_tag, str):
-                    raw_tag = [raw_tag]
-                tags = [t.strip().lower() for t in raw_tag if isinstance(t, str) and t.strip()]
-                result.append({"url": _upscale_lh3_photo_url(url) or url, "tags": tags})
+            }
+            if next_page_token:
+                params["next_page_token"] = next_page_token
+
+            resp = requests.get(
+                "https://serpapi.com/search.json",
+                params=params,
+                timeout=_REQUEST_TIMEOUT,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            pages_fetched += 1
+
+            photos = data.get("photos") or []
+            if not photos:
+                break  # no more results
+
+            for photo in photos:
+                if len(result) >= max_photos:
+                    break
+                url = photo.get("thumbnail") or photo.get("image")
+                if url:
+                    # SerpApi returns tags as a list or single string — normalise.
+                    raw_tag = photo.get("tag") or photo.get("tags") or []
+                    if isinstance(raw_tag, str):
+                        raw_tag = [raw_tag]
+                    tags = [t.strip().lower() for t in raw_tag if isinstance(t, str) and t.strip()]
+                    result.append({"url": _upscale_lh3_photo_url(url) or url, "tags": tags})
+
+            # Advance to next page if available
+            pagination = data.get("serpapi_pagination") or {}
+            next_page_token = pagination.get("next_page_token")
+            if not next_page_token:
+                break  # no more pages
+
+        if pages_fetched > 1:
+            logger.info(
+                "SerpApi google_maps_photos: fetched %d photos across %d page(s) for data_id=%r",
+                len(result), pages_fetched, data_id,
+            )
         return result
     except Exception as exc:  # noqa: BLE001
         logger.warning("SerpApi google_maps_photos lookup failed for data_id=%r: %s", data_id, exc)

@@ -1243,9 +1243,18 @@ class SmartPhotoPool:
                     return _log_and_return(reusable_candidates[0], label)
 
         # Pass 4: absolute last resort — any unused non-bathroom property photo.
-        # A real photo from the property gallery always beats a blank section slot.
-        # Culinary still blocks pool photos via _is_safe_section_fallback; all
-        # other categories accept any real gallery photo here.
+        # STRICT SECTIONS (culinary, outdoor, room_design) are exempt from this
+        # pass entirely: an unclassified or wrong-category photo is editorially
+        # worse than a blank slot for those sections, so we return None and let
+        # the caller leave the image empty rather than inject a misleading image.
+        if section_type in _STRICT_SECTION_TYPES:
+            logger.warning(
+                "SmartPhotoPool: section=%r — no category-matched photo found; "
+                "skipping last-resort to avoid wrong-category image (strict section).",
+                section_type,
+            )
+            return None
+
         for cat, bucket in self._by_category.items():
             if cat == PHOTO_CAT_BATHROOM:
                 continue
@@ -2113,11 +2122,12 @@ def generate_article_images(
                         break
 
                 # Pass B: absolute last resort — any non-bathroom photo from
-                # any listing pool.  Culinary still rejects pool photos via
-                # _is_safe_section_fallback in pick_for_section; all other
-                # sections accept any real gallery photo here.  A real property
-                # photo always beats a blank slot.
-                if not fallback_url:
+                # any listing pool.  Strict sections (culinary, outdoor,
+                # room_design) are EXCLUDED from this pass: an unclassified
+                # photo whose content we cannot verify is editorially worse
+                # than a blank slot for those sections.  All other sections
+                # accept any real gallery photo here rather than leave a blank.
+                if not fallback_url and section_type not in _STRICT_SECTION_TYPES:
                     for _lr_idx in range(len(all_listings)):
                         _lr_pool = _get_or_build_smart_pool(_lr_idx)
                         if _lr_pool is None:
@@ -2133,6 +2143,13 @@ def generate_article_images(
                                 heading[:50], section_type,
                             )
                             break
+                elif not fallback_url and section_type in _STRICT_SECTION_TYPES:
+                    logger.warning(
+                        "Section %r (type=%r) → strict section with no "
+                        "category-matched photo; leaving slot blank rather than "
+                        "inserting an unverified last-resort image.",
+                        heading[:50], section_type,
+                    )
 
                 if fallback_url:
                     url = fallback_url
