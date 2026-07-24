@@ -657,6 +657,27 @@ _VISION_LABEL_TO_CATEGORY: dict[str, str] = {
     "property": PHOTO_CAT_EXTERIOR, "estate": PHOTO_CAT_EXTERIOR,
 }
 
+# ---------------------------------------------------------------------------
+# Image quality rejection — dark, blurry, or low-resolution photos
+# ---------------------------------------------------------------------------
+
+# Vision labels whose presence in the TOP-3 results flags a photo as unusable:
+# completely dark / silhouetted / heavily blurred / heavily overexposed.
+# When ALL top-3 labels fall inside this set the photo is rejected from the pool.
+_UNUSABLE_PHOTO_LABELS: frozenset[str] = frozenset({
+    "darkness", "black", "silhouette", "shadow",
+    "blur", "blurry", "out of focus", "defocus",
+    "underexposed", "overexposed", "grainy", "noise",
+    "artifact", "glare",
+})
+
+# Minimum confidence for the single top Vision label on an otherwise-unclassified
+# photo.  When Vision returns only very low-confidence labels it has seen mostly
+# noise — the image is likely too dark, blurry, or low-resolution to use.
+# This threshold does NOT apply when a strong editorial category was matched
+# (cat_scores non-empty) — those photos are accepted regardless of this floor.
+_MIN_UNCLASSIFIED_LABEL_CONFIDENCE: float = 0.35
+
 # Vision labels that strongly indicate a selfie / close-up portrait
 _SELFIE_VISION_LABELS: frozenset[str] = frozenset({
     "nose", "forehead", "chin", "cheek", "ear", "lip", "selfie",
@@ -689,8 +710,15 @@ _SECTION_TO_VISION_CATEGORIES: dict[str, list[str]] = {
 # Strict exclusion — these categories MUST NOT appear in these sections
 # (blank photo beats wrong photo)
 _SECTION_EXCLUDED_VISION_CATS: dict[str, frozenset[str]] = {
-    "culinary":  frozenset({PHOTO_CAT_ROOMS, PHOTO_CAT_OUTDOOR}),
-    "outdoor":   frozenset({PHOTO_CAT_DINING, PHOTO_CAT_ROOMS}),
+    "culinary":     frozenset({PHOTO_CAT_ROOMS, PHOTO_CAT_OUTDOOR}),
+    # Outdoor Spaces must NEVER show bedroom/furniture/indoor photos.
+    # ROOMS is the primary risk — bathtubs, beds, and sofas classified as
+    # rooms_stay must be hard-blocked from any outdoor-themed section.
+    "outdoor":      frozenset({PHOTO_CAT_DINING, PHOTO_CAT_ROOMS}),
+    # Connectivity/Access sections show how guests arrive: road, entrance gate,
+    # driveway, building facade.  Room interiors and food photos are never
+    # appropriate here.
+    "connectivity": frozenset({PHOTO_CAT_ROOMS, PHOTO_CAT_DINING}),
 }
 
 
@@ -750,13 +778,32 @@ def _classify_photo_vision_category(
                     if cat:
                         cat_scores[cat] = cat_scores.get(cat, 0.0) + score
 
+                # ── Quality gate (applied before category return) ─────────
+                # Reject photos whose top-3 Vision labels are all unusable
+                # indicators (dark, blurry, silhouetted).  A strong category
+                # match overrides this gate — a well-lit pool that also has a
+                # "shadow" label is still a usable pool photo.
+                top3_names = {n for n, _ in label_names_scored[:3]}
+                top_confidence = label_names_scored[0][1] if label_names_scored else 0.0
+                all_top3_unusable = bool(top3_names) and top3_names.issubset(
+                    _UNUSABLE_PHOTO_LABELS
+                )
+
                 if cat_scores:
                     best_cat = max(cat_scores, key=lambda c: cat_scores[c])
                     quality = min(1.0, cat_scores[best_cat])
+                    # Even with a category match, hard-block if every visible
+                    # label screams "completely dark / blurry".
+                    if all_top3_unusable:
+                        return "low_quality", 0.0, False
                     return best_cat, quality, False
 
-                # Has labels but no category match — still a real photo
-                return "unknown", label_names_scored[0][1] if label_names_scored else 0.3, False
+                # No editorial category matched — use top-label confidence as
+                # a quality proxy.  Very low confidence means Vision saw mostly
+                # noise (dark / blurry / low-res image).
+                if all_top3_unusable or top_confidence < _MIN_UNCLASSIFIED_LABEL_CONFIDENCE:
+                    return "low_quality", 0.0, False
+                return "unknown", top_confidence, False
         except Exception as exc:  # noqa: BLE001
             logger.debug("Vision classify failed for %s: %s", raw_url[:60], exc)
 
@@ -831,6 +878,17 @@ class SmartPhotoPool:
                 logger.debug("SmartPhotoPool: filtered selfie/portrait — %s", raw_url[:60])
                 continue
 
+            # Reject photos flagged as too dark, blurry, or low-resolution.
+            # "low_quality" is returned by _classify_photo_vision_category when
+            # Vision sees only darkness/blur/noise labels or extremely low
+            # confidence — these images would degrade article visual quality.
+            if cat == "low_quality":
+                logger.debug(
+                    "SmartPhotoPool: filtered low-quality/dark/blurry photo — %s",
+                    raw_url[:60],
+                )
+                continue
+
             cp = _ClassifiedPhoto(
                 raw_url=raw_url,
                 proxied_url=proxied,
@@ -902,11 +960,19 @@ class SmartPhotoPool:
                     return photo.proxied_url, cat
 
         # Pass 2: unknown category (unclassified but real photos).
-        # STRICT SECTIONS skip this pass entirely — culinary and room_design require
-        # Vision-verified photo content. An unclassified photo could be a flower valley,
-        # a mountain range, or a customer selfie; none are acceptable under a food or
-        # bedroom heading. Blank image beats a wrong image.
-        _STRICT_CONTENT_SECTIONS: frozenset[str] = frozenset({"culinary", "room_design"})
+        # STRICT SECTIONS skip this pass entirely — these sections require
+        # Vision-verified photo content.  An unclassified photo could be a
+        # bedroom, a bathtub, a road, or a customer selfie; none are safe to
+        # publish under a section that has a specific visual contract with the
+        # reader.  Blank image beats a wrong image.
+        #
+        # "outdoor"     — must show nature/garden/pool; unknown could be any room.
+        # "connectivity"— must show exterior/entrance; unknown could be a bedroom.
+        # "culinary"    — must show food/dining; unknown could be anything.
+        # "room_design" — must show an actual room; unknown could be outdoor scenery.
+        _STRICT_CONTENT_SECTIONS: frozenset[str] = frozenset({
+            "culinary", "room_design", "outdoor", "connectivity"
+        })
         if section_type not in _STRICT_CONTENT_SECTIONS:
             for photo in self._by_category.get("unknown", []):
                 if self._unused(photo, avoid):
@@ -918,7 +984,7 @@ class SmartPhotoPool:
                     return photo.proxied_url, "unknown"
 
         # Pass 3: any non-excluded category (only for low-stakes sections)
-        if section_type not in ("culinary", "outdoor", "room_design"):
+        if section_type not in ("culinary", "outdoor", "room_design", "connectivity"):
             for cat, bucket in self._by_category.items():
                 if cat in excluded or cat == "unknown":
                     continue
