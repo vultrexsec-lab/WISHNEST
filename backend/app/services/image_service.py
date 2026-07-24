@@ -226,9 +226,10 @@ _EXTERIOR_PHOTO_TAG_TOKENS: frozenset[str] = frozenset({
 # Tokens signalling food / dining / kitchen content.
 # Preferred for culinary sections; excluded from all others.
 _CULINARY_PHOTO_TAG_TOKENS: frozenset[str] = frozenset({
-    "food & drink", "food", "drinks", "beverages", "menu", "dining room",
-    "kitchen", "breakfast", "lunch", "dinner", "chef", "meal", "cuisine",
-    "cafe", "bar", "buffet", "restaurant", "cooking", "dishes", "dining",
+    # SerpApi returns "food and drink" (with "and"); keep "food & drink" as well
+    "food & drink", "food and drink", "food", "drinks", "beverages", "menu",
+    "dining room", "kitchen", "breakfast", "lunch", "dinner", "chef", "meal",
+    "cuisine", "cafe", "bar", "buffet", "restaurant", "cooking", "dishes", "dining",
 })
 
 # Tokens signalling a close-up portrait or staff member.
@@ -241,6 +242,7 @@ _PORTRAIT_PHOTO_TAG_TOKENS: frozenset[str] = frozenset({
 # Tokens signalling bedroom / room interior / bathroom content.
 _ROOM_INTERIOR_PHOTO_TAG_TOKENS: frozenset[str] = frozenset({
     "rooms", "room", "bedroom", "suite", "interior", "accommodation",
+    "indoor", "indoors",                 # SerpApi uses "indoor" / "indoors" for room photos
     "bathroom", "washroom", "restroom", "toilet", "living room", "lobby",
     "reception", "lounge", "corridor", "hallway",
 })
@@ -1039,6 +1041,91 @@ def _classify_photo_vision_category(
     return "unknown", 0.3, False
 
 
+def _openai_classify_batch(raw_urls: list[str]) -> list[str]:
+    """
+    Classify a batch of photo URLs using OpenAI GPT-4o-mini vision (low-detail
+    mode — ~85 tokens per image, extremely cheap).
+
+    Returns a list of PHOTO_CAT_* strings (or 'selfie' / 'unknown') parallel
+    to *raw_urls*.  Never raises — returns 'unknown' for every photo in the
+    batch if the API call fails.
+
+    Used as the primary classifier when GOOGLE_CLOUD_VISION_API_KEY is not
+    configured and SerpApi photo tags carry no usable category data.
+    """
+    if not raw_urls:
+        return []
+    settings = get_settings()
+    if not settings.openai_api_key:
+        return ["unknown"] * len(raw_urls)
+
+    import json as _json
+    try:
+        import openai as _openai
+        client = _openai.OpenAI(api_key=settings.openai_api_key)
+
+        n = len(raw_urls)
+        # Build a single message with all images + a classification prompt.
+        content: list[dict] = [
+            {
+                "type": "text",
+                "text": (
+                    f"Classify each of the following {n} hotel/resort photo(s) "
+                    "with exactly one label from this list:\n"
+                    f"  {PHOTO_CAT_DINING} — food on a plate, restaurant table, bar, kitchen, buffet\n"
+                    f"  {PHOTO_CAT_ROOMS} — bedroom, suite interior, bed (NOT bathroom)\n"
+                    f"  {PHOTO_CAT_BATHROOM} — toilet, shower, bathtub, sink, bathroom\n"
+                    f"  {PHOTO_CAT_OUTDOOR} — garden, lawn, swimming pool, landscape, mountains, "
+                    "nature, outdoor spaces, tent/glamping\n"
+                    f"  {PHOTO_CAT_AMENITY} — lobby, lounge, reception desk, spa, gym, "
+                    "pool terrace, game room, indoor common area\n"
+                    f"  {PHOTO_CAT_EXTERIOR} — building facade, entrance gate, driveway, "
+                    "exterior architecture\n"
+                    "  selfie — a person/face is the clear primary subject\n"
+                    "  unknown — cannot determine from image content\n\n"
+                    f"Reply with ONLY a valid JSON array of {n} label string(s) in the same order. "
+                    f'Example for 3 photos: ["{PHOTO_CAT_ROOMS}", "{PHOTO_CAT_OUTDOOR}", '
+                    f'"{PHOTO_CAT_DINING}"]'
+                ),
+            }
+        ]
+        for url in raw_urls:
+            content.append(
+                {"type": "image_url", "image_url": {"url": url, "detail": "low"}}
+            )
+
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": content}],
+            max_tokens=n * 35,
+            temperature=0,
+        )
+        raw_text = resp.choices[0].message.content.strip()
+        # Strip optional markdown code fences
+        if raw_text.startswith("```"):
+            raw_text = re.sub(r"^```[a-z]*\n?", "", raw_text).rstrip("`").strip()
+
+        parsed = _json.loads(raw_text)
+        _VALID_CATS = {
+            PHOTO_CAT_DINING, PHOTO_CAT_ROOMS, PHOTO_CAT_BATHROOM,
+            PHOTO_CAT_OUTDOOR, PHOTO_CAT_AMENITY, PHOTO_CAT_EXTERIOR,
+            "selfie", "unknown",
+        }
+        if isinstance(parsed, list) and len(parsed) == n:
+            return [str(c) if str(c) in _VALID_CATS else "unknown" for c in parsed]
+        logger.warning(
+            "OpenAI classify: response length %d ≠ expected %d; "
+            "raw response: %s", len(parsed) if isinstance(parsed, list) else -1, n, raw_text[:200]
+        )
+        return ["unknown"] * n
+
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "OpenAI batch vision classify failed (%d photo(s)): %s", len(raw_urls), exc
+        )
+        return ["unknown"] * len(raw_urls)
+
+
 class SmartPhotoPool:
     """
     Vision-API-powered photo pool that classifies every photo by content
@@ -1115,6 +1202,56 @@ class SmartPhotoPool:
         # Sort each bucket by quality score descending so best photos surface first
         for bucket in self._by_category.values():
             bucket.sort(key=lambda p: p.quality_score, reverse=True)
+
+        # ── OpenAI batch reclassification of unknown photos ───────────────────
+        # When GOOGLE_CLOUD_VISION_API_KEY is absent AND SerpApi photo tags
+        # carry no usable category data ("All", "Latest", empty), the entire
+        # pool ends up in "unknown".  GPT-4o-mini vision is cheap (low-detail
+        # mode ≈ $0.001 for 75 photos) and accurate enough to rescue those slots.
+        # We batch in groups of 8 to stay well within the per-message image cap.
+        unknowns: list[_ClassifiedPhoto] = list(self._by_category.get("unknown", []))
+        if unknowns and get_settings().openai_api_key:
+            _BATCH_SIZE = 8
+            reclassified_count = 0
+            selfie_purge: list[_ClassifiedPhoto] = []
+
+            for start in range(0, len(unknowns), _BATCH_SIZE):
+                batch = unknowns[start : start + _BATCH_SIZE]
+                new_cats = _openai_classify_batch([p.raw_url for p in batch])
+                for photo, new_cat in zip(batch, new_cats):
+                    if new_cat == "selfie":
+                        # Hard-reject: remove from pool entirely
+                        if photo in self._by_category["unknown"]:
+                            self._by_category["unknown"].remove(photo)
+                        self._total -= 1
+                        selfie_purge.append(photo)
+                        continue
+                    if new_cat in ("unknown", "low_quality"):
+                        continue
+                    # Move photo from "unknown" bucket to its proper category bucket
+                    photo.vision_category = new_cat
+                    photo.quality_score = 0.65  # moderate confidence for AI label
+                    if photo in self._by_category["unknown"]:
+                        self._by_category["unknown"].remove(photo)
+                    self._by_category.setdefault(new_cat, []).append(photo)
+                    reclassified_count += 1
+
+            if reclassified_count or selfie_purge:
+                # Re-sort every affected bucket
+                for bucket in self._by_category.values():
+                    bucket.sort(key=lambda p: p.quality_score, reverse=True)
+                logger.info(
+                    "SmartPhotoPool: OpenAI reclassified %d/%d unknown photos "
+                    "(+%d selfie purge) → dining=%d rooms=%d outdoor=%d "
+                    "amenity=%d exterior=%d unknown=%d",
+                    reclassified_count, len(unknowns), len(selfie_purge),
+                    len(self._by_category[PHOTO_CAT_DINING]),
+                    len(self._by_category[PHOTO_CAT_ROOMS]),
+                    len(self._by_category[PHOTO_CAT_OUTDOOR]),
+                    len(self._by_category[PHOTO_CAT_AMENITY]),
+                    len(self._by_category[PHOTO_CAT_EXTERIOR]),
+                    len(self._by_category["unknown"]),
+                )
 
         logger.info(
             "SmartPhotoPool built: %d photos | dining=%d rooms=%d bathroom=%d "
