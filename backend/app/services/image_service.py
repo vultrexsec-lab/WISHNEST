@@ -1341,7 +1341,10 @@ _ROOM_DESIGN_HEADING_TOKENS: frozenset[str] = frozenset({
     "bedroom", "accommodation",
     "design", "interior", "interiors", "amenities", "amenity",
     "stay", "lodging", "bathroom", "hygiene", "sanitation",
-    "facility", "facilities", "spa", "wellness",
+    "facility", "facilities", "spa",
+    # NOTE: "wellness" deliberately excluded — "Wellness Philosophy /
+    # Offerings" headings describe guest experience / hospitality, not
+    # room architecture.  They are classified as "hospitality" instead.
 })
 
 _HOSPITALITY_HEADING_TOKENS: frozenset[str] = frozenset({
@@ -1352,6 +1355,10 @@ _HOSPITALITY_HEADING_TOKENS: frozenset[str] = frozenset({
     "concierge", "reception", "front-desk", "frontdesk",
     "welcome", "warmth", "care", "attention",
     "impression", "impressions", "testimonial", "testimonials",
+    # Wellness headings ("Wellness Philosophy", "Wellness Offerings",
+    # "Wellness Programs") describe guest experience, not room design.
+    "wellness", "holistic", "mindfulness", "retreat",
+    "philosophy", "offering", "offerings", "program", "programs",
 })
 
 # Human-readable labels for figure captions.
@@ -1957,13 +1964,17 @@ def generate_article_images(
 
     def _take_sequential_smart(section_type: str):
         """
-        Pick the next unused listing in order, build/reuse its SmartPhotoPool,
-        and return the best-matching photo for *section_type*.
-        Returns (proxied_url, listing, vision_cat) or None when exhausted.
+        Pick the best-matching photo for *section_type* from any available
+        listing pool.  Listings are NOT locked to a single section — the same
+        property gallery can supply photos for multiple sections.  Unique-image
+        deduplication is handled at URL level via *used_urls* and the pool's
+        own _used_proxied set; with allow_reuse=True a photo can repeat only
+        when the gallery is smaller than the number of sections.
+
+        Returns (proxied_url, listing, vision_cat) or None when every listing
+        pool is exhausted for this section type.
         """
         for i, listing in enumerate(all_listings):
-            if i in _assigned_indices:
-                continue
             pool = _get_or_build_smart_pool(i)
             if pool is None or not pool.available:
                 continue
@@ -1972,7 +1983,6 @@ def generate_article_images(
             )
             if result is not None:
                 url, vision_cat = result
-                _assigned_indices.add(i)
                 used_urls.add(url)
                 _used_listings.append(listing)
                 return url, listing, vision_cat
@@ -2016,9 +2026,7 @@ def generate_article_images(
                     heading[:50], section_type, matched_listing.name, vision_cat,
                 )
             else:
-                # All named-listing pools exhausted for the preferred category.
-                # Revisit each property gallery with the same safe fallback
-                # policy; never use unrestricted pick_any here.
+                # Pass A: revisit each listing pool with safe-fallback policy.
                 fallback_url: str | None = None
                 for _fb_idx in range(len(all_listings)):
                     _fb_pool = _get_or_build_smart_pool(_fb_idx)
@@ -2031,6 +2039,29 @@ def generate_article_images(
                         fallback_url, vision_cat = _fb_result
                         used_urls.add(fallback_url)
                         break
+
+                # Pass B: absolute last resort — any non-bathroom photo from
+                # any listing pool.  Culinary still rejects pool photos via
+                # _is_safe_section_fallback in pick_for_section; all other
+                # sections accept any real gallery photo here.  A real property
+                # photo always beats a blank slot.
+                if not fallback_url:
+                    for _lr_idx in range(len(all_listings)):
+                        _lr_pool = _get_or_build_smart_pool(_lr_idx)
+                        if _lr_pool is None:
+                            continue
+                        _lr_url = _lr_pool.pick_any(used_urls)
+                        if _lr_url:
+                            fallback_url = _lr_url
+                            vision_cat = "unknown"
+                            used_urls.add(_lr_url)
+                            logger.warning(
+                                "Section %r (type=%r) → last-resort pick_any "
+                                "photo used; no category-matched photo available.",
+                                heading[:50], section_type,
+                            )
+                            break
+
                 if fallback_url:
                     url = fallback_url
                     logger.info(
