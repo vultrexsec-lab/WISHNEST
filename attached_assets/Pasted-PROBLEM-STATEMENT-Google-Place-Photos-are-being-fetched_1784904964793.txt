@@ -1,0 +1,26 @@
+PROBLEM STATEMENT:
+Google Place Photos are being fetched, but image classification/categorization is failing (logs showing `unknown-fallback cat='unknown' q=0.30`). This causes wrong image assignment (e.g., Bedroom photo under 'Outdoor Spaces', Pool under 'Culinary', Bathroom under 'Room Design', and personal visitor photos under 'General Overview').
+
+REQUIRED FIXES IN THE PIPELINE:
+
+1. FIX IMAGE CLASSIFICATION / VISION GROUNDING:
+   - Ensure the Vision Model / LLM Vision API prompt receives each photo and correctly labels them into strict categories:
+     ['intro', 'outdoor', 'culinary', 'room_design', 'bathroom', 'hospitality', 'connectivity', 'amenity']
+   - FILTER OUT PERSONAL / VISITOR PHOTOS: Add a pre-filter step to detect faces/people or low-quality visitor uploads so they are NEVER assigned to 'General Overview' or any section.
+
+2. ENFORCE STRICT SECTION-TO-CATEGORY MAPPING:
+   - "Outdoor Spaces and Views" -> MUST ONLY take images categorized as 'outdoor' / 'exterior' / 'views'.
+   - "Culinary Experience" -> MUST ONLY take images categorized as 'dining' / 'food' / 'culinary' / 'restaurant'.
+   - "Room Design and Comfort" -> MUST ONLY take images categorized as 'bedroom' / 'room' / 'suite'.
+   - "Hospitality / Bath / Amenities" -> Assign 'bathroom' or 'spa' photos here, NOT under general Room Design.
+   - "Connectivity and Accessibility" -> MUST NOT use random gazebo images; use maps/location/entrance or skip image if unavailable.
+   - "General Overview" / "Intro" -> MUST ONLY use high-level exterior/resort property architectural photos.
+
+3. DYNAMIC CONTENT GENERATION BASED ON ACTUAL IMAGE:
+   - Once an image is correctly assigned to a section, pass the photo metadata / classification context to the Text Generator prompt.
+   - The generated text and caption MUST accurately describe what is depicted in that specific photo, rather than generating generic placeholder text.
+
+4. FALLBACK LOGIC:
+   - If no valid photo exists for a specific section (e.g., no culinary photo found), DO NOT inject a random/unknown photo. Either omit the image for that section or use a verified category match.
+
+PLEASE APPLY THESE CHANGES TO THE IMAGE SERVICE / RESEARCH PIPELINE AND COMMIT/PUSH THE UPDATED CODE TO GITHUB.

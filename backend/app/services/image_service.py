@@ -1205,13 +1205,13 @@ class SmartPhotoPool:
         if fallback is not None:
             return fallback
 
-        # Pass 3: try "unknown"-category photos as an additional safe fallback.
-        # These are real property-gallery photos that Vision couldn't classify
-        # into a named category (e.g. abstract decor, dim corridor, unusual
-        # angle).  They are not selfies or low-quality (those were filtered at
-        # pool construction time).  Better than a blank slot, ranked below any
-        # classified photo of the right type.
-        if "unknown" not in excluded:
+        # Pass 3: try "unknown"-category photos as a safe fallback — BUT only
+        # for non-strict sections (intro, general, connectivity, hospitality).
+        # For strict sections (culinary, outdoor, room_design) an unclassified
+        # photo could be a pool, bedroom, or bathroom — exactly the mismatch
+        # we are trying to prevent.  Better to leave those slots blank than to
+        # inject an unknown photo whose content we cannot verify.
+        if "unknown" not in excluded and section_type not in _STRICT_SECTION_TYPES:
             for photo in self._by_category.get("unknown", []):
                 if not _is_safe_section_fallback(photo, section_type, "safe-fallback"):
                     continue
