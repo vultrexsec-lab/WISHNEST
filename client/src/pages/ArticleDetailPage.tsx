@@ -11,12 +11,6 @@ import {
   overallGrade,
 } from "@/lib/article-types";
 
-// Verified, always-public food placeholder — used as an onerror fallback
-// for any broken image inside the article body (culinary slots that were
-// stored before the backend food-placeholder fix was deployed).
-const FOOD_IMAGE_FALLBACK =
-  "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?q=80&w=1000";
-
 /**
  * Safely convert any property_snapshot value to a display string.
  *
@@ -133,8 +127,9 @@ export const ArticleDetailPage = (): JSX.Element => {
   });
 
   // MUST be declared before any early return — React Rules of Hooks.
-  // Patch broken images inside the rendered article body so a failed proxy
-  // or stale URL never shows the browser's broken-image icon.
+  // Hide failed article-image containers rather than replacing them with an
+  // unrelated stock/food image. This is especially important for strict
+  // Culinary sections: no verified food photo means no image container.
   useEffect(() => {
     if (!article?.full_article) return;
     const body = document.querySelector<HTMLElement>(
@@ -143,12 +138,16 @@ export const ArticleDetailPage = (): JSX.Element => {
     if (!body) return;
     const imgs = body.querySelectorAll<HTMLImageElement>("img");
     imgs.forEach((img) => {
-      if (img.src === FOOD_IMAGE_FALLBACK) return;
       img.addEventListener(
         "error",
         function onError() {
           img.removeEventListener("error", onError);
-          img.src = FOOD_IMAGE_FALLBACK;
+          const container = img.closest("figure") ?? img.parentElement;
+          if (container instanceof HTMLElement) {
+            container.hidden = true;
+          } else {
+            img.hidden = true;
+          }
         },
         { once: true },
       );
@@ -323,6 +322,13 @@ export const ArticleDetailPage = (): JSX.Element => {
                               loading="lazy"
                               referrerPolicy="no-referrer"
                               className="h-[160px] w-full rounded-lg object-cover"
+                              onError={(event) => {
+                                const container =
+                                  event.currentTarget.parentElement;
+                                if (container instanceof HTMLElement) {
+                                  container.hidden = true;
+                                }
+                              }}
                             />
                             {caption && (
                               <p className="mt-1.5 [font-family:'Inter',Helvetica] text-[11px] italic text-[#6b6b6b]">

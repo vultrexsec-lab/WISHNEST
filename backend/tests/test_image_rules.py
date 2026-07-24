@@ -83,7 +83,7 @@ def test_strict_section_uses_safe_fallback_instead_of_blank():
     assert culinary_pick is None
 
 
-def test_safe_fallback_never_uses_bathroom_or_core_mismatch():
+def test_culinary_hides_when_only_bathroom_pool_or_facade_photos_exist():
     pool = SmartPhotoPool(
         [
             {"url": "https://example.test/bathroom.jpg", "tags": ["bathroom", "toilet"]},
@@ -96,14 +96,12 @@ def test_safe_fallback_never_uses_bathroom_or_core_mismatch():
     culinary = pool.pick_for_section("culinary")
     hospitality = pool.pick_for_section("hospitality")
 
-    assert culinary is not None
-    assert culinary[0].endswith("facade.jpg")
-    assert culinary[1] != image_service.PHOTO_CAT_BATHROOM
+    assert culinary is None
     assert hospitality is not None
     assert hospitality[1] != image_service.PHOTO_CAT_BATHROOM
 
 
-def test_culinary_fallback_allows_landscape_but_rejects_pool():
+def test_culinary_hides_when_only_landscape_or_pool_photos_exist():
     pool = SmartPhotoPool(
         [
             {"url": "https://example.test/pool.jpg", "tags": ["pool", "swimming pool"]},
@@ -114,9 +112,29 @@ def test_culinary_fallback_allows_landscape_but_rejects_pool():
 
     picked = pool.pick_for_section("culinary")
 
-    assert picked is not None
-    assert picked[0].endswith("valley.jpg")
-    assert picked[1] == PHOTO_CAT_OUTDOOR
+    assert picked is None
+
+
+def test_culinary_blocks_signs_parking_and_reception_even_with_food_tag():
+    pool = SmartPhotoPool(
+        [
+            {
+                "url": "https://example.test/sign.jpg",
+                "tags": ["restaurant", "signboard"],
+            },
+            {
+                "url": "https://example.test/parking.jpg",
+                "tags": ["food", "parking"],
+            },
+            {
+                "url": "https://example.test/reception.jpg",
+                "tags": ["dining", "reception"],
+            },
+        ],
+        max_vision_calls=0,
+    )
+
+    assert pool.pick_for_section("culinary") is None
 
 
 def test_safe_photo_can_be_reused_when_gallery_is_smaller_than_sections():

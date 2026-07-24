@@ -1045,18 +1045,36 @@ function ArticlePreviewModal({
 
           {/* Section images strip (before body) */}
           {article.section_image_urls &&
-            article.section_image_urls.some(Boolean) && (
+            article.section_image_urls.some(
+              (url) =>
+                typeof url === "string" &&
+                (url.startsWith("http://") ||
+                  url.startsWith("https://") ||
+                  url.startsWith("/api/image-proxy?url=")),
+            ) && (
               <div className="border-b border-[#1e1e1e1a] bg-white px-5 py-6 sm:px-10">
                 <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
                   {article.section_image_urls
                     .map((url, originalIdx) => ({ url, caption: article.captions?.[originalIdx] }))
-                    .filter(({ url }) => !!url)
+                    .filter(
+                      ({ url }) =>
+                        typeof url === "string" &&
+                        (url.startsWith("http://") ||
+                          url.startsWith("https://") ||
+                          url.startsWith("/api/image-proxy?url=")),
+                    )
                     .map(({ url, caption }, i) => (
                     <div key={i}>
                       <img
                         src={url}
                         alt={caption || `Section ${i + 1} — ${article.headline}`}
                         className="h-[120px] w-full rounded-lg object-cover sm:h-[160px]"
+                        onError={(event) => {
+                          const container = event.currentTarget.parentElement;
+                          if (container instanceof HTMLElement) {
+                            container.hidden = true;
+                          }
+                        }}
                       />
                       {caption && (
                         <p className="mt-1.5 [font-family:'Inter',Helvetica] text-[11px] italic text-[#6b6b6b]">
@@ -1859,7 +1877,13 @@ function ArticleCard({
 
                 {(article.hero_image_url ||
                   (article.section_image_urls &&
-                    article.section_image_urls.some(Boolean))) && (
+                    article.section_image_urls.some(
+                      (url) =>
+                        typeof url === "string" &&
+                        (url.startsWith("http://") ||
+                          url.startsWith("https://") ||
+                          url.startsWith("/api/image-proxy?url=")),
+                    ))) && (
                   <div>
                     <div className="grid gap-3 sm:grid-cols-3">
                       {article.hero_image_url && (
@@ -1871,11 +1895,23 @@ function ArticleCard({
                             src={article.hero_image_url}
                             alt={`Hero image — ${article.headline}`}
                             className="h-[220px] w-full rounded-lg object-cover"
+                            onError={(event) => {
+                              const container = event.currentTarget.parentElement;
+                              if (container instanceof HTMLElement) {
+                                container.hidden = true;
+                              }
+                            }}
                           />
                         </div>
                       )}
-                      {(article.section_image_urls ?? [])
-                        .filter(Boolean)
+                       {(article.section_image_urls ?? [])
+                         .filter(
+                           (url) =>
+                             typeof url === "string" &&
+                             (url.startsWith("http://") ||
+                               url.startsWith("https://") ||
+                               url.startsWith("/api/image-proxy?url=")),
+                         )
                         .slice(0, 2)
                         .map((url, i) => (
                           <div key={i} className="sm:col-span-1">
@@ -1886,6 +1922,12 @@ function ArticleCard({
                               src={url}
                               alt={`Section image ${i + 1} — ${article.headline}`}
                               className="h-[150px] w-full rounded-lg object-cover"
+                              onError={(event) => {
+                                const container = event.currentTarget.parentElement;
+                                if (container instanceof HTMLElement) {
+                                  container.hidden = true;
+                                }
+                              }}
                             />
                           </div>
                         ))}

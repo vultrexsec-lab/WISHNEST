@@ -232,6 +232,19 @@ _CULINARY_PHOTO_TAG_TOKENS: frozenset[str] = frozenset({
     "cuisine", "cafe", "bar", "buffet", "restaurant", "cooking", "dishes", "dining",
 })
 
+# A culinary photo must show food or a genuine dining setup.  These tags are
+# explicit negative evidence: a sign, banner, parking area, reception, or
+# property-arrival image must never be promoted into "Culinary Delights", even
+# when a provider also attaches a broad positive tag such as "restaurant".
+_CULINARY_BLOCKED_PHOTO_TAG_TOKENS: frozenset[str] = frozenset({
+    "sign", "signboard", "sign board", "banner", "poster", "billboard",
+    "parking", "parking lot", "parking area", "car park",
+    "reception", "front desk", "lobby", "concierge",
+    "entrance", "entrance gate", "gate", "driveway", "approach",
+    "building", "facade", "exterior", "property exterior",
+    "outside", "outside view", "street view",
+})
+
 # Tokens signalling a close-up portrait or staff member.
 # Excluded from all sections except explicit hospitality headings.
 _PORTRAIT_PHOTO_TAG_TOKENS: frozenset[str] = frozenset({
@@ -314,7 +327,8 @@ def _section_photo_preferences(
             _CULINARY_PHOTO_TAG_TOKENS,
             _PORTRAIT_PHOTO_TAG_TOKENS | _ROOM_INTERIOR_PHOTO_TAG_TOKENS
             | _OUTDOOR_PHOTO_TAG_TOKENS | _EXTERIOR_PHOTO_TAG_TOKENS
-            | _BATHROOM_PHOTO_TAG_TOKENS,
+            | _BATHROOM_PHOTO_TAG_TOKENS
+            | _CULINARY_BLOCKED_PHOTO_TAG_TOKENS,
         )
     if section_type == "connectivity":
         # Connectivity / Amenities: entrance, gate, road, lounge, game room,
@@ -461,6 +475,11 @@ class _SinglePropertyPhotoPool:
             if prefer and (tag_set & prefer):
                 return self._hand_out(i)
 
+        # Culinary is fail-closed.  An untagged photo cannot prove that it
+        # contains food or a dining setup, so never use it as a substitute.
+        if section_type == "culinary":
+            return None
+
         # Pass 2: any photo with no excluded tags (untagged counts as neutral).
         for i, (_, tags) in enumerate(self._photos):
             if i in self._used:
@@ -519,6 +538,10 @@ class _SinglePropertyPhotoPool:
                 # Large-landscape / pure-nature tokens — never culinary.
                 "landscape", "valley", "forest", "nature", "greenery",
                 "lawn", "grounds", "panoramic view", "scenic",
+                # Explicitly disallowed arrival/signage imagery.
+                "sign", "signboard", "sign board", "banner", "poster",
+                "billboard", "parking", "parking lot", "parking area",
+                "reception", "front desk", "lobby", "concierge",
             }),
         }
         hard_skip = _HARD_SKIP.get(section_type, frozenset())
@@ -562,7 +585,7 @@ class _SinglePropertyPhotoPool:
 #   2. Filters out selfies, close-up portraits, and blurry customer snapshots.
 #   3. For each article section, picks the single BEST quality photo that
 #      strictly matches the section's content category.
-#   4. Enforces hard cross-category exclusions (e.g. NEVER puts a dining photo
+        #   4. Enforces hard cross-category exclusions (e.g. NEVER puts a dining photo
 #      under an Outdoor section).
 # ===========================================================================
 
@@ -722,10 +745,8 @@ _SECTION_TO_VISION_CATEGORIES: dict[str, list[str]] = {
 # match is unavailable, the safe fallback policy below may use an exterior,
 # landscape, or decor/amenity photo instead of leaving a section blank.
 _SECTION_EXCLUDED_VISION_CATS: dict[str, frozenset[str]] = {
-    # Culinary: only dining photos preferred; OUTDOOR also excluded because
-    # pool/garden photos classify as outdoor and are editorially wrong for
-    # a dining section.  Only EXTERIOR (building facade) is a safe neutral
-    # fallback when no dining photo exists.
+    # Culinary is fail-closed: a missing dining photo must leave the slot
+    # blank rather than showing a facade, parking area, sign, or reception.
     "culinary": frozenset({
         PHOTO_CAT_ROOMS, PHOTO_CAT_BATHROOM, PHOTO_CAT_AMENITY,
         PHOTO_CAT_OUTDOOR,   # pools / gardens must never appear as food
@@ -769,9 +790,9 @@ _STRICT_SECTION_TYPES: frozenset[str] = frozenset({
 # filtered for faces, selfies, and low quality during pool construction.
 # Bathroom and unknown photos are deliberately absent.
 _SAFE_FALLBACK_VISION_CATS: dict[str, tuple[str, ...]] = {
-    # Culinary fallback: ONLY exterior/facade — outdoor category includes
-    # pool and garden shots that are wrong for a dining section.
-    "culinary": (PHOTO_CAT_EXTERIOR,),
+    # Culinary has no fallback category.  Only a positively classified dining
+    # photo is valid; the caller hides the image slot when none exists.
+    "culinary": (),
     # Outdoor fallback: only actual outdoor and exterior shots.  Amenity
     # photos (lobby, lounge) must not appear as "Outdoor Spaces".
     "outdoor": (PHOTO_CAT_OUTDOOR, PHOTO_CAT_EXTERIOR),
@@ -819,8 +840,13 @@ def _is_safe_section_fallback(
     # Pool, swimming pool, garden/outdoor photos must never appear as food.
     # Reject by SerpApi pool tag OR by Vision outdoor/amenity category.
     if section_type == "culinary":
-        if tags & {"pool", "swimming pool", "infinity pool", "water feature",
-                   "outdoor", "garden", "terrace", "poolside", "garden dining"}:
+        if tags & (
+            _CULINARY_BLOCKED_PHOTO_TAG_TOKENS
+            | {"pool", "swimming pool", "infinity pool", "water feature",
+               "outdoor", "garden", "terrace", "poolside", "garden dining"}
+        ):
+            return False
+        if vc != PHOTO_CAT_DINING:
             return False
         if vc in {PHOTO_CAT_OUTDOOR, PHOTO_CAT_AMENITY}:
             return False
@@ -922,6 +948,19 @@ def _classify_photo_vision_category(
                 top8_names = {n for n, _ in label_names_scored[:8]}
                 if top8_names & _BATHROOM_OVERRIDE_LABELS:
                     return PHOTO_CAT_BATHROOM, 0.7, False
+                if top8_names & {
+                    "sign", "signboard", "banner", "poster", "billboard",
+                    "parking", "parking lot", "car park",
+                }:
+                    # Keep signage and parking images out of the dining bucket
+                    # entirely. They may still be useful for another section.
+                    return PHOTO_CAT_EXTERIOR, 0.65, False
+                if top8_names & {
+                    "reception", "front desk", "lobby", "entrance", "driveway",
+                }:
+                    # Reception/arrival imagery remains useful for hospitality
+                    # sections, but can never satisfy Culinary Delights.
+                    return PHOTO_CAT_AMENITY, 0.65, False
 
                 # Score each category by summing matching label confidences
                 cat_scores: dict[str, float] = {}
@@ -1325,6 +1364,15 @@ class SmartPhotoPool:
                 if cat in excluded or cat == PHOTO_CAT_BATHROOM:
                     continue
                 for photo in self._by_category.get(cat, []):
+                    if (
+                        section_type == "culinary"
+                        and (
+                            cat != PHOTO_CAT_DINING
+                            or set(photo.serpapi_tags)
+                            & _CULINARY_BLOCKED_PHOTO_TAG_TOKENS
+                        )
+                    ):
+                        continue
                     if not _is_safe_section_fallback(photo, section_type, label):
                         continue
                     if self._unused(photo, avoid):
@@ -1370,6 +1418,14 @@ class SmartPhotoPool:
                     reusable_candidates.extend(
                         photo
                         for photo in self._by_category.get(cat, [])
+                        if section_type != "culinary"
+                        or (
+                            cat == PHOTO_CAT_DINING
+                            and not (
+                                set(photo.serpapi_tags)
+                                & _CULINARY_BLOCKED_PHOTO_TAG_TOKENS
+                            )
+                        )
                         if _is_safe_section_fallback(photo, section_type, label)
                     )
                 reusable_candidates.sort(
