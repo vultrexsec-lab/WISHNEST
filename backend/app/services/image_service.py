@@ -403,6 +403,27 @@ _HOSPITALITY_PREFERRED_PHOTO_TAG_TOKENS: frozenset[str] = frozenset({
     "lobby", "reception", "lounge", "concierge",
 })
 
+# Strict connectivity tokens — only clear entry points, roads, or gates.
+# This is a deliberate subset of _EXTERIOR_PHOTO_TAG_TOKENS that excludes
+# soft landscape tokens ("landscaping", "grounds", "lawn") that can surface
+# blurry bush / hedge photos under a Connectivity / Getting Here section.
+_CONNECTIVITY_PHOTO_TAG_TOKENS: frozenset[str] = frozenset({
+    "entrance", "entrance gate", "gate", "gate house",
+    "driveway", "road", "pathway", "path", "walkway", "lane",
+    "front", "front of property", "street view", "approach",
+    "exterior", "facade", "building", "outside of building",
+    "property exterior", "outside", "outside view",
+})
+
+# Strict indoor-room tokens for room_design sections.
+# Deliberately excludes "lobby", "corridor", "hallway" which can produce
+# external building shots, and "lounge" which can be an outdoor terrace photo.
+_ROOM_DESIGN_PHOTO_TAG_TOKENS: frozenset[str] = frozenset({
+    "rooms", "room", "bedroom", "suite", "accommodation",
+    "bathroom", "washroom", "restroom", "toilet", "living room",
+    "interior", "bed", "bedding",
+})
+
 
 def _section_photo_preferences(
     section_type: str,
@@ -417,42 +438,52 @@ def _section_photo_preferences(
     Untagged photos (empty tag list) never match preferred and never match
     excluded — they're treated as generic and returned in Pass 2.
     """
-    if section_type in ("connectivity", "intro", "general"):
-        # Accessibility / Conclusion / Introduction: exterior/facade first;
-        # never kitchen, portrait, or room interior.
+    if section_type == "culinary":
+        # Culinary: ONLY food/dining photos. Portrait and all non-food tags excluded.
+        # No fallback to room/outdoor — blank section beats a wrong image here.
+        return (
+            _CULINARY_PHOTO_TAG_TOKENS,
+            _PORTRAIT_PHOTO_TAG_TOKENS | _ROOM_INTERIOR_PHOTO_TAG_TOKENS
+            | _OUTDOOR_PHOTO_TAG_TOKENS | _EXTERIOR_PHOTO_TAG_TOKENS,
+        )
+    if section_type == "connectivity":
+        # Connectivity/Access: ONLY clear road, pathway, entrance, or gate.
+        # Outdoor nature tags (bushes, garden, landscape) are excluded because
+        # they surface blurry vegetation photos that are not about access/approach.
+        return (
+            _CONNECTIVITY_PHOTO_TAG_TOKENS,
+            _PORTRAIT_PHOTO_TAG_TOKENS | _CULINARY_PHOTO_TAG_TOKENS
+            | _ROOM_INTERIOR_PHOTO_TAG_TOKENS | _OUTDOOR_PHOTO_TAG_TOKENS,
+        )
+    if section_type in ("intro", "general"):
+        # Introduction / Conclusion: exterior/facade first; never kitchen,
+        # portrait, or room interior.
         return (
             _EXTERIOR_PHOTO_TAG_TOKENS | _OUTDOOR_PHOTO_TAG_TOKENS,
             _PORTRAIT_PHOTO_TAG_TOKENS | _CULINARY_PHOTO_TAG_TOKENS | _ROOM_INTERIOR_PHOTO_TAG_TOKENS,
         )
-    if section_type == "culinary":
-        # Culinary: food/dining preferred; never portrait or bedroom.
-        return (
-            _CULINARY_PHOTO_TAG_TOKENS,
-            _PORTRAIT_PHOTO_TAG_TOKENS | _ROOM_INTERIOR_PHOTO_TAG_TOKENS,
-        )
     if section_type == "outdoor":
         # Outdoor Spaces: garden/pool preferred; NEVER portrait, kitchen, OR
-        # room/bathroom interior.  Adding _ROOM_INTERIOR_PHOTO_TAG_TOKENS to
-        # excluded is the critical fix that prevents bathtub photos from
-        # appearing under "Outdoor Spaces and Amenities".
+        # room/bathroom interior.
         return (
             _OUTDOOR_PHOTO_TAG_TOKENS | _EXTERIOR_PHOTO_TAG_TOKENS,
             _PORTRAIT_PHOTO_TAG_TOKENS | _CULINARY_PHOTO_TAG_TOKENS | _ROOM_INTERIOR_PHOTO_TAG_TOKENS,
         )
     if section_type == "hospitality":
         # Guest Experience: lobby/entrance/facade preferred — but deliberately
-        # NOT pool/garden/terrace.  Using _OUTDOOR_PHOTO_TAG_TOKENS here caused
-        # pool images to be consumed by this section first, leaving the actual
-        # Outdoor Spaces section with nothing but bathroom photos.
+        # NOT pool/garden/terrace so outdoor photos remain for Outdoor sections.
         return (
             _HOSPITALITY_PREFERRED_PHOTO_TAG_TOKENS,
             _CULINARY_PHOTO_TAG_TOKENS | _ROOM_INTERIOR_PHOTO_TAG_TOKENS,
         )
     if section_type == "room_design":
-        # Rooms / Amenities: room interior preferred; portraits and kitchen excluded.
+        # Rooms / Amenities: STRICTLY indoor bedroom/bathroom interiors.
+        # Outdoor cottage shots and exterior building photos are excluded —
+        # they belong to outdoor/exterior sections, not room comforts.
         return (
-            _ROOM_INTERIOR_PHOTO_TAG_TOKENS,
-            _PORTRAIT_PHOTO_TAG_TOKENS | _CULINARY_PHOTO_TAG_TOKENS,
+            _ROOM_DESIGN_PHOTO_TAG_TOKENS,
+            _PORTRAIT_PHOTO_TAG_TOKENS | _CULINARY_PHOTO_TAG_TOKENS
+            | _OUTDOOR_PHOTO_TAG_TOKENS | _EXTERIOR_PHOTO_TAG_TOKENS,
         )
     # Catch-all: no strong preference; exclude portraits and kitchen.
     return (
@@ -564,10 +595,38 @@ class _SinglePropertyPhotoPool:
             if not (set(tags) & exclude):
                 return self._hand_out(i)
 
-        # Pass 3: last resort — exterior/grounds photos are preferred but any
-        # unused real property photo is better than a blank section.
-        # Culinary sections never reach here (returned None above).
-        # Prefer exterior/facade/outdoor tags first, then accept anything.
+        # Pass 3: section-specific last resort.
+        #
+        # Strict sections have editorial contracts — blank beats wrong:
+        #   "culinary"     — already returned None above; never reaches here.
+        #   "connectivity" — only exterior/entrance/gate tags accepted.
+        #   "room_design"  — only indoor room/bedroom/bathroom tags accepted.
+        #   Everything else — prefer exterior/outdoor tags, then accept anything.
+
+        if section_type == "connectivity":
+            # Connectivity must show a clear entrance, gate, or road.
+            # Outdoor nature shots (bushes, garden) are not acceptable here.
+            for i, (_, tags) in enumerate(self._photos):
+                if i in self._used:
+                    continue
+                if set(tags) & _CONNECTIVITY_PHOTO_TAG_TOKENS:
+                    return self._hand_out(i)
+            # No entrance/gate/road photo found → blank connectivity section.
+            return None
+
+        if section_type == "room_design":
+            # Room design must show an indoor bedroom or bathroom interior.
+            # Outdoor cottage/garden shots are not acceptable here.
+            for i, (_, tags) in enumerate(self._photos):
+                if i in self._used:
+                    continue
+                if set(tags) & _ROOM_DESIGN_PHOTO_TAG_TOKENS:
+                    return self._hand_out(i)
+            # No indoor room photo found → blank room-design section.
+            return None
+
+        # For all other non-culinary sections: prefer exterior/outdoor tags,
+        # then accept any remaining photo — a real property shot always beats blank.
         _EXTERIOR_PREFER = _EXTERIOR_PHOTO_TAG_TOKENS | _OUTDOOR_PHOTO_TAG_TOKENS
         for i, (_, tags) in enumerate(self._photos):
             if i in self._used:
@@ -667,6 +726,10 @@ _VISION_LABEL_TO_CATEGORY: dict[str, str] = {
     "roof": PHOTO_CAT_EXTERIOR, "structure": PHOTO_CAT_EXTERIOR, "corridor": PHOTO_CAT_EXTERIOR,
     "hallway": PHOTO_CAT_EXTERIOR, "staircase": PHOTO_CAT_EXTERIOR, "balustrade": PHOTO_CAT_EXTERIOR,
     "property": PHOTO_CAT_EXTERIOR, "estate": PHOTO_CAT_EXTERIOR,
+    # ── Road / path labels — critical for Connectivity section matching ─────
+    "road": PHOTO_CAT_EXTERIOR, "path": PHOTO_CAT_EXTERIOR, "pathway": PHOTO_CAT_EXTERIOR,
+    "walkway": PHOTO_CAT_EXTERIOR, "lane": PHOTO_CAT_EXTERIOR, "track": PHOTO_CAT_EXTERIOR,
+    "entrance gate": PHOTO_CAT_EXTERIOR, "gate house": PHOTO_CAT_EXTERIOR,
 }
 
 # ---------------------------------------------------------------------------
@@ -710,27 +773,32 @@ _PERSON_VISION_LABELS: frozenset[str] = frozenset({
 # outdoor sections NEVER get dining/rooms, etc.
 # ---------------------------------------------------------------------------
 _SECTION_TO_VISION_CATEGORIES: dict[str, list[str]] = {
+    # Culinary: food/dining images ONLY — no fallback to other categories.
     "culinary":     [PHOTO_CAT_DINING],
     "outdoor":      [PHOTO_CAT_OUTDOOR, PHOTO_CAT_AMENITY],
-    "room_design":  [PHOTO_CAT_ROOMS, PHOTO_CAT_AMENITY],
+    # Room Design: strictly indoor bedroom/bathroom — AMENITY removed because it
+    # includes outdoor pool/terrace shots that are wrong for a room section.
+    "room_design":  [PHOTO_CAT_ROOMS],
+    # Connectivity: entrance/gate/road exterior ONLY — no outdoor nature shots.
     "connectivity": [PHOTO_CAT_EXTERIOR],
     "intro":        [PHOTO_CAT_EXTERIOR, PHOTO_CAT_OUTDOOR],
     "hospitality":  [PHOTO_CAT_EXTERIOR, PHOTO_CAT_ROOMS],
     "general":      [PHOTO_CAT_EXTERIOR, PHOTO_CAT_OUTDOOR, PHOTO_CAT_AMENITY],
 }
 
-# Strict exclusion — these categories MUST NOT appear in these sections
-# (blank photo beats wrong photo)
+# Strict exclusion — these categories MUST NOT appear in these sections.
+# Blank photo beats an editorially wrong photo.
 _SECTION_EXCLUDED_VISION_CATS: dict[str, frozenset[str]] = {
-    "culinary":     frozenset({PHOTO_CAT_ROOMS, PHOTO_CAT_OUTDOOR}),
-    # Outdoor Spaces must NEVER show bedroom/furniture/indoor photos.
-    # ROOMS is the primary risk — bathtubs, beds, and sofas classified as
-    # rooms_stay must be hard-blocked from any outdoor-themed section.
+    # Culinary: ONLY dining photos — every other category is excluded.
+    "culinary":     frozenset({PHOTO_CAT_ROOMS, PHOTO_CAT_OUTDOOR, PHOTO_CAT_EXTERIOR, PHOTO_CAT_AMENITY}),
+    # Outdoor Spaces: never indoor (rooms) or food photos.
     "outdoor":      frozenset({PHOTO_CAT_DINING, PHOTO_CAT_ROOMS}),
-    # Connectivity/Access sections show how guests arrive: road, entrance gate,
-    # driveway, building facade.  Room interiors and food photos are never
-    # appropriate here.
-    "connectivity": frozenset({PHOTO_CAT_ROOMS, PHOTO_CAT_DINING}),
+    # Connectivity: entrance/gate/road only — no rooms, no food, and no generic
+    # outdoor shots (bushes, vegetation) that are not about access/approach.
+    "connectivity": frozenset({PHOTO_CAT_ROOMS, PHOTO_CAT_DINING, PHOTO_CAT_OUTDOOR, PHOTO_CAT_AMENITY}),
+    # Room Design: strictly indoor — no outdoor cottage shots, no exterior facades,
+    # no dining photos. Only bedroom/bathroom/interior photos are valid.
+    "room_design":  frozenset({PHOTO_CAT_OUTDOOR, PHOTO_CAT_EXTERIOR, PHOTO_CAT_DINING}),
 }
 
 
@@ -808,6 +876,15 @@ def _classify_photo_vision_category(
                     # label screams "completely dark / blurry".
                     if all_top3_unusable:
                         return "low_quality", 0.0, False
+                    # ── People penalty (architecture preference) ─────────────
+                    # Photos where people appear alongside the property content
+                    # are down-ranked so clean architectural shots, pool photos,
+                    # room interiors, and garden views surface first.  The photo
+                    # is still usable — it just sorts lower in the quality-ranked
+                    # bucket, giving preference to people-free property imagery.
+                    people_present = bool(all_label_names & _PERSON_VISION_LABELS)
+                    if people_present:
+                        quality *= 0.45  # ~half-score penalty keeps it usable but deprioritised
                     return best_cat, quality, False
 
                 # No editorial category matched — use top-label confidence as
@@ -815,6 +892,9 @@ def _classify_photo_vision_category(
                 # noise (dark / blurry / low-res image).
                 if all_top3_unusable or top_confidence < _MIN_UNCLASSIFIED_LABEL_CONFIDENCE:
                     return "low_quality", 0.0, False
+                # Apply people penalty for unclassified photos with people in them
+                if all_label_names & _PERSON_VISION_LABELS:
+                    top_confidence *= 0.45
                 return "unknown", top_confidence, False
         except Exception as exc:  # noqa: BLE001
             logger.debug("Vision classify failed for %s: %s", raw_url[:60], exc)
@@ -1009,26 +1089,62 @@ class SmartPhotoPool:
                         )
                         return photo.proxied_url, cat
 
-        # Pass 4 (Last Resort): every section — including strict sections like
-        # "connectivity" and "outdoor" — should receive a real photo rather than
-        # a blank slot. If the pool still has unused photos, return the best one.
+        # Pass 4 (Last Resort): section-specific fallback.
         #
-        # Priority order: exterior/amenity first (visually neutral), then rooms,
-        # then anything. Dining photos are excluded for non-culinary sections to
-        # avoid a food image under a "Connectivity" or "Outdoor" heading.
-        # Culinary sections never reach this pass (they returned None above after
-        # Pass 1 failed to find a food photo).
-        _LAST_RESORT_PREFER_ORDER = [
+        # Strict content sections have editorial contracts with the reader —
+        # returning a wrong photo is worse than a blank slot:
+        #
+        #   "culinary"     — MUST be food/dining. No fallback at all; blank
+        #                    section is editorially correct when no food photo
+        #                    exists in the property's gallery.
+        #   "connectivity" — MUST show entrance/gate/road. Only tries
+        #                    PHOTO_CAT_EXTERIOR; if none available → blank.
+        #   "room_design"  — MUST show indoor bedroom/bathroom. Only tries
+        #                    PHOTO_CAT_ROOMS; if none available → blank.
+        #   "outdoor"      — Acceptable to show exterior/amenity shots if no
+        #                    garden/nature photo is found; never rooms or dining.
+        #   Everything else — general last-resort order, never dining.
+
+        if section_type == "culinary":
+            # No food photo in pool → blank. Never substitute a room/outdoor shot.
+            return None
+
+        if section_type == "connectivity":
+            # Only exterior photos are valid for access/getting-here sections.
+            for photo in self._by_category.get(PHOTO_CAT_EXTERIOR, []):
+                if self._unused(photo, avoid):
+                    self._used_proxied.add(photo.proxied_url)
+                    logger.info(
+                        "SmartPhotoPool: section=%r → last-resort exterior (q=%.2f)",
+                        section_type, photo.quality_score,
+                    )
+                    return photo.proxied_url, PHOTO_CAT_EXTERIOR
+            # No exterior photo → blank connectivity section.
+            return None
+
+        if section_type == "room_design":
+            # Only rooms photos are valid for room-design sections.
+            for photo in self._by_category.get(PHOTO_CAT_ROOMS, []):
+                if self._unused(photo, avoid):
+                    self._used_proxied.add(photo.proxied_url)
+                    logger.info(
+                        "SmartPhotoPool: section=%r → last-resort rooms (q=%.2f)",
+                        section_type, photo.quality_score,
+                    )
+                    return photo.proxied_url, PHOTO_CAT_ROOMS
+            # No indoor room photo → blank room-design section.
+            return None
+
+        # For all other sections (outdoor, intro, hospitality, general, …):
+        # prefer exterior/amenity, then anything except dining.
+        _GENERAL_LAST_RESORT_ORDER = [
             PHOTO_CAT_EXTERIOR,
-            PHOTO_CAT_OUTDOOR,
             PHOTO_CAT_AMENITY,
+            PHOTO_CAT_OUTDOOR,
             PHOTO_CAT_ROOMS,
             "unknown",
         ]
-        _skip_dining_for = section_type != "culinary"
-        for cat in _LAST_RESORT_PREFER_ORDER:
-            if _skip_dining_for and cat == PHOTO_CAT_DINING:
-                continue
+        for cat in _GENERAL_LAST_RESORT_ORDER:
             for photo in self._by_category.get(cat, []):
                 if self._unused(photo, avoid):
                     self._used_proxied.add(photo.proxied_url)
