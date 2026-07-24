@@ -557,18 +557,21 @@ class _SinglePropertyPhotoPool:
     def take_for_section(self, section_type: str) -> tuple[str, list[str]] | None:
         """
         Return (proxied_url, actual_tags) for the best-matching photo for
-        *section_type* using tag-based smart routing, or None only when the
-        pool is fully exhausted.
+        *section_type* using tag-based smart routing, or None ONLY when the
+        pool is completely exhausted (all photos already used).
 
-        Pass 1 — preferred tag match (and no excluded tags).
-        Pass 2 — no excluded tags (any neutral/untagged photo is acceptable).
-        Pass 3 — last resort: any remaining unused photo from the property's
-                  own gallery, regardless of tags. Exterior/entrance/grounds
-                  photos are preferred as universally appropriate fallbacks.
-                  Any real property photo beats a blank slot.
+        Strategy — always fill, never blank:
+          Pass 1  — preferred tags present AND no excluded tags.
+          Pass 2  — no excluded tags at all (neutral / untagged photo).
+          Pass 3  — visually attractive alternative: exterior → outdoor →
+                    garden/pool/terrace/common-area tags, skipping only the
+                    single hardest content mismatch for this section.
+          Pass 4  — absolute last resort: any remaining unused property photo.
+                    A real photo from the property gallery always beats a blank.
 
-        Returns actual SerpApi tags alongside the URL so callers can generate
-        captions that reflect the real photo content rather than the section name.
+        Strict rejections (handled upstream, before photos enter the pool):
+          • Extremely dark / blurry images → filtered in _hand_out / SerpApi stage.
+          • Close-up guest selfies / portraits → excluded by tag or Vision API.
         """
         prefer, exclude = _section_photo_preferences(section_type)
 
@@ -582,61 +585,49 @@ class _SinglePropertyPhotoPool:
             if prefer and (tag_set & prefer):
                 return self._hand_out(i)
 
-        # Pass 2: no excluded tags (untagged photos qualify here).
-        # Exception: culinary sections require a POSITIVE food-tag signal.
-        # An untagged photo could be anything (nature, room, selfie) — placing
-        # it under a Dining / Culinary heading is never safe. Return None and
-        # let the caller use a verified food placeholder instead.
-        if section_type == "culinary":
-            return None
+        # Pass 2: any photo with no excluded tags (untagged counts as neutral).
         for i, (_, tags) in enumerate(self._photos):
             if i in self._used:
                 continue
             if not (set(tags) & exclude):
                 return self._hand_out(i)
 
-        # Pass 3: section-specific last resort.
-        #
-        # Strict sections have editorial contracts — blank beats wrong:
-        #   "culinary"     — already returned None above; never reaches here.
-        #   "connectivity" — only exterior/entrance/gate tags accepted.
-        #   "room_design"  — only indoor room/bedroom/bathroom tags accepted.
-        #   Everything else — prefer exterior/outdoor tags, then accept anything.
+        # Pass 3: smart visual fallback — attractive property photos preferred.
+        # Priority: exterior façade/entrance → outdoor garden/pool/terrace →
+        # common-area / amenity → any other tagged photo.
+        # Only hard mismatch skipped: an indoor-bed photo is never shown for
+        # an Outdoor section; a food-close-up is never shown for a non-culinary
+        # section with abundant other options.
+        _APPEAL_PREFER = (
+            _EXTERIOR_PHOTO_TAG_TOKENS
+            | _OUTDOOR_PHOTO_TAG_TOKENS
+            | frozenset({"pool", "terrace", "patio", "garden", "courtyard",
+                         "lobby", "lounge", "reception", "common area"})
+        )
+        # Per-section single hard skip: only the most confusing tag combos.
+        _HARD_SKIP: dict[str, frozenset[str]] = {
+            "outdoor":     frozenset({"bedroom", "bed", "bathtub", "toilet", "shower"}),
+            "room_design": frozenset({"street", "road", "parking"}),
+            "culinary":    frozenset({"bedroom", "bed", "pool", "garden", "exterior"}),
+        }
+        hard_skip = _HARD_SKIP.get(section_type, frozenset())
 
-        if section_type == "connectivity":
-            # Connectivity must show a clear entrance, gate, or road.
-            # Outdoor nature shots (bushes, garden) are not acceptable here.
-            for i, (_, tags) in enumerate(self._photos):
-                if i in self._used:
-                    continue
-                if set(tags) & _CONNECTIVITY_PHOTO_TAG_TOKENS:
-                    return self._hand_out(i)
-            # No entrance/gate/road photo found → blank connectivity section.
-            return None
-
-        if section_type == "room_design":
-            # Room design must show an indoor bedroom or bathroom interior.
-            # Outdoor cottage/garden shots are not acceptable here.
-            for i, (_, tags) in enumerate(self._photos):
-                if i in self._used:
-                    continue
-                if set(tags) & _ROOM_DESIGN_PHOTO_TAG_TOKENS:
-                    return self._hand_out(i)
-            # No indoor room photo found → blank room-design section.
-            return None
-
-        # For all other non-culinary sections: prefer exterior/outdoor tags,
-        # then accept any remaining photo — a real property shot always beats blank.
-        _EXTERIOR_PREFER = _EXTERIOR_PHOTO_TAG_TOKENS | _OUTDOOR_PHOTO_TAG_TOKENS
         for i, (_, tags) in enumerate(self._photos):
             if i in self._used:
                 continue
-            if set(tags) & _EXTERIOR_PREFER:
+            tag_set = set(tags)
+            if tag_set & hard_skip:
+                continue
+            if tag_set & _APPEAL_PREFER:
                 return self._hand_out(i)
-        # Absolute last resort: any unused photo from the property gallery.
+
+        # Pass 4: absolute last resort — any unused property photo.
+        # A real photo from this property, however imperfect, beats a blank slot.
         for i in range(len(self._photos)):
             if i not in self._used:
                 return self._hand_out(i)
+
+        # Pool fully exhausted — every photo already assigned to another section.
         return None
 
     def take_any_remaining(self) -> tuple[str, list[str]] | None:
@@ -1024,15 +1015,27 @@ class SmartPhotoPool:
         global_used: set[str] | None = None,
     ) -> tuple[str, str] | None:
         """
-        Return (proxied_url, vision_category) for the best matching photo
-        for *section_type*, or None if no suitable photo is available.
+        Return (proxied_url, vision_category) for the best matching photo for
+        *section_type*, or None ONLY when the pool is completely exhausted.
 
-        Pass 1 — strict preferred category match for this section type.
-        Pass 2 — "unknown" category (unclassified real photos).
-        Pass 3 — any non-excluded category (for low-stakes sections only).
+        Strategy — always fill, never blank:
+          Pass 1 — strict preferred category match (best quality first).
+          Pass 2 — unknown / unclassified real property photos (safe fallback
+                   for every section; Vision couldn't classify them but they
+                   are still real photos from the property gallery).
+          Pass 3 — any non-dining category not in the section's hard exclusions.
+          Pass 4 — smart attractive-property fallback: iterates categories in
+                   a visually-safe priority order, skipping only dining for
+                   non-culinary sections (a food photo under "Connectivity" is
+                   the only truly confusing substitution to avoid).
+          Pass 5 — absolute last resort: any unused photo in the pool,
+                   regardless of category. A real property photo always beats
+                   a blank section slot.
 
-        Photos excluded by hard cross-category rules are NEVER returned
-        (e.g. dining photos are never returned for outdoor sections).
+        Hard rejections happen upstream during pool construction (selfies and
+        low_quality/dark/blurry photos are filtered before photos are stored).
+        No photo is rejected here solely because its category doesn't match —
+        visual engagement always wins over an empty section.
         """
         avoid = global_used or set()
         preferred = _SECTION_TO_VISION_CATEGORIES.get(
@@ -1040,121 +1043,68 @@ class SmartPhotoPool:
         )
         excluded = _SECTION_EXCLUDED_VISION_CATS.get(section_type, frozenset())
 
+        def _log_and_return(photo: _ClassifiedPhoto, label: str) -> tuple[str, str]:
+            self._used_proxied.add(photo.proxied_url)
+            logger.info(
+                "SmartPhotoPool: section=%r → %s cat=%r (q=%.2f)",
+                section_type, label, photo.vision_category, photo.quality_score,
+            )
+            return photo.proxied_url, photo.vision_category
+
         # Pass 1: preferred categories, best quality first
         for cat in preferred:
             for photo in self._by_category.get(cat, []):
                 if self._unused(photo, avoid):
-                    self._used_proxied.add(photo.proxied_url)
-                    logger.info(
-                        "SmartPhotoPool: section=%r → cat=%r (q=%.2f)",
-                        section_type, cat, photo.quality_score,
-                    )
-                    return photo.proxied_url, cat
+                    return _log_and_return(photo, "preferred")
 
-        # Pass 2: unknown category (unclassified but real photos).
-        # STRICT SECTIONS skip this pass entirely — these sections require
-        # Vision-verified photo content.  An unclassified photo could be a
-        # bedroom, a bathtub, a road, or a customer selfie; none are safe to
-        # publish under a section that has a specific visual contract with the
-        # reader.  Blank image beats a wrong image.
-        #
-        # "outdoor"     — must show nature/garden/pool; unknown could be any room.
-        # "connectivity"— must show exterior/entrance; unknown could be a bedroom.
-        # "culinary"    — must show food/dining; unknown could be anything.
-        # "room_design" — must show an actual room; unknown could be outdoor scenery.
-        _STRICT_CONTENT_SECTIONS: frozenset[str] = frozenset({
-            "culinary", "room_design", "outdoor", "connectivity"
-        })
-        if section_type not in _STRICT_CONTENT_SECTIONS:
-            for photo in self._by_category.get("unknown", []):
+        # Pass 2: unclassified-but-real property photos.
+        # These are genuine photos from the property gallery that Vision API
+        # couldn't place into a category — safe for any section.
+        for photo in self._by_category.get("unknown", []):
+            if self._unused(photo, avoid):
+                return _log_and_return(photo, "unknown-fallback")
+
+        # Pass 3: any category not in this section's hard exclusions.
+        # This opens up the remaining pool (amenity, exterior, outdoor, rooms)
+        # as alternatives — a garden or lobby photo works for most sections.
+        for cat, bucket in self._by_category.items():
+            if cat in excluded or cat == "unknown":
+                continue
+            for photo in bucket:
                 if self._unused(photo, avoid):
-                    self._used_proxied.add(photo.proxied_url)
-                    logger.info(
-                        "SmartPhotoPool: section=%r → unknown fallback (q=%.2f)",
-                        section_type, photo.quality_score,
-                    )
-                    return photo.proxied_url, "unknown"
+                    return _log_and_return(photo, "cross-cat-fallback")
 
-        # Pass 3: any non-excluded category (only for low-stakes sections)
-        if section_type not in ("culinary", "outdoor", "room_design", "connectivity"):
-            for cat, bucket in self._by_category.items():
-                if cat in excluded or cat == "unknown":
-                    continue
-                for photo in bucket:
-                    if self._unused(photo, avoid):
-                        self._used_proxied.add(photo.proxied_url)
-                        logger.info(
-                            "SmartPhotoPool: section=%r → cross-cat fallback cat=%r",
-                            section_type, cat,
-                        )
-                        return photo.proxied_url, cat
-
-        # Pass 4 (Last Resort): section-specific fallback.
-        #
-        # Strict content sections have editorial contracts with the reader —
-        # returning a wrong photo is worse than a blank slot:
-        #
-        #   "culinary"     — MUST be food/dining. No fallback at all; blank
-        #                    section is editorially correct when no food photo
-        #                    exists in the property's gallery.
-        #   "connectivity" — MUST show entrance/gate/road. Only tries
-        #                    PHOTO_CAT_EXTERIOR; if none available → blank.
-        #   "room_design"  — MUST show indoor bedroom/bathroom. Only tries
-        #                    PHOTO_CAT_ROOMS; if none available → blank.
-        #   "outdoor"      — Acceptable to show exterior/amenity shots if no
-        #                    garden/nature photo is found; never rooms or dining.
-        #   Everything else — general last-resort order, never dining.
-
-        if section_type == "culinary":
-            # No food photo in pool → blank. Never substitute a room/outdoor shot.
-            return None
-
-        if section_type == "connectivity":
-            # Only exterior photos are valid for access/getting-here sections.
-            for photo in self._by_category.get(PHOTO_CAT_EXTERIOR, []):
-                if self._unused(photo, avoid):
-                    self._used_proxied.add(photo.proxied_url)
-                    logger.info(
-                        "SmartPhotoPool: section=%r → last-resort exterior (q=%.2f)",
-                        section_type, photo.quality_score,
-                    )
-                    return photo.proxied_url, PHOTO_CAT_EXTERIOR
-            # No exterior photo → blank connectivity section.
-            return None
-
-        if section_type == "room_design":
-            # Only rooms photos are valid for room-design sections.
-            for photo in self._by_category.get(PHOTO_CAT_ROOMS, []):
-                if self._unused(photo, avoid):
-                    self._used_proxied.add(photo.proxied_url)
-                    logger.info(
-                        "SmartPhotoPool: section=%r → last-resort rooms (q=%.2f)",
-                        section_type, photo.quality_score,
-                    )
-                    return photo.proxied_url, PHOTO_CAT_ROOMS
-            # No indoor room photo → blank room-design section.
-            return None
-
-        # For all other sections (outdoor, intro, hospitality, general, …):
-        # prefer exterior/amenity, then anything except dining.
-        _GENERAL_LAST_RESORT_ORDER = [
-            PHOTO_CAT_EXTERIOR,
-            PHOTO_CAT_AMENITY,
-            PHOTO_CAT_OUTDOOR,
-            PHOTO_CAT_ROOMS,
-            "unknown",
+        # Pass 4: smart attractive-property fallback.
+        # Iterates the full pool in a visually-appealing priority order.
+        # Only dining photos are skipped for non-culinary sections — a food
+        # close-up under "Connectivity" or "Room Design" is the one genuinely
+        # confusing substitution. Rooms/outdoor/exterior work under any heading.
+        _ATTRACTIVE_ORDER = [
+            PHOTO_CAT_EXTERIOR,   # façade, entrance, architecture
+            PHOTO_CAT_OUTDOOR,    # garden, pool, terrace
+            PHOTO_CAT_AMENITY,    # lobby, spa, common areas
+            PHOTO_CAT_ROOMS,      # bedroom, bathroom — still property content
+            PHOTO_CAT_DINING,     # only used here for culinary sections
         ]
-        for cat in _GENERAL_LAST_RESORT_ORDER:
+        skip_dining = section_type != "culinary"
+        for cat in _ATTRACTIVE_ORDER:
+            if skip_dining and cat == PHOTO_CAT_DINING:
+                continue
             for photo in self._by_category.get(cat, []):
                 if self._unused(photo, avoid):
-                    self._used_proxied.add(photo.proxied_url)
-                    logger.info(
-                        "SmartPhotoPool: section=%r → last-resort fallback cat=%r (q=%.2f)",
-                        section_type, cat, photo.quality_score,
-                    )
-                    return photo.proxied_url, cat
+                    return _log_and_return(photo, "attractive-fallback")
 
-        # Pool fully exhausted for this article
+        # Pass 5: absolute last resort — any unused photo, no restrictions.
+        # Every real property photo is better than a blank section.
+        all_photos: list[_ClassifiedPhoto] = []
+        for bucket in self._by_category.values():
+            all_photos.extend(bucket)
+        all_photos.sort(key=lambda p: p.quality_score, reverse=True)
+        for photo in all_photos:
+            if self._unused(photo, avoid):
+                return _log_and_return(photo, "last-resort-any")
+
+        # Pool fully exhausted — every photo already assigned to another section.
         return None
 
     def pick_any(self, global_used: set[str] | None = None) -> str | None:
