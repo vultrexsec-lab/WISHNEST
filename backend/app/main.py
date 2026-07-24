@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
-from app.routers import approve, articles, auth, image_proxy, newsletter, research
+from app.routers import approve, articles, auth, image_proxy, newsletter, research, vision
 from app.routers import scheduler as scheduler_router
 
 logging.basicConfig(
@@ -122,6 +122,7 @@ app.include_router(image_proxy.router)
 app.include_router(approve.router)
 app.include_router(newsletter.router)
 app.include_router(scheduler_router.router)
+app.include_router(vision.router)
 
 
 @app.get("/api/health")

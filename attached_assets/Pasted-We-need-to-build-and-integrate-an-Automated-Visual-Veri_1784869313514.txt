@@ -1,0 +1,34 @@
+We need to build and integrate an Automated Visual Verification and Fact-Checking Pipeline to fix content drift, ensure 100% image accuracy, and generate context-aware articles.
+
+Core Architecture Requirements:
+
+Image Source & Google Maps Integration:
+
+Integrate Google Maps API / Google Street View / Places API to fetch real, authentic location images for properties and landmarks.
+
+Visual Verification & Scanning (Google Vision / Lens API):
+
+Implement Google Cloud Vision API (or Reverse Image Search) to scan all fetched or uploaded images before display.
+
+Extract visual labels, objects, and text (OCR) from the image.
+
+Validation Rule: Automatically reject images if their visual content does not match the section topic (e.g., reject an indoor restaurant image if the section is about 'Outdoor Spaces, Pool, or Gardens').
+
+Image-to-Text Contextual Article Generator:
+
+Use the labels, metadata, and location details extracted by the Vision API (Google Lens layer) + Google Maps data as the grounded context for the LLM.
+
+The AI must write the section article and captions based specifically on what is scanned and detected in that image, ensuring 100% agreement between the text and the photo.
+
+Master Fact-Checker Pipeline:
+
+Cross-reference all generated text claims against a master JSON fact database (e.g., exact distances, true property features, amenities).
+
+Block any hallucinated or incorrect details from reaching the final UI.
+
+5. Automated Git Commit & GitHub Push:
+
+Once all features, API integrations, and validation workflows are successfully built and tested, automatically stage, commit, and push all code changes to the connected GitHub repository with a clear commit message (e.g., feat: integrate Google Vision, Maps API, fact-checker and vision-to-text pipeline).
+
+Workflow:
+[Fetch/Upload Image] --> [Google Vision API Scans Image] --> [LLM Generates Text based on Scanned Image Data] --> [Fact-Checker Validates Claims] --> [PASSED -> Render to UI] --> [Git Commit & Push to GitHub]

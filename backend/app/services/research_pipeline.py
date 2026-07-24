@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.models.article import Article, ArticleStatus, ArticleType
 from app.schemas.article import ArticleCreate
+from app.services.fact_checker_service import fact_check_article
 from app.services.firecrawl_service import FirecrawlError, search_and_scrape
 from app.services.image_service import generate_article_images
 from app.services.openai_service import generate_article_packages
@@ -740,6 +741,43 @@ def run_research_pipeline(
         raw_packages = generate_article_packages(brief, sources, count=article_count)
     except Exception as exc:  # noqa: BLE001
         raise ResearchPipelineError(f"Article drafting failed: {exc}") from exc
+
+    # ── 2b. Fact-check each generated package against the master fact database ─
+    # This runs AFTER OpenAI drafting but BEFORE persisting, so hallucinated
+    # claims are caught before they reach the database or the UI.
+    # Fact-checking is non-blocking: hard errors (severity="error") are logged
+    # and the article is flagged in its category, but publication is not
+    # prevented here — human review is the final gate via the approval workflow.
+    fact_checked_packages = []
+    for raw in raw_packages:
+        fc_result = fact_check_article(
+            article_text=raw.get("full_article", ""),
+            headline=raw.get("headline", ""),
+        )
+        if not fc_result.passed:
+            logger.warning(
+                "Fact-check FAILED for '%s': %d violation(s). "
+                "Article flagged for human review.",
+                (raw.get("headline") or "")[:60],
+                len(fc_result.violations),
+            )
+            # Append a fact-check notice to executive summary so reviewers see it
+            summary = raw.get("executive_summary") or ""
+            violation_list = "; ".join(
+                f"[{v.severity.upper()}] {v.claim_in_article}" for v in fc_result.violations[:3]
+            )
+            raw["executive_summary"] = (
+                f"⚠ FACT-CHECK FLAG: {violation_list}. "
+                f"Full review required before approval. | {summary}"
+            )[:500]
+        else:
+            logger.info(
+                "Fact-check PASSED for '%s' (%d warning(s)).",
+                (raw.get("headline") or "")[:60],
+                len(fc_result.warnings),
+            )
+        fact_checked_packages.append(raw)
+    raw_packages = fact_checked_packages
 
     # ── 3. Validate + persist each package WITHOUT images first ───────────────
     # Saving before image generation guarantees articles appear in the dashboard

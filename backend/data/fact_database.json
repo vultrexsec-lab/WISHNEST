@@ -1,0 +1,34 @@
+{
+  "properties": {
+    "example resort": {
+      "canonical_name": "Example Resort & Spa",
+      "location": "Mussoorie, Uttarakhand, India",
+      "distances": {
+        "nearest_airport_km": 290,
+        "nearest_city_km": 38,
+        "nearest_airport_name": "Jolly Grant Airport, Dehradun"
+      },
+      "ratings": {
+        "google_stars": 4.3,
+        "review_count": 412
+      },
+      "amenities": ["pool", "spa", "restaurant", "gym", "parking", "wifi"],
+      "price_band": "₹8,000–₹18,000/night",
+      "features": {
+        "rooms": 32,
+        "year_established": 2015
+      },
+      "prohibited_claims": [
+        "5-star certified",
+        "Michelin starred",
+        "private beach",
+        "helipad"
+      ]
+    }
+  },
+  "global_rules": {
+    "max_distance_claim_km": 600,
+    "currency_patterns": ["₹", "USD", "EUR", "INR", "$"],
+    "note": "Add real property entries above to enable fact-checking. The 'example resort' entry above is a template — replace it with actual property data."
+  }
+}

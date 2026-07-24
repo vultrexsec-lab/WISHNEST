@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     google_places_api_key: str = os.environ.get("GOOGLE_PLACES_API_KEY", "")
     serpapi_key: str = os.environ.get("SERPAPI_KEY", "")
 
+    # --- Vision / Fact-checking ---
+    google_cloud_vision_api_key: str = os.environ.get("GOOGLE_CLOUD_VISION_API_KEY", "")
+
     # --- Auth ---
     admin_username: str = os.environ.get("ADMIN_USERNAME", "")
     admin_password: str = os.environ.get("ADMIN_PASSWORD", "")
