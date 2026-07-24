@@ -58,9 +58,16 @@ _TOPIC_KEYWORD_MAP: dict[str, list[str]] = {
     "bedroom": ["bedroom", "bed", "pillow", "room", "interior", "sleep"],
     "bathroom": ["bathroom", "bath", "shower", "sink", "toilet", "tile"],
     "lobby": ["lobby", "hotel", "interior", "reception", "hall", "foyer"],
-    "restaurant": ["restaurant", "dining", "food", "table", "meal", "cuisine", "cafe"],
-    "dining": ["dining", "restaurant", "food", "table", "meal", "plate", "cuisine"],
-    "kitchen": ["kitchen", "cooking", "food", "stove", "appliance", "culinary"],
+    "restaurant": ["restaurant", "dining", "food", "table", "meal", "cuisine", "cafe", "dish", "plate"],
+    # STRICT food/dining entries — require a positive food signal
+    "culinary": ["food", "dish", "meal", "restaurant", "dining", "cuisine", "plate", "chef",
+                 "kitchen", "beverage", "cooking", "breakfast", "lunch", "dinner"],
+    "dining": ["dining", "restaurant", "food", "meal", "plate", "cuisine", "dish", "chef"],
+    "food": ["food", "dish", "meal", "cuisine", "plate", "restaurant", "beverage", "cooking"],
+    "local cuisine": ["food", "dish", "cuisine", "meal", "cooking", "restaurant", "local"],
+    "eat": ["food", "dish", "meal", "restaurant", "dining", "plate", "cuisine"],
+    "delights": ["food", "dish", "meal", "cuisine", "plate", "dining", "restaurant"],
+    "kitchen": ["kitchen", "cooking", "food", "stove", "appliance", "culinary", "chef", "dish"],
     "spa": ["spa", "wellness", "massage", "relax", "treatment", "pool", "sauna"],
     "gym": ["gym", "fitness", "exercise", "equipment", "sport", "health"],
     # Architectural / exterior
@@ -81,6 +88,43 @@ _REJECT_LABELS: frozenset[str] = frozenset([
     "screenshot", "document", "text", "page", "book",
     "toilet installation", "plumber",
 ])
+
+# ---------------------------------------------------------------------------
+# Strict culinary / dining enforcement
+# ---------------------------------------------------------------------------
+# When a section topic mentions any of these triggers, the image MUST carry a
+# positive food signal. A mountain, flower valley, or generic nature shot is
+# NEVER acceptable under a food heading — even if the topic text contains a
+# word like "delights" or "explore" that technically overlaps with outdoor labels.
+
+_CULINARY_TOPIC_TRIGGERS: frozenset[str] = frozenset({
+    "culinary", "dining", "food", "cuisine", "local cuisine",
+    "restaurant", "breakfast", "meal", "meals", "eat", "explore",
+    "gastro", "gastronomy", "beverage", "cafe", "chef", "delights",
+    "flavours", "flavors", "taste", "tasting", "kitchen",
+})
+
+# Labels from Vision API that positively confirm food/dining content
+_FOOD_POSITIVE_LABELS: frozenset[str] = frozenset({
+    "food", "dish", "meal", "cuisine", "restaurant", "dining room",
+    "breakfast", "lunch", "dinner", "kitchen", "café", "cafe",
+    "buffet", "tableware", "plate", "bowl", "beverage", "drink",
+    "food and drink", "cutlery", "brunch", "baking", "chef", "dessert",
+    "bakery", "bar", "coffee", "tea", "cocktail", "appetizer",
+    "salad", "soup", "cooking", "snack", "spice", "ingredient",
+    "menu", "street food", "delicacy", "delicacies", "culinary",
+    "dining", "gourmet", "gastronomy",
+})
+
+# Labels that strongly indicate NON-food (nature/outdoor) content — these
+# should HARD-REJECT an image for any culinary section
+_NATURE_LABELS_REJECT_CULINARY: frozenset[str] = frozenset({
+    "mountain", "mountains", "valley", "forest", "tree", "trees",
+    "flower", "flowers", "meadow", "field", "hill", "hills",
+    "landscape", "nature", "wilderness", "sky", "cloud", "clouds",
+    "sunrise", "sunset", "waterfall", "river", "lake", "ocean",
+    "beach", "jungle", "wildlife", "fauna", "flora",
+})
 
 
 # ---------------------------------------------------------------------------
@@ -271,11 +315,26 @@ def _extract_topic_tokens(section_topic: str) -> list[str]:
     return [t for t in tokens if len(t) > 2 and t not in stop_words]
 
 
+def _is_culinary_topic(section_topic: str) -> bool:
+    """Return True when the section topic refers to food, dining, or cuisine."""
+    tokens = set(_extract_topic_tokens(section_topic))
+    return bool(tokens & _CULINARY_TOPIC_TRIGGERS)
+
+
 def _validate_topic_match(result: VisionResult, section_topic: str) -> tuple[bool, str | None]:
     """
     Validate that the image content matches the section topic.
 
     Returns (is_valid, rejection_reason).
+
+    HARD CULINARY RULE
+    ------------------
+    When the section topic is about food / dining / cuisine:
+      • The image MUST carry at least one positive food label.
+      • If the top detected labels are nature / outdoor (mountain, valley,
+        flower, forest, landscape …) the image is hard-rejected regardless of
+        any other overlap, because a flower-valley shot is NEVER acceptable
+        under a "Culinary Delights" or "Dining" heading.
     """
     detected = set(result.label_names())
     detected.update(obj.name.lower() for obj in result.objects)
@@ -286,6 +345,31 @@ def _validate_topic_match(result: VisionResult, section_topic: str) -> tuple[boo
             if reject_term in label:
                 return False, f"Image contains disallowed content: '{label}'"
 
+    # ── HARD CULINARY RULE ───────────────────────────────────────────────────
+    if _is_culinary_topic(section_topic):
+        # Check for a positive food signal
+        has_food = bool(detected & _FOOD_POSITIVE_LABELS)
+        if not has_food:
+            # Check whether it is predominantly a nature/outdoor image
+            nature_hits = detected & _NATURE_LABELS_REJECT_CULINARY
+            if nature_hits:
+                return False, (
+                    f"Culinary section requires food imagery but image shows nature content "
+                    f"({', '.join(sorted(nature_hits)[:4])}). "
+                    f"Nature/outdoor photos are NEVER acceptable under a food/dining heading."
+                )
+            # No food signal and no strong nature signal — still reject: an
+            # unrecognised image is too risky for a strict editorial food section.
+            if len(detected) >= 3:
+                return False, (
+                    f"Culinary section requires food imagery but no food labels detected "
+                    f"(top labels: {', '.join(list(detected)[:4])}). "
+                    f"Rejecting to prevent non-food content under dining heading."
+                )
+        # Food signal confirmed — accept without further topic checks
+        return True, None
+
+    # ── STANDARD TOPIC VALIDATION (non-culinary sections) ───────────────────
     # Extract topic tokens from the section heading
     topic_tokens = _extract_topic_tokens(section_topic)
     if not topic_tokens:

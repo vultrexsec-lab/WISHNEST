@@ -552,7 +552,13 @@ class _SinglePropertyPhotoPool:
             if prefer and (tag_set & prefer):
                 return self._hand_out(i)
 
-        # Pass 2: no excluded tags (untagged photos qualify here)
+        # Pass 2: no excluded tags (untagged photos qualify here).
+        # Exception: culinary sections require a POSITIVE food-tag signal.
+        # An untagged photo could be anything (nature, room, selfie) — placing
+        # it under a Dining / Culinary heading is never safe. Return None and
+        # let the caller use a verified food placeholder instead.
+        if section_type == "culinary":
+            return None
         for i, (_, tags) in enumerate(self._photos):
             if i in self._used:
                 continue
@@ -895,18 +901,24 @@ class SmartPhotoPool:
                     )
                     return photo.proxied_url, cat
 
-        # Pass 2: unknown category (unclassified but real photos)
-        for photo in self._by_category.get("unknown", []):
-            if self._unused(photo, avoid):
-                self._used_proxied.add(photo.proxied_url)
-                logger.info(
-                    "SmartPhotoPool: section=%r → unknown fallback (q=%.2f)",
-                    section_type, photo.quality_score,
-                )
-                return photo.proxied_url, "unknown"
+        # Pass 2: unknown category (unclassified but real photos).
+        # STRICT SECTIONS skip this pass entirely — culinary and room_design require
+        # Vision-verified photo content. An unclassified photo could be a flower valley,
+        # a mountain range, or a customer selfie; none are acceptable under a food or
+        # bedroom heading. Blank image beats a wrong image.
+        _STRICT_CONTENT_SECTIONS: frozenset[str] = frozenset({"culinary", "room_design"})
+        if section_type not in _STRICT_CONTENT_SECTIONS:
+            for photo in self._by_category.get("unknown", []):
+                if self._unused(photo, avoid):
+                    self._used_proxied.add(photo.proxied_url)
+                    logger.info(
+                        "SmartPhotoPool: section=%r → unknown fallback (q=%.2f)",
+                        section_type, photo.quality_score,
+                    )
+                    return photo.proxied_url, "unknown"
 
         # Pass 3: any non-excluded category (only for low-stakes sections)
-        if section_type not in ("culinary", "outdoor"):
+        if section_type not in ("culinary", "outdoor", "room_design"):
             for cat, bucket in self._by_category.items():
                 if cat in excluded or cat == "unknown":
                     continue
@@ -2012,10 +2024,25 @@ def generate_article_images(
                             slot[:50], section_type, vision_cat,
                         )
                 else:
-                    logger.warning(
-                        "Section %r (type=%r) → no matching photo in SmartPool, slot left blank.",
-                        slot[:50], section_type,
-                    )
+                    # STRICT CULINARY FALLBACK: never substitute a nature/room photo
+                    # for a food section. Use a verified food placeholder so the
+                    # dining heading always shows food imagery. Blank beats wrong,
+                    # but a food placeholder beats blank for editorial continuity.
+                    if section_type == "culinary":
+                        fallback = _food_fallback_url(used_urls)
+                        url = fallback
+                        used_urls.add(fallback)
+                        vision_cat = PHOTO_CAT_DINING
+                        logger.info(
+                            "Section %r (culinary) → no verified food photo in SmartPool; "
+                            "using food placeholder.",
+                            slot[:50],
+                        )
+                    else:
+                        logger.warning(
+                            "Section %r (type=%r) → no matching photo in SmartPool, slot left blank.",
+                            slot[:50], section_type,
+                        )
 
             section_urls.append(url)
             if full_article_headings:
@@ -2226,7 +2253,20 @@ def generate_article_images(
                     heading[:50], section_type, matched_listing.name, vision_cat,
                 )
             else:
-                logger.warning("Section %r → pool exhausted, slot blank.", heading[:50])
+                # STRICT CULINARY FALLBACK: never leave a food section with a
+                # nature/room/generic photo. Use a verified food placeholder.
+                if section_type == "culinary":
+                    fallback = _food_fallback_url(used_urls)
+                    url = fallback
+                    used_urls.add(fallback)
+                    vision_cat = PHOTO_CAT_DINING
+                    logger.info(
+                        "Section %r (culinary) → Google Maps pool exhausted for food photos; "
+                        "using verified food placeholder.",
+                        heading[:50],
+                    )
+                else:
+                    logger.warning("Section %r → pool exhausted, slot blank.", heading[:50])
 
             section_urls.append(url)
             heading_images.append((heading, url, [_smart_pool_caption_label(vision_cat)]))

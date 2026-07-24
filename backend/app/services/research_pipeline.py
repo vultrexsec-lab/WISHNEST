@@ -736,10 +736,16 @@ def run_research_pipeline(
                     location_hint,
                 )
 
-    # ── 1c. Vision grounding — inject what's ACTUALLY in the photos into the brief
-    # Scan sample photos from each pre-fetched listing with the Vision API so
-    # OpenAI writes every section based on what is visually present in the
-    # matched image — guaranteeing 100% image-text alignment.
+    # ── 1c. Vision grounding — scan and classify FIRST, then write ──────────────
+    # Scan each pre-fetched listing's photo with the Vision API BEFORE calling
+    # OpenAI. Two goals:
+    #   a) Ground the LLM: it writes section text based on what is VISUALLY
+    #      CONFIRMED in the matched image, guaranteeing image-text alignment.
+    #   b) Category labelling: every scanned photo is classified as food/dining,
+    #      outdoor/nature, rooms, or exterior. The LLM is told which photo
+    #      categories are available per listing so it never writes a detailed
+    #      culinary section for a property whose only verified photos are
+    #      mountain landscapes.
     # This step is skipped gracefully when GOOGLE_CLOUD_VISION_API_KEY is absent.
     if pre_fetched_listings:
         from app.config import get_settings as _get_settings
@@ -748,21 +754,78 @@ def run_research_pipeline(
             try:
                 from app.services.vision_service import (
                     VisionResult,
+                    _FOOD_POSITIVE_LABELS,
+                    _NATURE_LABELS_REJECT_CULINARY,
                     build_vision_context_for_llm,
                     scan_image,
                 )
+                from app.services.image_service import (
+                    PHOTO_CAT_DINING,
+                    PHOTO_CAT_OUTDOOR,
+                    PHOTO_CAT_ROOMS,
+                    _VISION_LABEL_TO_CATEGORY,
+                )
+
                 vision_scan_results: list[VisionResult] = []
+                # Per-listing category summary for the LLM brief
+                listing_photo_categories: list[str] = []
+
                 for listing in pre_fetched_listings[:6]:   # cap at 6 to control latency
-                    if listing.photo_url:
-                        vr = scan_image(listing.photo_url)
-                        if vr and vr.labels:
-                            vision_scan_results.append(vr)
+                    if not listing.photo_url:
+                        continue
+                    vr = scan_image(listing.photo_url)
+                    if not (vr and vr.labels):
+                        continue
+                    vision_scan_results.append(vr)
+
+                    # Classify this photo into an editorial category
+                    label_names = {lb.description.lower() for lb in vr.labels}
+                    is_food    = bool(label_names & _FOOD_POSITIVE_LABELS)
+                    is_nature  = bool(label_names & _NATURE_LABELS_REJECT_CULINARY)
+                    # Derive the dominant category from label→category mapping
+                    cat_counts: dict[str, int] = {}
+                    for ln in label_names:
+                        cat = _VISION_LABEL_TO_CATEGORY.get(ln)
+                        if cat:
+                            cat_counts[cat] = cat_counts.get(cat, 0) + 1
+                    dominant_cat = max(cat_counts, key=lambda c: cat_counts[c]) if cat_counts else "unknown"
+
+                    if is_food:
+                        photo_type = "FOOD/DINING photo"
+                    elif is_nature:
+                        photo_type = "NATURE/OUTDOOR photo"
+                    elif dominant_cat == PHOTO_CAT_ROOMS:
+                        photo_type = "ROOMS/INTERIOR photo"
+                    else:
+                        photo_type = "EXTERIOR/GENERAL photo"
+
+                    top_labels = [lb.description for lb in vr.labels[:5]]
+                    listing_photo_categories.append(
+                        f"  • {listing.name}: verified {photo_type} "
+                        f"(Vision labels: {', '.join(top_labels)})"
+                    )
+
                 if vision_scan_results:
                     vision_context = build_vision_context_for_llm(vision_scan_results)
-                    brief = brief + "\n\n" + vision_context
+                    # Prepend a strict editorial instruction about image categories
+                    category_summary = "\n".join(listing_photo_categories)
+                    vision_grounding_block = (
+                        "\n\n## VISION-CONFIRMED IMAGE CATEGORIES — WRITE SECTIONS ACCORDINGLY\n"
+                        "The following listings have been scanned by Google Cloud Vision API. "
+                        "You MUST match your section content to the CONFIRMED photo category:\n"
+                        "  - If the listing only has NATURE/OUTDOOR photos → do NOT write a "
+                        "detailed culinary/dining section for it; write about its outdoor setting.\n"
+                        "  - If the listing has a FOOD/DINING photo → you may write a culinary "
+                        "section grounded in what the Vision scan detected.\n"
+                        "  - NEVER describe food, meals, or dishes in a section whose photo shows "
+                        "mountains, valleys, or flowers — the image and text MUST match.\n\n"
+                        f"{category_summary}\n\n"
+                        f"{vision_context}"
+                    )
+                    brief = brief + vision_grounding_block
                     logger.info(
-                        "Vision grounding: scanned %d listing photo(s) and injected "
-                        "visual context into OpenAI brief for grounded article writing.",
+                        "Vision grounding: scanned %d listing photo(s), classified categories, "
+                        "and injected image-first context into OpenAI brief.",
                         len(vision_scan_results),
                     )
             except Exception as exc:  # noqa: BLE001
