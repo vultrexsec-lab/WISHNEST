@@ -1,53 +1,39 @@
 """
-Real image search for WishNest articles.
+Google Maps-only image pipeline for WishNest articles.
 
-Three-provider search chain with a structured query-degradation fallback:
+Every photo displayed in a WishNest article comes EXCLUSIVELY from the
+specific property's own Google Maps photo gallery, fetched via SerpApi's
+google_maps_photos engine.  No external image sources (DuckDuckGo, Pexels,
+Unsplash, OpenAI, Picsum, or any other provider) are ever used.
 
-  1. DuckDuckGo Images (free, no API key) — primary source.
-  2. Pexels API (free, requires PEXELS_API_KEY) — used when DDG returns nothing
-     or errors (rate limit, network blip, library issue).
-  3. Unsplash API (free, requires UNSPLASH_ACCESS_KEY) — used when both of the
-     above fail.
+Source hierarchy
+----------------
+1. SerpApi google_maps_photos gallery — full property gallery keyed by the
+   Google Maps data_id (place_id) for the exact named business.
+2. The single thumbnail photo already stored on the PropertyListing object
+   (same source, already fetched during the initial Places lookup).
 
-If all three providers return nothing for the exact query, we do NOT fall back
-to a random placeholder (Picsum or similar) — that produces foreign, completely
-unrelated images (Statue of Liberty, vintage cars, Hollywood hills).
+Fallback rule (100% property-only)
+-----------------------------------
+If a section type (e.g. "culinary") has no exact-match photo in the pool,
+another high-quality real photo from the same property gallery is used instead
+(exterior, balcony, outdoor area, lobby, etc.).  A real property photo is
+always preferable to a blank slot and infinitely preferable to a stock image
+or AI-generated render from an unrelated source.
 
-Instead we apply a query-degradation chain that stays geographically relevant:
-  - Level 0: exact landmark query  e.g. "Har Ki Pauri Haridwar India"
-  - Level 1: bare location          e.g. "Haridwar India"
-  - Level 2: thematic regional      e.g. "Ganges River ghats India"
-  - Level 3: broad India travel     e.g. "India spiritual river pilgrimage"
-
-If every level of the chain exhausts every provider, the slot is left blank
-(returns None) rather than publishing a misleading foreign image.
+A slot is only left blank when the property's entire photo gallery has been
+exhausted for this article.  This is rare for galleries with 20+ photos.
 
 All returned URLs are rewritten to go through our own `/api/image-proxy`
 route so that:
   - Hotlinking/referrer restrictions on the origin CDN never break the
     published article (we fetch server-side and re-serve the bytes).
   - The frontend never depends on a third-party image host's uptime.
-
-Strategy:
-  1. Extract h2/h3 headings from the full_article HTML (in document order).
-  2. For each heading build a targeted search query and fetch the top image.
-  3. Inject a <figure> block immediately after each heading tag so readers see
-     a contextual photo right where the subject is discussed.
-  4. Also populate hero_image_url (wide search on the headline + location) and
-     section_image_urls (list of fetched URLs) for backward-compatible rendering.
-
-Never raises — provider failures fall through the degradation chain; a blank
-slot is preferable to a foreign placeholder.
 """
-import hashlib
 import html
 import logging
-import random
 import re
-import time
 import urllib.parse
-
-import requests
 
 from dataclasses import dataclass, field
 
@@ -61,8 +47,6 @@ from app.services.places_service import (
 )
 
 logger = logging.getLogger("wishnest.image_service")
-
-_REQUEST_TIMEOUT = 8  # seconds — keep provider calls snappy so one slow API doesn't stall the whole article
 
 # ---------------------------------------------------------------------------
 # URL safety
@@ -109,225 +93,15 @@ def _proxied_url(original_url: str) -> str:
     return "/api/image-proxy?url=" + urllib.parse.quote(original_url, safe="")
 
 
-# ---------------------------------------------------------------------------
-# Query building — force strict geographic/landmark relevance
-# ---------------------------------------------------------------------------
-
-# Indian hill stations that generic/western stock photography frequently
-# gets confused with (e.g. "resort with balcony views" pulling Alpine/Bali
-# chalet images). Any subject/location mentioning one of these gets a strict
-# regional lock: forced *region-correct* hill terms plus negative keywords to
-# push DuckDuckGo away from generic interior/stock results. Mapped per-station
-# rather than a single hardcoded "Uttarakhand/Himalayan" pair for all of
-# them — Ooty/Munnar/Coorg are Western Ghats/Nilgiris, not Himalayan, and
-# forcing the wrong region name would itself hurt relevance.
-_HILL_STATION_REGIONS: dict[str, str] = {
-    "mussoorie": "Uttarakhand hills Himalayan resort",
-    "nainital": "Uttarakhand hills Himalayan resort",
-    "almora": "Uttarakhand hills Himalayan resort",
-    "ranikhet": "Uttarakhand hills Himalayan resort",
-    "kausani": "Uttarakhand hills Himalayan resort",
-    "lansdowne": "Uttarakhand hills Himalayan resort",
-    "shimla": "Himachal hills Himalayan resort",
-    "manali": "Himachal hills Himalayan resort",
-    "dalhousie": "Himachal hills Himalayan resort",
-    "kasauli": "Himachal hills Himalayan resort",
-    "chail": "Himachal hills Himalayan resort",
-    "darjeeling": "West Bengal Himalayan hills resort",
-    "gangtok": "Sikkim Himalayan hills resort",
-    "ooty": "Nilgiri hills Western Ghats resort",
-    "kodaikanal": "Palani hills Western Ghats resort",
-    "munnar": "Kerala Western Ghats hills resort",
-    "coorg": "Karnataka Western Ghats hills resort",
-}
-_HILL_STATIONS = set(_HILL_STATION_REGIONS)
 
 
 # ---------------------------------------------------------------------------
-# Live property listings (Google Places / SerpApi) are the PRIMARY image
-# source — every image handed out preferentially belongs to a real, named
-# business listing with a genuine Google star rating, never a stock photo.
-#
-# PREMIUM_LUXURY_HOTEL_IMAGES below is a last-resort SAFETY NET only. It
-# exists purely so a slow/erroring/quota-exhausted live provider (or a
-# location with no dynamic-search results) can never leave a published
-# article with a blank image slot. It is deliberately checked LAST, after
-# the live pool and the dynamic search chain have both been exhausted.
+# NOTE: All external image sources (Unsplash, Pexels, DuckDuckGo, OpenAI,
+# Picsum, etc.) have been removed. Every photo in WishNest articles comes
+# exclusively from the specific property's own Google Maps photo gallery,
+# fetched via SerpApi's google_maps_photos engine. No stock images, no
+# AI-generated renders, no images from rival properties or unrelated sources.
 # ---------------------------------------------------------------------------
-PREMIUM_LUXURY_HOTEL_IMAGES: list[str] = [
-    "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=1600&q=80",  # 01 resort infinity pool
-    "https://images.unsplash.com/photo-1571896349842-33c89424de2d?w=1600&q=80",  # 02 luxury pool terrace
-    "https://images.unsplash.com/photo-1590490360182-c33d57733427?w=1600&q=80",  # 03 hotel suite bedroom
-    "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=1600&q=80",  # 04 tropical resort pool
-    "https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=1600&q=80",  # 05 grand hotel exterior
-]
-
-# Verified, high-quality food/dining placeholders — North Indian / Uttarakhand
-# traditional cuisine focus. Used when the property gallery has no food photo.
-# Curated so every image shows authentic Indian meals, spices, or rustic dining
-# settings that match a homestay/farm-stay editorial context.
-PREMIUM_FOOD_PLACEHOLDER_IMAGES: list[str] = [
-    # Indian thali / traditional plated meal (warm, rustic, natural light)
-    "https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=1600&q=80",
-    # Colourful spices and dal — North Indian pantry/kitchen atmosphere
-    "https://images.unsplash.com/photo-1596797038530-2c107229654b?w=1600&q=80",
-    # Rustic clay pot cooking / authentic Indian home cooking
-    "https://images.unsplash.com/photo-1567620832903-9fc6debc209f?w=1600&q=80",
-    # Butter naan + curry on a wooden board — homestay dining aesthetic
-    "https://images.unsplash.com/photo-1565557623262-b51c2513a641?w=1600&q=80",
-    # Fresh organic vegetables / farm produce — farm-to-table culinary story
-    "https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?w=1600&q=80",
-    # Warm restaurant / dining table with candles — welcoming dining ambiance
-    "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=1600&q=80",
-]
-
-# Verified, high-quality cozy bedroom / homestay room interior placeholders.
-# Used when the property gallery has no indoor room photo for Room Design sections.
-# Curated to match a rustic Indian homestay / hill-station retreat aesthetic.
-PREMIUM_ROOM_INTERIOR_IMAGES: list[str] = [
-    # Cozy white-linen bedroom with warm natural light — clean minimalist
-    "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=1600&q=80",
-    # Rustic wooden-beamed bedroom — mountain / hill-station homestay feel
-    "https://images.unsplash.com/photo-1631049307264-da0ec9d70304?w=1600&q=80",
-    # Warm hotel room with large window / mountain view suggestion
-    "https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?w=1600&q=80",
-    # Luxury boutique room with earthy tones — boutique homestay aesthetic
-    "https://images.unsplash.com/photo-1595526114035-0d45ed16cfbf?w=1600&q=80",
-    # Cosy twin-bed room — gentle, guest-friendly interior styling
-    "https://images.unsplash.com/photo-1590490360182-c33d57733427?w=1600&q=80",
-]
-
-# Verified lounge/lobby/exterior placeholders — used ONLY when ALL dynamic
-# search providers fail for a hospitality or general section so the slot
-# never shows a bathroom or blank image under a guest-experience heading.
-PREMIUM_LOUNGE_EXTERIOR_IMAGES: list[str] = [
-    "https://images.unsplash.com/photo-1564501049412-61c2a3083791?w=1600&q=80",  # L1 hotel lobby interior
-    "https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=1600&q=80",  # L2 grand hotel exterior
-    "https://images.unsplash.com/photo-1551882547-ff40c63fe5fa?w=1600&q=80",  # L3 luxury hotel entrance
-    "https://images.unsplash.com/photo-1455587734955-081b22074882?w=1600&q=80",  # L4 hotel reception/lobby
-    "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=1600&q=80",  # L5 resort infinity pool
-]
-
-
-def _lounge_fallback_url(used_urls: set[str]) -> str:
-    """
-    Pick a verified lounge / lobby / exterior placeholder that has not already
-    been used in this article.  Falls back to the first entry if every
-    placeholder is already used.  Designed for hospitality and general sections
-    where the property photo pool cannot be trusted (untagged Google Maps photos
-    may be bathrooms or bedrooms).
-    """
-    for raw_url in PREMIUM_LOUNGE_EXTERIOR_IMAGES:
-        if raw_url not in used_urls:
-            used_urls.add(raw_url)
-            return raw_url
-    return PREMIUM_LOUNGE_EXTERIOR_IMAGES[0]
-
-
-def _food_fallback_url(used_urls: set[str]) -> str:
-    """
-    Pick a verified food/dining placeholder that has not already been used in
-    this article.  Returns the DIRECT Unsplash URL (not proxied) so it is
-    100% guaranteed to load in the browser — Unsplash's CDN is public and
-    does not use hotlink protection for standard image URLs.  Falls back to
-    the first entry if every placeholder is already used.
-    """
-    for raw_url in PREMIUM_FOOD_PLACEHOLDER_IMAGES:
-        if raw_url not in used_urls:
-            used_urls.add(raw_url)
-            return raw_url
-    # All entries already used — repeat the first; duplication beats blank.
-    return PREMIUM_FOOD_PLACEHOLDER_IMAGES[0]
-
-
-def _room_interior_fallback_url(used_urls: set[str]) -> str:
-    """
-    Pick a verified cozy homestay bedroom interior placeholder that has not
-    already been used in this article.  Used when the property gallery has no
-    indoor room photo for Room Design sections — an attractive neutral bedroom
-    is always better than an outdoor cottage appearing under 'Room Design'.
-    """
-    for raw_url in PREMIUM_ROOM_INTERIOR_IMAGES:
-        if raw_url not in used_urls:
-            used_urls.add(raw_url)
-            return raw_url
-    # All entries already used — repeat the first; duplication beats blank.
-    return PREMIUM_ROOM_INTERIOR_IMAGES[0]
-
-
-def _fetch_external_section_image(
-    section_type: str,
-    used_urls: set[str],
-    location: str | None = None,
-) -> str | None:
-    """
-    Attempt to fetch a contextually appropriate external image for *section_type*
-    when the property's own gallery has no suitable photo.
-
-    Priority:
-      1. Live image search via _search_all_providers (DDG → Pexels → Unsplash API)
-         using a strict, brand-free contextual query.
-      2. Curated Unsplash static placeholder list specific to the section type.
-
-    Returns a direct URL (not proxied) or None if even the static list is empty.
-    The URL is added to *used_urls* to prevent reuse.
-    """
-    # ── Targeted search queries — brand-free so no rival property appears ──
-    _EXTERNAL_QUERIES: dict[str, list[str]] = {
-        "culinary": [
-            "North Indian traditional food thali Uttarakhand authentic cuisine",
-            "Indian dal roti traditional home cooked meal rustic",
-            "authentic Indian food spread local ingredients warm light",
-        ],
-        "room_design": [
-            "cozy homestay bedroom interior India rustic wooden decor",
-            "boutique hill station room interior warm natural light",
-            "simple elegant bedroom interior Indian homestay",
-        ],
-    }
-    queries = _EXTERNAL_QUERIES.get(section_type, [])
-    for query in queries:
-        urls = _search_all_providers(query, max_results=3, reject_plumbing=True)
-        for url in urls:
-            if url not in used_urls:
-                used_urls.add(url)
-                logger.info(
-                    "External fallback for section=%r → search hit: %s",
-                    section_type, url[:80],
-                )
-                return url
-
-    # ── Static curated fallback ─────────────────────────────────────────────
-    if section_type == "culinary":
-        return _food_fallback_url(used_urls)
-    if section_type == "room_design":
-        return _room_interior_fallback_url(used_urls)
-
-    return None
-
-
-def _static_fallback_url(index: int, used_urls: set[str]) -> str:
-    """
-    Pick from PREMIUM_LUXURY_HOTEL_IMAGES starting at a randomised offset
-    (so repeated total-provider-outage articles don't all show the exact
-    same first entry), then walk forward sequentially from there, wrapping
-    around if an article needs more images than the array has. Only skips
-    to the next entry if the proxied URL is already used elsewhere in this
-    article; if every entry is somehow already used, repeats are accepted
-    over leaving the slot blank. Never raises, never returns empty/None —
-    this is the guaranteed last line of defense against a blank image slot.
-    """
-    n = len(PREMIUM_LUXURY_HOTEL_IMAGES)
-    index = (index + random.randint(0, n - 1)) % n
-    for offset in range(n):
-        raw_url = PREMIUM_LUXURY_HOTEL_IMAGES[(index + offset) % n]
-        proxied = _proxied_url(raw_url)
-        if proxied not in used_urls:
-            used_urls.add(proxied)
-            return proxied
-    # Every static image already used in this article — repeat rather than
-    # ever return an empty slot.
-    return _proxied_url(PREMIUM_LUXURY_HOTEL_IMAGES[index % n])
 
 
 # ---------------------------------------------------------------------------
@@ -362,11 +136,9 @@ class _LandmarkPool:
     interiors.
 
     When SerpApi returns no landmark results the pool is simply empty
-    (`available` is False) and callers fall through to the dynamic image-search
-    chain (DDG / Pexels / Unsplash with a location-anchored query). The static
-    hotel safety-net (`PREMIUM_LUXURY_HOTEL_IMAGES`) is intentionally NEVER
-    used for landmark articles — hotel clipart on a monument article is the
-    exact failure mode this pool exists to prevent.
+    (`available` is False) and callers leave the slot blank rather than
+    substituting a photo from an unrelated external source — a blank section
+    is always preferable to a hotel photo appearing on a monument article.
     """
 
     def __init__(self, location: str | None, limit: int = 10):
@@ -1282,160 +1054,20 @@ def _smart_pool_caption_label(vision_category: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _build_query(subject: str, location: str | None) -> str:
-    """
-    Build a targeted image-search query for the given subject + location.
-
-    Strategy
-    --------
-    Short subjects (≤ 3 words) are almost always specific landmark or place
-    names (e.g. "Ram Jhula", "Har Ki Pauri", "Ganga Aarti").  Quoting them
-    as two independent phrase-tokens ("Ram Jhula" "Rishikesh") frequently
-    returns zero results from image APIs because the providers try to match
-    both quoted phrases independently, falling through to Picsum.
-
-    Instead we combine short subject + location into ONE unquoted phrase
-    ("Ram Jhula Rishikesh India") so providers treat it as a single coherent
-    landmark query — which is exactly what returns accurate results.
-
-    Long subjects (> 3 words) are section headings like "Best Homestays with
-    Valley Views".  For those we skip quoting the full heading (too specific)
-    and instead lead with the location so the query is anchored geographically.
-
-    Hill-station lock: any subject/location mentioning a known Indian hill
-    station gets forced regional terms (e.g. "Uttarakhand hills Himalayan
-    resort") plus DDG negative keywords (-interiors -stock -generic) to push
-    away generic Alpine/Bali chalet stock photos.
-    """
-    subject = (subject or "").strip()
-    if not subject:
-        return location or ""
-
-    haystack = f"{subject} {location or ''}".lower()
-    matched_hill_station = next(
-        (hs for hs in _HILL_STATIONS if hs in haystack), None
-    )
-
-    words = subject.split()
-    loc = (location or "").strip()
-
-    if len(words) <= 3:
-        # Short landmark name — combine directly into one phrase for maximum
-        # search relevance.  Avoids the two-quoted-token problem.
-        if loc and loc.lower() not in subject.lower():
-            base = f"{subject} {loc}"
-        else:
-            base = subject
-        parts = [base]
-        if "india" not in base.lower():
-            parts.append("India")
-    else:
-        # Long heading — anchor on location first, then add the subject
-        # without quoting so providers don't over-restrict results.
-        if loc and loc.lower() not in subject.lower():
-            parts = [loc, subject]
-        else:
-            parts = [subject]
-        if loc and "india" not in loc.lower() and "india" not in subject.lower():
-            parts.append("India")
-        elif not loc and "india" not in subject.lower():
-            parts.append("India")
-
-    if matched_hill_station:
-        parts.append(_HILL_STATION_REGIONS[matched_hill_station])
-        parts.append("-interiors -stock -generic")
-
-    return " ".join(parts)
-
-
-# ---------------------------------------------------------------------------
-# Relevance filtering — reject images whose metadata has no overlap with the
-# geographic/landmark subject we actually searched for
-# ---------------------------------------------------------------------------
-
-_STOPWORDS = {
-    "the", "a", "an", "of", "in", "at", "for", "and", "or", "to", "with",
-    "near", "view", "views", "photo", "photos", "image", "images", "best",
-    "top", "stay", "stays", "hotel", "hotels", "resort", "resorts",
-    "luxury", "villa", "villas", "property", "review", "reviews", "india",
-    "exterior", "interior", "ambiance",
-}
-
-
-def _significant_tokens(text: str | None) -> set[str]:
-    if not text:
-        return set()
-    tokens = re.findall(r"[a-zA-Z]{3,}", text.lower())
-    return {t for t in tokens if t not in _STOPWORDS}
-
-
-# ---------------------------------------------------------------------------
-# Outdoor-context / indoor-metadata mismatch detection
-#
-# Problem: a section heading like "Outdoor Spaces and Amenities" generates a
-# query whose generic token "amenities" matches hotel-room or bathroom images
-# tagged "hotel amenities" — semantically wrong for an outdoor/nature section.
-#
-# Fix: if the search query signals an outdoor / garden / nature context, images
-# whose metadata contains indoor-space tokens (bathroom, sink, bedroom, etc.)
-# are hard-rejected regardless of token-overlap score.
-# ---------------------------------------------------------------------------
-
-# Tokens that signal an outdoor / garden / nature context in the query text.
-_OUTDOOR_CONTEXT_TOKENS: frozenset[str] = frozenset({
-    "outdoor", "outdoors", "outside", "open-air", "openair",
-    "garden", "gardens", "grounds", "lawn", "courtyard", "patio",
-    "terrace", "balcony", "deck", "verandah", "veranda",
-    "pool", "infinity", "landscape", "landscaping",
-    "forest", "trail", "trek", "nature", "natural",
-    "valley", "mountain", "hill", "scenic", "vista", "view",
-    "sky", "sunrise", "sunset", "surroundings", "environment",
-    "meadow", "field", "jungle", "wildlife",
-})
-
-# Tokens in image metadata (title / source URL) that definitively indicate
-# an indoor / bathroom / bedroom space — never appropriate under an outdoor
-# section heading.
-_INDOOR_MISMATCH_TOKENS: frozenset[str] = frozenset({
-    "bathroom", "washroom", "restroom", "lavatory", "toilet",
-    "bathtub", "bathing", "shower", "showerroom",
-    "sink", "faucet", "tap", "plumbing", "vanity",
-    "bedroom", "closet", "wardrobe", "corridor", "hallway",
-    "laundry", "linen", "towel", "bath",
-})
-
-# Compiled regex for rejecting bathroom/plumbing AND bedroom/room-interior
-# content when the calling section makes such images contextually wrong
-# (culinary, outdoor).  NOT a global ban — bathroom and bedroom photos are
-# legitimate editorial content in architecture, room-comforts, and hygiene
-# sections where guests need to assess stay quality.  This gate fires ONLY
-# when reject_plumbing=True (i.e. for every section except "room_design").
-_INDOOR_BATHROOM_RE = re.compile(
-    r"\b(?:"
-    r"bathroom|washroom|restroom|lavatory|toilet|bathtub|bathing"
-    r"|shower[\s_\-]?room|sink|faucet|plumbing"
-    # bedroom / room-interior terms — wrong under Culinary / Outdoor headings
-    r"|bedroom|bedrooms|bed[\s_\-]?room|guest[\s_\-]?room|hotel[\s_\-]?room"
-    r"|suite[\s_\-]?interior|room[\s_\-]?interior|interior[\s_\-]?room"
-    r"|sleeping[\s_\-]?area|bed[\s_\-]?area|accommodation[\s_\-]?interior"
-    r")\b",
-    re.IGNORECASE,
-)
-
-
 # ---------------------------------------------------------------------------
 # Section type classification
 #
-# Each article heading is classified into one of four types so the image
-# routing logic can apply contextually correct constraints:
+# Each article heading is classified into one of seven types so the image
+# routing logic can apply contextually correct constraints from the Google
+# Maps photo pool:
 #
-#   "culinary"    — dining, food, cuisine, kitchen, "Eat & Explore", etc.
-#   "outdoor"     — garden, pool, terrace, outdoor spaces, landscape, etc.
-#   "room_design" — room comforts, architecture, design, amenities, spa, etc.
-#   "general"     — everything else (connectivity, history, conclusion, …)
-#
-# Bathroom / plumbing images are ALLOWED in "room_design" (guests need to see
-# hygiene quality) but FORBIDDEN in "culinary" and "outdoor".
+#   "culinary"     — dining, food, cuisine, kitchen, "Eat & Explore", etc.
+#   "outdoor"      — garden, pool, terrace, outdoor spaces, landscape, etc.
+#   "room_design"  — room comforts, architecture, design, amenities, spa, etc.
+#   "connectivity" — getting here, transport, access, distance, etc.
+#   "hospitality"  — guest experience, reviews, staff, service, etc.
+#   "intro"        — introduction, overview, about, setting, etc.
+#   "general"      — everything else (history, conclusion, unclassified, …)
 # ---------------------------------------------------------------------------
 
 _CULINARY_HEADING_TOKENS: frozenset[str] = frozenset({
@@ -1445,8 +1077,6 @@ _CULINARY_HEADING_TOKENS: frozenset[str] = frozenset({
     "delights", "flavours", "flavors", "taste", "tasting",
 })
 
-# Tokens that classify a heading as "connectivity / accessibility" — these
-# sections need exterior / entrance / gate imagery, NOT interior pool photos.
 _CONNECTIVITY_HEADING_TOKENS: frozenset[str] = frozenset({
     "connectivity", "accessible", "accessibility",
     "transport", "transportation", "getting", "commute",
@@ -1455,12 +1085,6 @@ _CONNECTIVITY_HEADING_TOKENS: frozenset[str] = frozenset({
     "route", "routes", "directions", "reaching",
 })
 
-# Introduction / overview headings — should ALWAYS map to exterior/facade imagery.
-# A property pool image (Google Maps user-uploaded) is too unpredictable here:
-# it could be a bathroom, a corridor, or a random staff photo. Routing these
-# sections to an exterior search guarantees the opening image of the article
-# matches the introductory text (which describes the property's setting and
-# architecture, not its plumbing).
 _INTRO_HEADING_TOKENS: frozenset[str] = frozenset({
     "introduction", "intro", "overview", "about", "background",
     "welcome", "setting", "context", "preface", "prologue",
@@ -1481,19 +1105,11 @@ _OUTDOOR_HEADING_TOKENS: frozenset[str] = frozenset({
 _ROOM_DESIGN_HEADING_TOKENS: frozenset[str] = frozenset({
     "room", "rooms", "suite", "suites", "comforts", "comfort",
     "bedroom", "accommodation",
-    # NOTE: "architecture" / "architectural" intentionally excluded here.
-    # Headings like "Architectural Marvel" describe the BUILDING DESIGN, not
-    # room comforts — they should receive an exterior/property photo (general),
-    # not a bedroom or bathroom image.  Those tokens now fall through to general.
     "design", "interior", "interiors", "amenities", "amenity",
     "stay", "lodging", "bathroom", "hygiene", "sanitation",
     "facility", "facilities", "spa", "wellness",
 })
 
-# Tokens that classify a heading as "hospitality / guest experience" — these
-# sections describe staff quality, check-in, reviews, and service, NOT rooms.
-# They must NEVER receive a bathroom or bedroom photo from the property pool.
-# Fallback: warm lounge / lobby / reception imagery.
 _HOSPITALITY_HEADING_TOKENS: frozenset[str] = frozenset({
     "hospitality", "experience", "experiences", "guest", "guests",
     "service", "services", "staff", "team", "host", "hosting",
@@ -1504,22 +1120,7 @@ _HOSPITALITY_HEADING_TOKENS: frozenset[str] = frozenset({
     "impression", "impressions", "testimonial", "testimonials",
 })
 
-# Section-specific image-search query suffixes — appended when doing a
-# targeted search for a section so providers return contextually correct photos.
-_SECTION_QUERY_SUFFIX: dict[str, str] = {
-    "intro":         "exterior front entrance facade hotel building outside",
-    "culinary":      "dining food restaurant cuisine kitchen",
-    "outdoor":       "outdoor garden exterior grounds terrace pool",
-    "room_design":   "room interior suite bedroom accommodation",
-    "connectivity":  "exterior lobby entrance facade gate hotel front",
-    "hospitality":   "hotel lounge lobby reception warm welcoming interior",
-    "general":       "hotel exterior facade property grounds architecture",
-}
-
-# Human-readable labels for figure captions — describe what TYPE of image
-# the section is expected to contain, so "Image: Introduction" becomes
-# "Exterior view — Introduction" instead of a plain section heading echo.
-# Used as the FALLBACK when actual photo tags are unavailable.
+# Human-readable labels for figure captions.
 _SECTION_CAPTION_PREFIX: dict[str, str] = {
     "intro":         "Exterior view",
     "culinary":      "Culinary experience",
@@ -1535,23 +1136,11 @@ def _caption_prefix_from_actual_tags(tags: list[str]) -> str | None:
     """
     Derive the most accurate caption prefix from the *actual* tags of the
     chosen photo (either SerpApi category tags or Vision category labels).
-
-    Priority (most specific first):
-      0. Direct Vision-category label  → pass through unchanged
-      1. Bathroom / bathtub / plumbing → "Bathroom and amenities"
-      2. Pool / outdoor / garden       → "Outdoor spaces"
-      3. Food / dining / kitchen       → "Culinary experience"
-      4. Bedroom / room / suite        → "Room and amenities"
-      5. Exterior / facade / entrance  → "Exterior view"
-
-    Returns None when tags are empty or unrecognisable — the caller then
-    falls back to the section-type-derived prefix from _SECTION_CAPTION_PREFIX.
+    Returns None when tags are empty or unrecognisable.
     """
     if not tags:
         return None
 
-    # Pass 0: tags may already be human-readable Vision category labels
-    # (e.g. "Culinary experience", "Outdoor spaces") — return them directly.
     _VISION_LABEL_PASSTHROUGH: dict[str, str] = {
         "culinary experience":       "Culinary experience",
         "room and amenities":        "Room and amenities",
@@ -1566,60 +1155,23 @@ def _caption_prefix_from_actual_tags(tags: list[str]) -> str | None:
         if result:
             return result
 
-    tag_set = set(tags)  # already lowercased by pool constructor
-    if tag_set & {
-        "bathroom", "washroom", "restroom", "bathtub", "bathing",
-        "shower", "toilet", "lavatory",
-    }:
+    tag_set = set(tags)
+    if tag_set & {"bathroom", "washroom", "restroom", "bathtub", "bathing", "shower", "toilet", "lavatory"}:
         return "Bathroom and amenities"
-    if tag_set & {
-        "pool", "swimming pool", "outdoor", "outdoors", "garden",
-        "terrace", "courtyard", "patio", "balcony", "veranda", "deck",
-        "open air", "landscape", "greenery",
-    }:
+    if tag_set & {"pool", "swimming pool", "outdoor", "outdoors", "garden", "terrace", "courtyard",
+                  "patio", "balcony", "veranda", "deck", "open air", "landscape", "greenery"}:
         return "Outdoor spaces"
-    if tag_set & {
-        "food & drink", "food", "drinks", "beverages", "dining room",
-        "kitchen", "breakfast", "lunch", "dinner", "chef", "meal",
-        "cuisine", "cafe", "bar", "buffet", "restaurant",
-    }:
+    if tag_set & {"food & drink", "food", "drinks", "beverages", "dining room", "kitchen",
+                  "breakfast", "lunch", "dinner", "chef", "meal", "cuisine", "cafe", "bar",
+                  "buffet", "restaurant"}:
         return "Culinary experience"
-    if tag_set & {
-        "rooms", "room", "bedroom", "suite", "interior", "accommodation",
-        "living room", "lounge", "corridor", "hallway",
-    }:
+    if tag_set & {"rooms", "room", "bedroom", "suite", "interior", "accommodation",
+                  "living room", "lounge", "corridor", "hallway"}:
         return "Room and amenities"
-    if tag_set & {
-        "exterior", "front", "facade", "building", "outside",
-        "front of property", "entrance", "gate", "driveway",
-    }:
+    if tag_set & {"exterior", "front", "facade", "building", "outside",
+                  "front of property", "entrance", "gate", "driveway"}:
         return "Exterior view"
     return None
-
-# Property-neutral fallback queries used ONLY when the specific property's
-# own verified photo pool is completely exhausted for culinary/outdoor sections.
-#
-# CRITICAL CONSTRAINT: These queries must NEVER include a property name, a
-# location, a hotel name, a restaurant name, or any term that could cause an
-# image provider to return photos of another business.
-# — "Nirvaha Farms dining Dehradun" → might match a Dehradun restaurant ✗
-# — "fresh organic vegetables farm produce" → generic, brand-free, safe ✓
-#
-# A flat-lay of farm vegetables or a sunlit garden path is always editorially
-# preferable to a rival property's dining room appearing under "Culinary Delights".
-# If even this neutral search fails, the slot is left intentionally blank.
-_SECTION_NEUTRAL_FALLBACK: dict[str, str] = {
-    # Food/dining: brand-free North Indian / Uttarakhand cuisine focus
-    "culinary":     "North Indian traditional food thali authentic cuisine rustic dining",
-    "outdoor":      "outdoor natural scenery green garden peaceful vegetation sunlight",
-    # Room design: cozy homestay bedroom interior — never an outdoor cottage
-    "room_design":  "cozy homestay bedroom interior India rustic wooden decor warm light",
-    # Hospitality/experience sections: warm lounge/lobby imagery — never a bathroom.
-    "hospitality":  "hotel lounge lobby reception area warm welcoming atmosphere elegant",
-    # General/catch-all sections: safe exterior shot — universally appropriate
-    # for history, conclusion, overview, and any unclassified heading type.
-    "general":      "luxury hotel exterior architecture property beautiful grounds facade",
-}
 
 
 def _classify_section(heading: str) -> str:
@@ -1660,393 +1212,6 @@ def _classify_section(heading: str) -> str:
     return "general"
 
 
-# ---------------------------------------------------------------------------
-# Hard content-type rejection — non-photographic / non-editorial media
-# ---------------------------------------------------------------------------
-
-# Keywords that definitively identify non-photo content regardless of query.
-# Applied to the combined title + source-URL string before any relevance check.
-# clipart / charts / diagrams / course illustrations / stock-art watermarks
-# are NEVER appropriate in a WishNest editorial article.
-_BAD_CONTENT_RE = re.compile(
-    r"\b(?:"
-    r"clipart|clip[\s_\-]?art|cartoon|vector|icon|icons?|logo|logos?"
-    r"|diagram|chart|charts?|infographic|infograph|illustration|illustrations?"
-    r"|drawing|sketch|sticker|badge|certificate|watermark"
-    r"|course|tutorial|lecture|powerpoint|presentation|slide|slides?|ebook|template"
-    r"|emission|emiss|carbon|co2|greenhouse|pollut"
-    r"|stock[\s_\-]?photo|royalty[\s_\-]?free|shutterstock|gettyimages"
-    r"|istockphoto|dreamstime|depositphoto|alamy|freepik|vecteezy"
-    r")\b",
-    re.IGNORECASE,
-)
-
-
-def _is_bad_content(title: str | None, source_url: str | None) -> bool:
-    """
-    Return True when the image is definitively non-photographic (clipart,
-    diagram, chart, course illustration, stock-art watermark, etc.).
-
-    Called before the token-relevance check so that a bad-content image is
-    always rejected even if it happens to share geographic tokens with the
-    query (e.g. an "India Gate emissions chart" would otherwise pass the
-    relevance filter).
-    """
-    text = f"{title or ''} {source_url or ''}"
-    return bool(_BAD_CONTENT_RE.search(text))
-
-
-def _is_relevant(
-    query: str,
-    title: str | None,
-    source_url: str | None,
-    *,
-    reject_plumbing: bool = False,
-) -> bool:
-    """
-    Reject a candidate image if any of the following conditions are met:
-
-      (a) It is definitively non-photographic (clipart, chart, diagram, etc.) —
-          hard rejection applied before any token check.
-
-      (b) [Section-controlled] When ``reject_plumbing=True`` (set by the caller
-          for culinary and outdoor sections), the image metadata contains
-          bathroom / washroom / indoor-plumbing content and is rejected.
-          This is NOT a global ban — bathroom images are legitimate editorial
-          content in architecture / room-comfort / hygiene sections where guests
-          need to verify stay quality.  ``reject_plumbing`` is only True when
-          the current section makes such images contextually wrong.
-
-      (c) The query signals an OUTDOOR / GARDEN / NATURE context (tokens such as
-          "outdoor", "garden", "terrace", "pool", "landscape", "valley", etc.)
-          AND the image metadata contains INDOOR-SPACE tokens (bathroom, bedroom,
-          sink, corridor, etc.).  This prevents a generic tag like "amenities"
-          from matching a washroom photo filed under "Outdoor Spaces and
-          Amenities" even when the explicit outdoor-section routing bypasses the
-          live pool and goes directly to the dynamic-search chain.
-
-      (d) Its title/source metadata shares no significant words with the search
-          query (token-overlap check).  Stops a landmark query from silently
-          accepting an unrelated stock photo.
-
-    If the provider gives us no title/source metadata (bare URL only) we allow
-    the image through for (b)–(d) — can't filter what we can't read — but
-    (a) still runs because it inspects the source URL itself.
-    """
-    metadata_text = f"{title or ''} {source_url or ''}"
-
-    # ── (a) Hard reject: definitively non-photographic content ───────────────
-    if _is_bad_content(title, source_url):
-        return False
-
-    # ── (b) Section-controlled bathroom / plumbing rejection ─────────────────
-    # Only active when the caller explicitly signals that plumbing images are
-    # inappropriate for the current section (culinary, outdoor).
-    if reject_plumbing and _INDOOR_BATHROOM_RE.search(metadata_text):
-        logger.debug(
-            "Rejected plumbing/bathroom image for section-restricted query %r: metadata=%r",
-            query[:50], metadata_text[:80],
-        )
-        return False
-
-    # ── (c) Outdoor-context / indoor-metadata mismatch ───────────────────────
-    # Secondary safety net: even when the live pool is bypassed, the dynamic-
-    # search chain can still pull bathroom images for outdoor queries via
-    # generic tags ("amenities"). Evaluate the FULL query string for outdoor
-    # signals so environmental tokens win over generic ones.
-    query_lower = query.lower()
-    metadata_lower = metadata_text.lower()
-
-    has_outdoor_context = any(tok in query_lower for tok in _OUTDOOR_CONTEXT_TOKENS)
-    if has_outdoor_context:
-        has_indoor_metadata = any(tok in metadata_lower for tok in _INDOOR_MISMATCH_TOKENS)
-        if has_indoor_metadata:
-            logger.debug(
-                "Rejected indoor image for outdoor-context query %r: metadata=%r",
-                query[:50], metadata_text[:80],
-            )
-            return False
-
-    # ── (d) Token-overlap relevance check ────────────────────────────────────
-    query_tokens = _significant_tokens(query)
-    if not query_tokens:
-        return True
-
-    metadata_tokens = _significant_tokens(metadata_text)
-    if not metadata_tokens:
-        return True  # bare URL — can't judge; bad-content gate already ran
-
-    return bool(query_tokens & metadata_tokens)
-
-
-# ---------------------------------------------------------------------------
-# Provider 1: DuckDuckGo image search (no API key required)
-# ---------------------------------------------------------------------------
-
-def _ddg_image_search(query: str, max_results: int = 5, *, reject_plumbing: bool = False) -> list[str]:
-    """
-    Return a list of validated direct image URLs from DuckDuckGo Images.
-    Returns an empty list on any failure.
-    """
-    try:
-        from ddgs import DDGS
-        results: list[str] = []
-        rejected = 0
-        with DDGS() as ddgs:
-            for r in ddgs.images(
-                query,
-                region="wt-wt",
-                safesearch="moderate",
-                size="Large",
-                type_image="photo",
-                layout="Wide",
-                max_results=max_results * 3,
-            ):
-                raw_url = r.get("image") or r.get("url") or ""
-                safe = _safe_image_url(raw_url)
-                if not safe:
-                    continue
-                if not _is_relevant(query, r.get("title"), r.get("source") or r.get("url"), reject_plumbing=reject_plumbing):
-                    rejected += 1
-                    continue
-                results.append(safe)
-                if len(results) >= max_results:
-                    break
-        logger.debug(
-            "DDG images for %r -> %d results (%d rejected as irrelevant)",
-            query[:60], len(results), rejected,
-        )
-        return results
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("DDG image search failed for %r: %s", query[:60], exc)
-        return []
-
-
-# ---------------------------------------------------------------------------
-# Provider 2: Pexels API (free key at pexels.com/api)
-# ---------------------------------------------------------------------------
-
-def _pexels_image_search(query: str, max_results: int = 5, *, reject_plumbing: bool = False) -> list[str]:
-    api_key = get_settings().pexels_api_key
-    if not api_key:
-        return []
-    try:
-        resp = requests.get(
-            "https://api.pexels.com/v1/search",
-            headers={"Authorization": api_key},
-            params={"query": query, "per_page": max_results, "orientation": "landscape"},
-            timeout=_REQUEST_TIMEOUT,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        results: list[str] = []
-        rejected = 0
-        for photo in data.get("photos", []):
-            src = (photo.get("src") or {}).get("large2x") or (photo.get("src") or {}).get("large")
-            safe = _safe_image_url(src)
-            if not safe:
-                continue
-            title = photo.get("alt")
-            source_url = photo.get("url")
-            if not _is_relevant(query, title, source_url, reject_plumbing=reject_plumbing):
-                rejected += 1
-                continue
-            results.append(safe)
-        logger.debug(
-            "Pexels images for %r -> %d results (%d rejected as irrelevant)",
-            query[:60], len(results), rejected,
-        )
-        return results
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Pexels image search failed for %r: %s", query[:60], exc)
-        return []
-
-
-# ---------------------------------------------------------------------------
-# Provider 3: Unsplash API (free key at unsplash.com/developers)
-# ---------------------------------------------------------------------------
-
-def _unsplash_image_search(query: str, max_results: int = 5, *, reject_plumbing: bool = False) -> list[str]:
-    access_key = get_settings().unsplash_access_key
-    if not access_key:
-        return []
-    try:
-        resp = requests.get(
-            "https://api.unsplash.com/search/photos",
-            headers={"Authorization": f"Client-ID {access_key}"},
-            params={"query": query, "per_page": max_results, "orientation": "landscape"},
-            timeout=_REQUEST_TIMEOUT,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        results: list[str] = []
-        rejected = 0
-        for photo in data.get("results", []):
-            src = (photo.get("urls") or {}).get("regular") or (photo.get("urls") or {}).get("full")
-            safe = _safe_image_url(src)
-            if not safe:
-                continue
-            title = photo.get("alt_description") or photo.get("description")
-            source_url = (photo.get("links") or {}).get("html")
-            if not _is_relevant(query, title, source_url, reject_plumbing=reject_plumbing):
-                rejected += 1
-                continue
-            results.append(safe)
-        logger.debug(
-            "Unsplash images for %r -> %d results (%d rejected as irrelevant)",
-            query[:60], len(results), rejected,
-        )
-        return results
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Unsplash image search failed for %r: %s", query[:60], exc)
-        return []
-
-
-# ---------------------------------------------------------------------------
-# Provider chain — try all three real providers before giving up
-# ---------------------------------------------------------------------------
-
-def _search_all_providers(query: str, max_results: int = 5, *, reject_plumbing: bool = False) -> list[str]:
-    """Try each provider in order; return the first non-empty result list."""
-    for provider in (_ddg_image_search, _pexels_image_search, _unsplash_image_search):
-        try:
-            urls = provider(query, max_results=max_results, reject_plumbing=reject_plumbing)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Image provider %s raised for %r: %s", provider.__name__, query[:60], exc)
-            urls = []
-        if urls:
-            return urls
-    return []
-
-
-# ---------------------------------------------------------------------------
-# Query-degradation chain — stays geographically/thematically relevant even
-# when the exact landmark query returns nothing from any provider.
-# Picsum is intentionally ABSENT — it returns random unrelated foreign photos.
-# ---------------------------------------------------------------------------
-
-def _degraded_query_chain(query: str, location: str | None) -> list[str]:
-    """
-    Build a list of progressively broader queries that are all contextually
-    appropriate for an Indian travel article.  The caller tries them in order
-    until one produces a real, non-duplicate image URL.
-
-    Levels
-    ------
-    0  Exact query (already constructed by _build_query)
-       e.g. "Har Ki Pauri Haridwar India"
-
-    1  Bare location + India
-       e.g. "Haridwar India"
-
-    2  Thematic regional query derived from the subject/location keywords
-       e.g. "Ganges River ghats India"  (for ghat/river/aarti subjects)
-            "Himalayan mountains India" (for hill-station subjects)
-            "Hindu temple India"        (for temple/spiritual subjects)
-
-    3  Broad India travel safety net — always contextually relevant for a
-       travel website even if very generic
-       e.g. "India travel scenic landscape"
-    """
-    chain: list[str] = [query]
-
-    loc = (location or "").strip()
-    haystack = f"{query} {loc}".lower()
-
-    # Level 1 — bare location
-    if loc and loc.lower() not in query.lower():
-        chain.append(f"{loc} India")
-    elif loc:
-        # location already in query; try a shorter cut
-        chain.append(f"{loc}")
-
-    # Level 2 — thematic regional, based on detectable subject keywords
-    if any(w in haystack for w in [
-        "jhula", "ghat", "pauri", "aarti", "ganges", "ganga",
-        "haridwar", "rishikesh", "varanasi", "kashi", "triveni",
-    ]):
-        chain.append("Ganges River ghats India pilgrimage")
-        chain.append("Haridwar Rishikesh spiritual India")
-    elif any(w in haystack for w in [
-        "temple", "mandir", "shrine", "puja", "aarti", "spiritual",
-        "ashram", "yoga", "meditation", "devi", "shiva", "vishnu",
-    ]):
-        chain.append("Hindu temple India spiritual")
-        chain.append("Indian pilgrimage site India")
-    elif any(w in haystack for w in [
-        "mussoorie", "nainital", "shimla", "manali", "darjeeling", "ooty",
-        "hill station", "trek", "himalay", "mountain", "valley", "waterfall",
-    ]):
-        chain.append("Himalayan mountains India landscape")
-        chain.append("Indian hill station scenic India")
-    elif any(w in haystack for w in ["beach", "sea", "ocean", "coast", "goa", "kerala", "andaman"]):
-        chain.append("India beach coastline travel")
-    elif any(w in haystack for w in [
-        "fort", "palace", "rajasthan", "jaipur", "udaipur", "jodhpur",
-        "heritage", "monument", "haveli",
-    ]):
-        chain.append("Rajasthan heritage India palace")
-        chain.append("India historical monument heritage")
-    elif any(w in haystack for w in ["agra", "taj mahal", "mughal"]):
-        chain.append("Taj Mahal Agra India")
-    else:
-        chain.append("India travel scenic landscape tourism")
-
-    # Level 3 — broadest safe fallback (still India-specific, never random)
-    chain.append("India travel landscape scenic")
-
-    # Deduplicate while preserving order
-    seen: set[str] = set()
-    unique: list[str] = []
-    for q in chain:
-        if q not in seen:
-            seen.add(q)
-            unique.append(q)
-    return unique
-
-
-def _best_image(
-    query: str,
-    location: str | None = None,
-    used_urls: set[str] | None = None,
-    *,
-    reject_plumbing: bool = False,
-) -> str | None:
-    """
-    Return the best validated (and proxied) image URL for *query* that has
-    not already been used in the current article.
-
-    Tries the exact query first, then progressively broader but always
-    India-relevant fallback queries (see `_degraded_query_chain`).  Fetches
-    8 candidates per query level so there is room to skip duplicates.
-
-    ``reject_plumbing=True`` propagates into every provider call so that
-    bathroom / plumbing images are skipped throughout the entire degradation
-    chain — used for culinary and outdoor section searches.
-
-    Returns None only when every query level across every provider is
-    exhausted — a blank slot is always preferable to a random foreign image.
-    Picsum is intentionally never used.
-    """
-    for attempt_query in _degraded_query_chain(query, location):
-        urls = _search_all_providers(attempt_query, max_results=8, reject_plumbing=reject_plumbing)
-        for raw_url in urls:
-            proxied = _proxied_url(raw_url)
-            if used_urls is None or proxied not in used_urls:
-                if used_urls is not None:
-                    used_urls.add(proxied)
-                if attempt_query != query:
-                    logger.info(
-                        "Image degraded fallback used: %r -> %r",
-                        query[:50], attempt_query[:50],
-                    )
-                return proxied
-
-    logger.warning(
-        "No relevant image found for %r after full degradation chain — slot left blank.",
-        query[:60],
-    )
-    return None
 
 
 # ---------------------------------------------------------------------------
@@ -2308,16 +1473,12 @@ def generate_article_images(
                               when no live provider is configured or none matched —
                               callers must treat that as "no live rating data".
 
-    Never raises; per-image failures walk the degradation chain and leave the
-    slot as None rather than publishing a random foreign placeholder. No image
-    URL is ever reused within the same article.
+    Every image slot is filled exclusively from the named property's own
+    Google Maps photo gallery (via SerpApi). No external image sources are
+    ever used. If the gallery has no exact-match photo for a section type,
+    another real photo from the same property is used instead. A slot is only
+    left blank when the entire property gallery has been exhausted.
     """
-    # Shared dedup set — every image URL chosen for this article is recorded
-    # here so that no two slots (hero, sections, injected figures) ever get
-    # the same photo.  Passed into every _best_image / live-pool call below.
-    # (Not used at all for the strict single-property path below — repeats
-    # are expected and desired there, since every slot must belong to the
-    # same one hotel.)
     used_urls: set[str] = set()
 
     full_article_headings = _extract_headings(full_article) if full_article else []
@@ -2332,11 +1493,9 @@ def generate_article_images(
 
     # -------------------------------------------------------------------
     # Strict single-property path — review articles about ONE named place
-    # (e.g. "Hyatt Dehradun"). If we can verify real photos for that exact
-    # business, EVERY slot (hero + every section) is filled strictly from
-    # that business's own photo pool, cycling/repeating as needed. No other
-    # business, no DDG/Pexels/Unsplash, no static safety-net image is ever
-    # mixed in for this article.
+    # (e.g. "Hyatt Dehradun"). Every slot (hero + every section) is filled
+    # strictly from that business's own Google Maps photo gallery. No other
+    # business photo, stock image, or external source is ever mixed in.
     # -------------------------------------------------------------------
     single_pool: _SinglePropertyPhotoPool | None = None
     if article_type == "review":
@@ -2378,14 +1537,6 @@ def generate_article_images(
         slots = full_article_headings if full_article_headings else ["exterior view", "interior ambiance"]
         pool_fill_count = 0
 
-        # Which Vision categories are acceptable for strict content sections.
-        # If the pool returns a photo outside this set, the photo is discarded
-        # and an external fallback (search → curated static list) is used instead.
-        _ACCEPTABLE_CATS: dict[str, frozenset[str]] = {
-            "culinary":    frozenset({PHOTO_CAT_DINING}),
-            "room_design": frozenset({PHOTO_CAT_ROOMS, PHOTO_CAT_AMENITY}),
-        }
-
         for slot in slots:
             section_type = _classify_section(slot)
             url: str | None = None
@@ -2394,68 +1545,36 @@ def generate_article_images(
             if smart_pool and smart_pool.available:
                 result = smart_pool.pick_for_section(section_type, used_urls)
                 if result is not None:
-                    candidate_url, candidate_cat = result
-
-                    # ── Strict content-match validation ─────────────────────
-                    # For culinary and room_design the Vision category of the
-                    # returned photo must match what the section needs. If the
-                    # pool fell through to a wrong category (e.g. an exterior
-                    # building under "Culinary Delights", or an outdoor cottage
-                    # under "Room Design"), we discard that photo and fetch an
-                    # external contextually-correct image instead.
-                    acceptable = _ACCEPTABLE_CATS.get(section_type)
-                    if acceptable and candidate_cat not in acceptable:
-                        logger.info(
-                            "Section %r (type=%r): pool returned cat=%r — not suitable; "
-                            "fetching external fallback image.",
-                            slot[:50], section_type, candidate_cat,
-                        )
-                        ext_url = _fetch_external_section_image(
-                            section_type, used_urls, location=location
-                        )
-                        if ext_url:
-                            url = ext_url
-                            vision_cat = (
-                                PHOTO_CAT_DINING if section_type == "culinary"
-                                else PHOTO_CAT_ROOMS
-                            )
-                        else:
-                            # External fetch also failed — accept the pool photo
-                            # rather than leave the slot blank.
-                            url = candidate_url
-                            vision_cat = candidate_cat
-                    else:
-                        url = candidate_url
-                        vision_cat = candidate_cat
-
-                    if url:
-                        used_urls.add(url)
+                    # SmartPhotoPool's multi-pass system (passes 1-5) already
+                    # handles fallback from preferred → neutral → any-property-photo.
+                    # Accept whatever real property photo it returns — no external
+                    # sources are ever consulted.
+                    url, vision_cat = result
+                    used_urls.add(url)
+                    pool_fill_count += 1
+                    logger.info(
+                        "Section %r (type=%r) → Vision cat=%r url=%s",
+                        slot[:50], section_type, vision_cat, url[:60],
+                    )
+                else:
+                    # pick_for_section returned None (pool fully exhausted for unique
+                    # photos). Try pick_any which may reuse already-returned photos
+                    # — a real property photo is always preferable to a blank slot.
+                    any_url = smart_pool.pick_any(used_urls)
+                    if any_url:
+                        url = any_url
+                        vision_cat = "unknown"
+                        used_urls.add(any_url)
                         pool_fill_count += 1
                         logger.info(
-                            "Section %r (type=%r) → Vision cat=%r url=%s",
-                            slot[:50], section_type, vision_cat, url[:60],
-                        )
-                else:
-                    # Pool fully exhausted — use external section-specific fallback.
-                    ext_url = _fetch_external_section_image(
-                        section_type, used_urls, location=location
-                    )
-                    if ext_url:
-                        url = ext_url
-                        vision_cat = (
-                            PHOTO_CAT_DINING if section_type == "culinary"
-                            else PHOTO_CAT_ROOMS if section_type == "room_design"
-                            else "unknown"
-                        )
-                        used_urls.add(ext_url)
-                        logger.info(
-                            "Section %r (type=%r) → pool exhausted; external fallback used.",
+                            "Section %r (type=%r) → pool pick_for_section exhausted; "
+                            "using next available Google Maps property photo.",
                             slot[:50], section_type,
                         )
                     else:
                         logger.warning(
-                            "Section %r (type=%r) → pool exhausted and external fallback "
-                            "unavailable; slot left blank.",
+                            "Section %r (type=%r) → Google Maps property gallery fully "
+                            "exhausted; slot left blank.",
                             slot[:50], section_type,
                         )
 
@@ -2668,20 +1787,33 @@ def generate_article_images(
                     heading[:50], section_type, matched_listing.name, vision_cat,
                 )
             else:
-                # STRICT CULINARY FALLBACK: never leave a food section with a
-                # nature/room/generic photo. Use a verified food placeholder.
-                if section_type == "culinary":
-                    fallback = _food_fallback_url(used_urls)
-                    url = fallback
-                    used_urls.add(fallback)
-                    vision_cat = PHOTO_CAT_DINING
+                # All named-listing pools exhausted. Try any remaining photo
+                # from any listing pool (including already-assigned ones) —
+                # a real Google Maps property photo always beats a blank slot.
+                fallback_url: str | None = None
+                for _fb_idx in range(len(all_listings)):
+                    _fb_pool = _get_or_build_smart_pool(_fb_idx)
+                    if _fb_pool is None:
+                        continue
+                    _fb_pick = _fb_pool.pick_any(used_urls)
+                    if _fb_pick is not None:
+                        fallback_url = _fb_pick
+                        used_urls.add(_fb_pick)
+                        break
+                if fallback_url:
+                    url = fallback_url
+                    vision_cat = "unknown"
                     logger.info(
-                        "Section %r (culinary) → Google Maps pool exhausted for food photos; "
-                        "using verified food placeholder.",
-                        heading[:50],
+                        "Section %r (type=%r) → sequential pool exhausted; "
+                        "recycled photo from a Google Maps listing pool.",
+                        heading[:50], section_type,
                     )
                 else:
-                    logger.warning("Section %r → pool exhausted, slot blank.", heading[:50])
+                    logger.warning(
+                        "Section %r (type=%r) → all Google Maps property pools "
+                        "exhausted; slot left blank.",
+                        heading[:50], section_type,
+                    )
 
             section_urls.append(url)
             heading_images.append((heading, url, [_smart_pool_caption_label(vision_cat)]))
