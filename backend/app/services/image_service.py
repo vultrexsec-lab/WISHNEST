@@ -162,29 +162,50 @@ PREMIUM_LUXURY_HOTEL_IMAGES: list[str] = [
     "https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=1600&q=80",  # 05 grand hotel exterior
 ]
 
-# Verified, high-quality food/dining placeholders — used ONLY when ALL dynamic
-# search providers (DDG, Pexels, Unsplash) fail for a culinary/dining section
-# so that no broken or missing image appears under a food heading.
-# These are generic food/restaurant shots with no visible branding so they are
-# safe alongside any LLM-generated culinary text.
+# Verified, high-quality food/dining placeholders — North Indian / Uttarakhand
+# traditional cuisine focus. Used when the property gallery has no food photo.
+# Curated so every image shows authentic Indian meals, spices, or rustic dining
+# settings that match a homestay/farm-stay editorial context.
 PREMIUM_FOOD_PLACEHOLDER_IMAGES: list[str] = [
-    "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=1600&q=80",  # F1 restaurant table setting
-    "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=1600&q=80",  # F2 colourful food flat-lay
-    "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=1600&q=80",  # F3 warm restaurant interior
-    "https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=1600&q=80",  # F4 plated gourmet dish
-    "https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?w=1600&q=80",  # F5 fresh ingredients bowl
+    # Indian thali / traditional plated meal (warm, rustic, natural light)
+    "https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=1600&q=80",
+    # Colourful spices and dal — North Indian pantry/kitchen atmosphere
+    "https://images.unsplash.com/photo-1596797038530-2c107229654b?w=1600&q=80",
+    # Rustic clay pot cooking / authentic Indian home cooking
+    "https://images.unsplash.com/photo-1567620832903-9fc6debc209f?w=1600&q=80",
+    # Butter naan + curry on a wooden board — homestay dining aesthetic
+    "https://images.unsplash.com/photo-1565557623262-b51c2513a641?w=1600&q=80",
+    # Fresh organic vegetables / farm produce — farm-to-table culinary story
+    "https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?w=1600&q=80",
+    # Warm restaurant / dining table with candles — welcoming dining ambiance
+    "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=1600&q=80",
 ]
 
+# Verified, high-quality cozy bedroom / homestay room interior placeholders.
+# Used when the property gallery has no indoor room photo for Room Design sections.
+# Curated to match a rustic Indian homestay / hill-station retreat aesthetic.
+PREMIUM_ROOM_INTERIOR_IMAGES: list[str] = [
+    # Cozy white-linen bedroom with warm natural light — clean minimalist
+    "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=1600&q=80",
+    # Rustic wooden-beamed bedroom — mountain / hill-station homestay feel
+    "https://images.unsplash.com/photo-1631049307264-da0ec9d70304?w=1600&q=80",
+    # Warm hotel room with large window / mountain view suggestion
+    "https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?w=1600&q=80",
+    # Luxury boutique room with earthy tones — boutique homestay aesthetic
+    "https://images.unsplash.com/photo-1595526114035-0d45ed16cfbf?w=1600&q=80",
+    # Cosy twin-bed room — gentle, guest-friendly interior styling
+    "https://images.unsplash.com/photo-1590490360182-c33d57733427?w=1600&q=80",
+]
 
 # Verified lounge/lobby/exterior placeholders — used ONLY when ALL dynamic
 # search providers fail for a hospitality or general section so the slot
 # never shows a bathroom or blank image under a guest-experience heading.
 PREMIUM_LOUNGE_EXTERIOR_IMAGES: list[str] = [
-    "https://images.unsplash.com/photo-1590490360182-c33d57733427?w=1600&q=80",  # L1 hotel suite lounge area
-    "https://images.unsplash.com/photo-1564501049412-61c2a3083791?w=1600&q=80",  # L2 hotel lobby interior
-    "https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=1600&q=80",  # L3 grand hotel exterior
-    "https://images.unsplash.com/photo-1551882547-ff40c63fe5fa?w=1600&q=80",  # L4 luxury hotel entrance
-    "https://images.unsplash.com/photo-1455587734955-081b22074882?w=1600&q=80",  # L5 hotel reception/lobby
+    "https://images.unsplash.com/photo-1564501049412-61c2a3083791?w=1600&q=80",  # L1 hotel lobby interior
+    "https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=1600&q=80",  # L2 grand hotel exterior
+    "https://images.unsplash.com/photo-1551882547-ff40c63fe5fa?w=1600&q=80",  # L3 luxury hotel entrance
+    "https://images.unsplash.com/photo-1455587734955-081b22074882?w=1600&q=80",  # L4 hotel reception/lobby
+    "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=1600&q=80",  # L5 resort infinity pool
 ]
 
 
@@ -215,8 +236,74 @@ def _food_fallback_url(used_urls: set[str]) -> str:
         if raw_url not in used_urls:
             used_urls.add(raw_url)
             return raw_url
-    # All five already used — repeat the first; duplication beats blank.
+    # All entries already used — repeat the first; duplication beats blank.
     return PREMIUM_FOOD_PLACEHOLDER_IMAGES[0]
+
+
+def _room_interior_fallback_url(used_urls: set[str]) -> str:
+    """
+    Pick a verified cozy homestay bedroom interior placeholder that has not
+    already been used in this article.  Used when the property gallery has no
+    indoor room photo for Room Design sections — an attractive neutral bedroom
+    is always better than an outdoor cottage appearing under 'Room Design'.
+    """
+    for raw_url in PREMIUM_ROOM_INTERIOR_IMAGES:
+        if raw_url not in used_urls:
+            used_urls.add(raw_url)
+            return raw_url
+    # All entries already used — repeat the first; duplication beats blank.
+    return PREMIUM_ROOM_INTERIOR_IMAGES[0]
+
+
+def _fetch_external_section_image(
+    section_type: str,
+    used_urls: set[str],
+    location: str | None = None,
+) -> str | None:
+    """
+    Attempt to fetch a contextually appropriate external image for *section_type*
+    when the property's own gallery has no suitable photo.
+
+    Priority:
+      1. Live image search via _search_all_providers (DDG → Pexels → Unsplash API)
+         using a strict, brand-free contextual query.
+      2. Curated Unsplash static placeholder list specific to the section type.
+
+    Returns a direct URL (not proxied) or None if even the static list is empty.
+    The URL is added to *used_urls* to prevent reuse.
+    """
+    # ── Targeted search queries — brand-free so no rival property appears ──
+    _EXTERNAL_QUERIES: dict[str, list[str]] = {
+        "culinary": [
+            "North Indian traditional food thali Uttarakhand authentic cuisine",
+            "Indian dal roti traditional home cooked meal rustic",
+            "authentic Indian food spread local ingredients warm light",
+        ],
+        "room_design": [
+            "cozy homestay bedroom interior India rustic wooden decor",
+            "boutique hill station room interior warm natural light",
+            "simple elegant bedroom interior Indian homestay",
+        ],
+    }
+    queries = _EXTERNAL_QUERIES.get(section_type, [])
+    for query in queries:
+        urls = _search_all_providers(query, max_results=3, reject_plumbing=True)
+        for url in urls:
+            if url not in used_urls:
+                used_urls.add(url)
+                logger.info(
+                    "External fallback for section=%r → search hit: %s",
+                    section_type, url[:80],
+                )
+                return url
+
+    # ── Static curated fallback ─────────────────────────────────────────────
+    if section_type == "culinary":
+        return _food_fallback_url(used_urls)
+    if section_type == "room_design":
+        return _room_interior_fallback_url(used_urls)
+
+    return None
 
 
 def _static_fallback_url(index: int, used_urls: set[str]) -> str:
@@ -1522,8 +1609,11 @@ def _caption_prefix_from_actual_tags(tags: list[str]) -> str | None:
 # preferable to a rival property's dining room appearing under "Culinary Delights".
 # If even this neutral search fails, the slot is left intentionally blank.
 _SECTION_NEUTRAL_FALLBACK: dict[str, str] = {
-    "culinary":     "fresh organic vegetables farm produce ingredients natural food",
+    # Food/dining: brand-free North Indian / Uttarakhand cuisine focus
+    "culinary":     "North Indian traditional food thali authentic cuisine rustic dining",
     "outdoor":      "outdoor natural scenery green garden peaceful vegetation sunlight",
+    # Room design: cozy homestay bedroom interior — never an outdoor cottage
+    "room_design":  "cozy homestay bedroom interior India rustic wooden decor warm light",
     # Hospitality/experience sections: warm lounge/lobby imagery — never a bathroom.
     "hospitality":  "hotel lounge lobby reception area warm welcoming atmosphere elegant",
     # General/catch-all sections: safe exterior shot — universally appropriate
@@ -2288,6 +2378,14 @@ def generate_article_images(
         slots = full_article_headings if full_article_headings else ["exterior view", "interior ambiance"]
         pool_fill_count = 0
 
+        # Which Vision categories are acceptable for strict content sections.
+        # If the pool returns a photo outside this set, the photo is discarded
+        # and an external fallback (search → curated static list) is used instead.
+        _ACCEPTABLE_CATS: dict[str, frozenset[str]] = {
+            "culinary":    frozenset({PHOTO_CAT_DINING}),
+            "room_design": frozenset({PHOTO_CAT_ROOMS, PHOTO_CAT_AMENITY}),
+        }
+
         for slot in slots:
             section_type = _classify_section(slot)
             url: str | None = None
@@ -2296,32 +2394,68 @@ def generate_article_images(
             if smart_pool and smart_pool.available:
                 result = smart_pool.pick_for_section(section_type, used_urls)
                 if result is not None:
-                    url, vision_cat = result
+                    candidate_url, candidate_cat = result
+
+                    # ── Strict content-match validation ─────────────────────
+                    # For culinary and room_design the Vision category of the
+                    # returned photo must match what the section needs. If the
+                    # pool fell through to a wrong category (e.g. an exterior
+                    # building under "Culinary Delights", or an outdoor cottage
+                    # under "Room Design"), we discard that photo and fetch an
+                    # external contextually-correct image instead.
+                    acceptable = _ACCEPTABLE_CATS.get(section_type)
+                    if acceptable and candidate_cat not in acceptable:
+                        logger.info(
+                            "Section %r (type=%r): pool returned cat=%r — not suitable; "
+                            "fetching external fallback image.",
+                            slot[:50], section_type, candidate_cat,
+                        )
+                        ext_url = _fetch_external_section_image(
+                            section_type, used_urls, location=location
+                        )
+                        if ext_url:
+                            url = ext_url
+                            vision_cat = (
+                                PHOTO_CAT_DINING if section_type == "culinary"
+                                else PHOTO_CAT_ROOMS
+                            )
+                        else:
+                            # External fetch also failed — accept the pool photo
+                            # rather than leave the slot blank.
+                            url = candidate_url
+                            vision_cat = candidate_cat
+                    else:
+                        url = candidate_url
+                        vision_cat = candidate_cat
+
                     if url:
                         used_urls.add(url)
                         pool_fill_count += 1
                         logger.info(
-                            "Section %r (type=%r) → Vision cat=%r",
-                            slot[:50], section_type, vision_cat,
+                            "Section %r (type=%r) → Vision cat=%r url=%s",
+                            slot[:50], section_type, vision_cat, url[:60],
                         )
                 else:
-                    # STRICT CULINARY FALLBACK: never substitute a nature/room photo
-                    # for a food section. Use a verified food placeholder so the
-                    # dining heading always shows food imagery. Blank beats wrong,
-                    # but a food placeholder beats blank for editorial continuity.
-                    if section_type == "culinary":
-                        fallback = _food_fallback_url(used_urls)
-                        url = fallback
-                        used_urls.add(fallback)
-                        vision_cat = PHOTO_CAT_DINING
+                    # Pool fully exhausted — use external section-specific fallback.
+                    ext_url = _fetch_external_section_image(
+                        section_type, used_urls, location=location
+                    )
+                    if ext_url:
+                        url = ext_url
+                        vision_cat = (
+                            PHOTO_CAT_DINING if section_type == "culinary"
+                            else PHOTO_CAT_ROOMS if section_type == "room_design"
+                            else "unknown"
+                        )
+                        used_urls.add(ext_url)
                         logger.info(
-                            "Section %r (culinary) → no verified food photo in SmartPool; "
-                            "using food placeholder.",
-                            slot[:50],
+                            "Section %r (type=%r) → pool exhausted; external fallback used.",
+                            slot[:50], section_type,
                         )
                     else:
                         logger.warning(
-                            "Section %r (type=%r) → no matching photo in SmartPool, slot left blank.",
+                            "Section %r (type=%r) → pool exhausted and external fallback "
+                            "unavailable; slot left blank.",
                             slot[:50], section_type,
                         )
 
