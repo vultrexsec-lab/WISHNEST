@@ -781,8 +781,11 @@ _SECTION_EXCLUDED_VISION_CATS: dict[str, frozenset[str]] = {
 # These section types have a protected core category.  They still receive a
 # safe fallback when the core category is unavailable; this set is retained
 # as a policy marker for callers that need to distinguish protected sections.
+# "connectivity" is included so generic exterior building photos are never
+# injected under an Accessibility/Getting Here section — the slot is hidden
+# when no entrance/gate/road/amenity photo is available.
 _STRICT_SECTION_TYPES: frozenset[str] = frozenset({
-    "culinary", "outdoor", "room_design", "hospitality",
+    "culinary", "outdoor", "room_design", "hospitality", "connectivity",
 })
 
 # Ordered neutral fallbacks used after preferred categories are exhausted.
@@ -797,7 +800,10 @@ _SAFE_FALLBACK_VISION_CATS: dict[str, tuple[str, ...]] = {
     # photos (lobby, lounge) must not appear as "Outdoor Spaces".
     "outdoor": (PHOTO_CAT_OUTDOOR, PHOTO_CAT_EXTERIOR),
     "room_design": (PHOTO_CAT_ROOMS, PHOTO_CAT_EXTERIOR, PHOTO_CAT_OUTDOOR, PHOTO_CAT_AMENITY),
-    "connectivity": (PHOTO_CAT_EXTERIOR, PHOTO_CAT_AMENITY, PHOTO_CAT_OUTDOOR),
+    # Connectivity has no safe fallback: generic exterior building shots must
+    # not appear under an Accessibility / Getting Here section. The slot is
+    # hidden (returns None) when no entrance/gate/road/amenity photo exists.
+    "connectivity": (),
     "hospitality": (PHOTO_CAT_EXTERIOR, PHOTO_CAT_AMENITY, PHOTO_CAT_OUTDOOR),
     "intro": (PHOTO_CAT_EXTERIOR, PHOTO_CAT_OUTDOOR, PHOTO_CAT_AMENITY),
     "general": (PHOTO_CAT_EXTERIOR, PHOTO_CAT_OUTDOOR, PHOTO_CAT_AMENITY),
@@ -1944,10 +1950,13 @@ def _inject_images_into_html(
             else:
                 # Tags present but unrecognised — don't guess; show heading only.
                 caption_prefix = ""
-        # Only prepend the prefix when it adds information; never emit the bare
-        # "Property feature" label that was previously used as a generic fallback.
+        # Show the photo's category label alone (e.g. "Exterior view").
+        # Never join prefix + heading: that produced duplicates like
+        # "Outdoor spaces — Outdoor Spaces" and mismatches like
+        # "Exterior view — Hospitality and Service".
+        # When no category label is available, fall back to the heading text.
         if caption_prefix:
-            caption = html.escape(f"{caption_prefix} — {heading_text[:60]}", quote=False)
+            caption = html.escape(caption_prefix, quote=False)
         else:
             caption = html.escape(heading_text[:60], quote=False)
 
