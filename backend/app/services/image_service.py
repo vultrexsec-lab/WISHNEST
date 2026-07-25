@@ -1881,6 +1881,7 @@ def _extract_headings(full_article_html: str) -> list[str]:
 
 _FIGURE_TEMPLATE = (
     '<figure class="wishnest-section-image" '
+    'data-section-type="{section_type}" '
     'style="margin:2rem 0;text-align:center;">'
     '<img src="{url}" alt="{alt}" referrerpolicy="no-referrer" '
     'style="max-width:100%;width:100%;height:auto;border-radius:8px;object-fit:cover;display:block;" '
@@ -1941,12 +1942,15 @@ def _inject_images_into_html(
         #      tags are non-empty but unrecognised, use an empty prefix so the
         #      caption shows just the heading — this prevents a bedroom photo from
         #      being mislabelled "Exterior view" because it landed in an intro slot.
+        # Always classify the section so we can stamp data-section-type on the
+        # figure and so the caption fallback path can use the same value.
+        section_type = _classify_section(heading_text)
+
         caption_prefix = _caption_prefix_from_actual_tags(actual_tags)
         if caption_prefix is None:
             if not actual_tags:
                 # Truly no tag information — fall back to section-type label.
-                section_type_for_caption = _classify_section(heading_text)
-                caption_prefix = _SECTION_CAPTION_PREFIX.get(section_type_for_caption, "")
+                caption_prefix = _SECTION_CAPTION_PREFIX.get(section_type, "")
             else:
                 # Tags present but unrecognised — don't guess; show heading only.
                 caption_prefix = ""
@@ -1960,7 +1964,12 @@ def _inject_images_into_html(
         else:
             caption = html.escape(heading_text[:60], quote=False)
 
-        figure = _FIGURE_TEMPLATE.format(url=safe_url, alt=alt, caption=caption)
+        figure = _FIGURE_TEMPLATE.format(
+            url=safe_url,
+            alt=alt,
+            caption=caption,
+            section_type=html.escape(section_type, quote=True),
+        )
         return full_match + "\n" + figure
 
     return _HEADING_RE.sub(_replace_heading, full_article_html)

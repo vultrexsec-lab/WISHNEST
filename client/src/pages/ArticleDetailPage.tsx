@@ -128,15 +128,46 @@ export const ArticleDetailPage = (): JSX.Element => {
   });
 
   // MUST be declared before any early return — React Rules of Hooks.
-  // Hide failed article-image containers rather than replacing them with an
-  // unrelated stock/food image. This is especially important for strict
-  // Culinary sections: no verified food photo means no image container.
+  // Two passes over injected section figures:
+  //
+  // Pass 1 (immediate): connectivity figures whose <img> has no valid src are
+  // hidden before the browser attempts a network request. The backend marks
+  // every injected figure with data-section-type so we can target connectivity
+  // sections precisely without touching culinary, outdoor, or room figures.
+  // Any section type whose name contains "connect" is treated as connectivity
+  // (covers "connectivity", "connectivity_access", etc.).
+  //
+  // Pass 2 (on error): hide the parent <figure> (or the <img> itself) when any
+  // image fails to load — covers strict sections (culinary, outdoor, room_design)
+  // where a broken proxy URL reaches the browser.
   useEffect(() => {
     if (!article?.full_article) return;
     const body = document.querySelector<HTMLElement>(
       '[data-testid="text-article-body"]',
     );
     if (!body) return;
+
+    // Pass 1 — proactively hide connectivity figures with no valid image src.
+    const connectivityFigures = body.querySelectorAll<HTMLElement>(
+      'figure[data-section-type*="connect"]',
+    );
+    connectivityFigures.forEach((fig) => {
+      const img = fig.querySelector<HTMLImageElement>("img");
+      if (!img) {
+        fig.hidden = true;
+        return;
+      }
+      const src = img.getAttribute("src") ?? "";
+      const valid =
+        src.startsWith("http://") ||
+        src.startsWith("https://") ||
+        src.startsWith("/api/image-proxy?url=");
+      if (!valid) {
+        fig.hidden = true;
+      }
+    });
+
+    // Pass 2 — hide on network error (all section types).
     const imgs = body.querySelectorAll<HTMLImageElement>("img");
     imgs.forEach((img) => {
       img.addEventListener(
