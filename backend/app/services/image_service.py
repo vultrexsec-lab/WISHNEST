@@ -804,6 +804,94 @@ _SAFE_FALLBACK_VISION_CATS: dict[str, tuple[str, ...]] = {
 }
 
 
+# Minimum aspect ratio (width / height) for an image to be accepted.
+# Images at or below this threshold are portrait/square and are editorially
+# inappropriate for WishNest article section banners (all of which are
+# wide-format hero/section images).
+_MIN_LANDSCAPE_ASPECT_RATIO: float = 1.2
+
+
+def _fetch_image_aspect_ratio(raw_url: str, timeout: float = 2.0) -> float | None:
+    """
+    Return the aspect ratio (width / height) of the image at *raw_url* by
+    fetching only the first 512 bytes via an HTTP Range request.
+
+    Supports JPEG, PNG, and WebP.  Returns None when the format is not
+    recognisable, the server rejects the Range request and the response body
+    is too large to read cheaply, or any network/parse error occurs.
+
+    A None result is treated as *pass* (fail-open) so that valid images
+    whose headers we cannot inspect are never silently dropped.
+    """
+    import struct
+
+    try:
+        import requests as _req  # local import — requests is always available
+
+        resp = _req.get(
+            raw_url,
+            headers={"Range": "bytes=0-511", "Accept": "image/*"},
+            timeout=timeout,
+            stream=True,
+        )
+        data = b""
+        for chunk in resp.iter_content(512):
+            data += chunk
+            if len(data) >= 512:
+                break
+        resp.close()
+    except Exception:
+        return None
+
+    if len(data) < 24:
+        return None
+
+    # ── PNG ──────────────────────────────────────────────────────────────────
+    # 8-byte signature + 4-byte chunk length + 4-byte "IHDR" → width, height
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        w, h = struct.unpack(">II", data[16:24])
+        return (w / h) if h else None
+
+    # ── WebP ─────────────────────────────────────────────────────────────────
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        chunk = data[12:16]
+        if chunk == b"VP8 " and len(data) >= 30:
+            w = struct.unpack_from("<H", data, 26)[0] & 0x3FFF
+            h = struct.unpack_from("<H", data, 28)[0] & 0x3FFF
+            return (w / h) if h else None
+        if chunk == b"VP8L" and len(data) >= 25:
+            bits = struct.unpack_from("<I", data, 21)[0]
+            w = (bits & 0x3FFF) + 1
+            h = ((bits >> 14) & 0x3FFF) + 1
+            return (w / h) if h else None
+        if chunk == b"VP8X" and len(data) >= 30:
+            w = (data[24] | (data[25] << 8) | (data[26] << 16)) + 1
+            h = (data[27] | (data[28] << 8) | (data[29] << 16)) + 1
+            return (w / h) if h else None
+
+    # ── JPEG ─────────────────────────────────────────────────────────────────
+    # Scan SOF markers (0xFFC0–0xFFC3, C5–C7, C9–CB, CD) for height/width.
+    if data[:2] == b"\xff\xd8":
+        i = 2
+        while i + 4 < len(data):
+            if data[i] != 0xFF:
+                break
+            marker = data[i + 1]
+            if marker in (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7,
+                          0xC9, 0xCA, 0xCB, 0xCD):
+                if i + 9 <= len(data):
+                    h, w = struct.unpack_from(">HH", data, i + 5)
+                    return (w / h) if h else None
+                break
+            if i + 4 <= len(data):
+                length = struct.unpack_from(">H", data, i + 2)[0]
+                i += 2 + length
+            else:
+                break
+
+    return None
+
+
 @dataclass
 class _ClassifiedPhoto:
     """A photo that has been classified into a WishNest editorial category."""
@@ -1225,6 +1313,19 @@ class SmartPhotoPool:
                 logger.debug(
                     "SmartPhotoPool: filtered low-quality/dark/blurry photo — %s",
                     raw_url[:60],
+                )
+                continue
+
+            # ── Landscape orientation QC ─────────────────────────────────────
+            # All WishNest section images are wide-format banners.  Portrait and
+            # square images (aspect ratio ≤ 1.2) look wrong in every slot, so we
+            # reject them here regardless of content category.
+            # Fail-open: if the ratio cannot be determined we let the photo through.
+            ar = _fetch_image_aspect_ratio(raw_url)
+            if ar is not None and ar <= _MIN_LANDSCAPE_ASPECT_RATIO:
+                logger.debug(
+                    "SmartPhotoPool: filtered portrait/square (ratio=%.2f) — %s",
+                    ar, raw_url[:60],
                 )
                 continue
 

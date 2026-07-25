@@ -9,6 +9,7 @@ import {
   ABCDE_SCORES,
   formatDate,
   overallGrade,
+  isDestinationArticle,
 } from "@/lib/article-types";
 
 /**
@@ -417,7 +418,7 @@ export const ArticleDetailPage = (): JSX.Element => {
               <div className="sticky top-24 space-y-8">
 
                 {/* ── ABCDE™ Scorecard ─────────────────────────────────── */}
-                {isReview && ABCDE_SCORES.some(({ scoreKey }) => article[scoreKey] != null) && (() => {
+                {isReview && !isDestinationArticle(article) && ABCDE_SCORES.some(({ scoreKey }) => article[scoreKey] != null) && (() => {
                   const overall = article.abcde_overall || overallGrade(article);
                   return (
                     <div className="bg-white p-8">

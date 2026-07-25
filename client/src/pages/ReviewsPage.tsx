@@ -111,7 +111,7 @@ export const ReviewsPage = (): JSX.Element => {
           <h1 className="pt-5 [font-family:'Playfair_Display',Helvetica] text-[40px] font-normal leading-[1.08] text-[#1e1e1e] sm:text-[58px] lg:text-[72px]">
             Independently Scored,
             <br />
-            <span className="italic">Never Sponsored</span>
+            <span className="italic">Independent Assessment</span>
           </h1>
           <p className="max-w-[540px] pt-6 [font-family:'Inter',Helvetica] text-[17px] font-normal leading-[30px] text-[#6b6b6b]">
             Every property assessed against our ABCDE framework —

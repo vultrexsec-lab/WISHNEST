@@ -1,5 +1,21 @@
 export type ArticleType = "standard" | "review";
 
+// Category slugs that indicate a destination/landmark article (place guide, best-of
+// roundup) rather than a single property review.  Must stay in sync with the backend
+// _LANDMARK_CATEGORIES frozenset in image_service.py.
+export const DESTINATION_CATEGORIES: ReadonlySet<string> = new Set([
+  "destinations",
+  "destination",
+  "best places & destinations",
+  "best-of-destinations",
+]);
+
+/** True when the article describes a geographic destination rather than a specific property. */
+export function isDestinationArticle(article: Article): boolean {
+  if (!article.category) return false;
+  return DESTINATION_CATEGORIES.has(article.category.trim().toLowerCase());
+}
+
 export type ArticleStatus = "draft" | "approved" | "scheduled" | "published";
 
 export type Grade =

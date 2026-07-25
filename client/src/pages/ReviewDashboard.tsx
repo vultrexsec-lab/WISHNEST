@@ -68,6 +68,7 @@ import {
   ArticleStatus,
   formatDate,
   overallGrade,
+  isDestinationArticle,
 } from "@/lib/article-types";
 
 // ---------------------------------------------------------------------------
@@ -611,6 +612,7 @@ function ArticlePreviewModal({
   const [scheduleDate, setScheduleDate] = useState("");
   const grade = overallGrade(article);
   const isReview = article.article_type === "review";
+  const isDestination = isDestinationArticle(article);
   const snapshot: Record<string, unknown> =
     (article.property_snapshot as Record<string, unknown>) ?? {};
   const snapshotEntries = Object.entries(snapshot);
@@ -1194,8 +1196,8 @@ function ArticlePreviewModal({
                     )}
                 </div>
 
-                {/* ABCDE Sidebar */}
-                {grade && (
+                {/* ABCDE Sidebar — property reviews only; not shown for destination articles */}
+                {grade && !isDestination && (
                   <aside className="lg:pt-1">
                     <div className="sticky top-6 space-y-6">
                       <div className="bg-white p-6 shadow-sm">
@@ -1635,6 +1637,7 @@ function ArticleCard({
 
   const grade = overallGrade(article);
   const isReview = article.article_type === "review";
+  const isDestination = isDestinationArticle(article);
 
   // Outside the Trash tab, "Delete" always just moves the article to the
   // Recycle Bin — a reversible, one-click action. Permanently destroying an
@@ -1956,6 +1959,7 @@ function ArticleCard({
                   </div>
                 )}
 
+                {!isDestination && (
                 <div>
                   <SectionLabel>ABCDE™ SCORE</SectionLabel>
                   <div className="space-y-1.5">
@@ -1989,6 +1993,7 @@ function ArticleCard({
                     />
                   </div>
                 </div>
+                )}
               </div>
 
               {/* RIGHT — SEO & Social Media Package */}
