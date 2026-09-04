@@ -5,6 +5,7 @@ Run with: python backend/create_tables.py
 from app.database import Base, engine
 from app.models import article  # noqa: F401 ensures the model is registered
 from app.models import newsletter  # noqa: F401 ensures newsletter_subscribers is registered
+from app.models import automation  # noqa: F401 ensures automation_settings is registered
 
 
 def main():

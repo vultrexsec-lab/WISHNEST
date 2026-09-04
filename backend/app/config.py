@@ -44,6 +44,9 @@ class Settings(BaseSettings):
 
     # --- App ---
     environment: str = os.environ.get("ENVIRONMENT", "development")
+    # Optional default used for email links. The admin can override it from the
+    # dashboard and the value is stored in automation_settings.
+    public_app_url: str = os.environ.get("PUBLIC_APP_URL", "")
     # Comma-separated allowed CORS origins (kept as str so pydantic_settings
     # never tries to JSON-parse it). main.py splits on comma.
     cors_origins_raw: str = os.environ.get("CORS_ORIGINS", "")

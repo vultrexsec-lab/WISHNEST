@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import get_settings
 from app.routers import approve, articles, auth, image_proxy, newsletter, research, vision
 from app.routers import scheduler as scheduler_router
+from app.models import automation  # noqa: F401 ensures settings table metadata is loaded
 
 logging.basicConfig(
     level=logging.INFO,
@@ -49,9 +50,31 @@ def _sync_schema() -> None:
     log = logging.getLogger("wishnest.schema")
     try:
         with engine.connect() as conn:
+            # The daily automation is opt-in and must survive API restarts.
+            automation.AutomationSettings.__table__.create(bind=conn, checkfirst=True)
             for col, pg_type in REQUIRED_COLS:
                 conn.execute(
                     text(f"ALTER TABLE articles ADD COLUMN IF NOT EXISTS {col} {pg_type}")
+                )
+            automation_cols = [
+                ("enabled", "BOOLEAN NOT NULL DEFAULT false"),
+                ("daily_time", "VARCHAR(5) NOT NULL DEFAULT '08:00'"),
+                ("timezone", "VARCHAR(64) NOT NULL DEFAULT 'Asia/Kolkata'"),
+                ("notification_email", "TEXT"),
+                ("public_app_url", "TEXT"),
+                ("last_run_date", "DATE"),
+                ("last_run_status", "VARCHAR(32)"),
+                ("last_run_message", "TEXT"),
+                ("last_run_at", "TIMESTAMPTZ"),
+                ("last_article_id", "VARCHAR(64)"),
+                ("updated_at", "TIMESTAMPTZ NOT NULL DEFAULT now()"),
+            ]
+            for col, pg_type in automation_cols:
+                conn.execute(
+                    text(
+                        f"ALTER TABLE automation_settings "
+                        f"ADD COLUMN IF NOT EXISTS {col} {pg_type}"
+                    )
                 )
             # Partial unique index: one active (non-trashed) article per place_id.
             # Prevents duplicate rows when the scheduler or concurrent POST /api/research

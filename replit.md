@@ -42,12 +42,14 @@ Added to `backend/app/` — routes all available at `/api/vision/*` (admin-only)
 - `database.py` — SQLAlchemy engine/session setup.
 - `models/article.py` — the `Article` model (single `articles` table) covering: core editorial content, SEO metadata, review-only fields (property snapshot, best/not-ideal for, price band, location, accessibility), the WishNest ABCDE scoring framework (Architecture/Landscape/Connectivity/Delight/Eat & Explore grades, developer lessons, key takeaways, verdict), and the social media package (LinkedIn x3, Facebook x2, X thread, newsletter summary, hashtags, CTA). `status` defaults to `draft` — nothing publishes without human approval.
 - `schemas/article.py` — Pydantic request/response models mirroring the `Article` table.
-- `routers/research.py` — `POST /api/research`: accepts a plain-text research brief. Currently a structural stub (validates API keys are configured); the actual Firecrawl/OpenAI research-and-draft pipeline is not implemented yet.
+- `routers/research.py` — `POST /api/research`: accepts a plain-text research brief, resolves a named property when possible, and runs the Firecrawl/OpenAI research-and-draft pipeline in the background.
 - `models/newsletter.py` — the `NewsletterSubscriber` model (`newsletter_subscribers` table): stores email + created_at.
 - `routers/articles.py` — `GET /api/articles` (list, supports `?category=` and `?status=` filters) and `GET /api/articles/{id}`.
 - `routers/newsletter.py` — `POST /api/newsletter/subscribe` and `POST /api/newsletter/unsubscribe` (both idempotent, enumeration-safe).
 - `routers/approve.py` — `PUT /api/approve-article/{id}`: human approval endpoint; moves an article to `approved` or `scheduled` (with `scheduled_at`). Fully functional DB-only endpoint (no AI logic).
+- `routers/scheduler.py` + `services/scheduler_service.py` — admin-only daily auto-pilot settings and manual generation. When enabled, one fresh draft is generated per local calendar day at the configured time, rotating through the three editorial categories. It stays a draft until human approval.
 - `services/places_service.py` — live property-data provider chain: Google Places API (`GOOGLE_PLACES_API_KEY`, preferred) or SerpApi's Google Maps engine (`SERPAPI_KEY`, fallback). Returns real, named hotel/villa/boutique-stay listings for a location, each with a live photo URL and a genuine Google star rating. Returns `[]` (never raises) and logs a one-time console setup notice when neither key is configured.
+- `services/gmail_service.py` + `backend/gmail_notify.mjs` — sends the daily “article ready for review” notification through the connected Replit Gmail integration.
 - `services/image_service.py` — image pipeline now sources every article image from `places_service.fetch_premium_stays()` first (one real, distinct business per section — zero repeats), falling back to the existing DDG → Pexels → Unsplash dynamic search chain only for slots with no live listing available. The old static hardcoded Unsplash pool has been removed entirely.
 - `services/research_pipeline.py` — `_apply_live_ratings()` blends each live property's genuine Google rating (scaled 1-5 → 1-10, 60% weight) into the WishNest ABCDE scorecard alongside the LLM's estimate (40% weight), so published grades reflect real user consensus. Raw Google metrics (average rating, review count, per-property sources) are also written into `property_snapshot` for transparency.
 - `create_tables.py` — one-off script for **fresh** databases (`python backend/create_tables.py`). Creates all tables via SQLAlchemy metadata.
@@ -71,6 +73,7 @@ Both workflows must be running for the app to work end-to-end.
 | `SERPAPI_KEY` | Backend — live hotel/villa photos + Google ratings (fallback provider) |
 | `GOOGLE_CLOUD_VISION_API_KEY` | Backend — Visual Verification Pipeline (Vision API image scanning + topic validation) |
 | `PEXELS_API_KEY` / `UNSPLASH_ACCESS_KEY` | Backend — dynamic image-search fallback |
+| `PUBLIC_APP_URL` | Backend — optional default public URL for absolute Gmail review links |
 | `ADMIN_USERNAME` | Backend — admin auth |
 | `SESSION_SECRET` | Backend — session signing |
 
@@ -84,10 +87,10 @@ Without `GOOGLE_PLACES_API_KEY` or `SERPAPI_KEY`, the backend falls back to the 
   - **Fresh DB**: run `cd backend && python create_tables.py` once as a pre-deploy job.
   - **Existing DB** (already has `articles` table): run `cd backend && alembic upgrade head` instead — safely adds `category` column and `newsletter_subscribers` table without touching existing rows.
 
-## Next steps (not yet built)
+## Remaining next steps
 
 - Implement the actual AI Research Editor Agent pipeline inside `POST /api/research`: Firecrawl search/scrape → OpenAI drafting of all Article fields → insert draft rows.
-- A scheduler/worker to actually publish articles whose `scheduled_at` has passed.
+- A scheduler/worker to actually publish articles whose `scheduled_at` has passed (daily automation creates drafts and sends review notifications; it never bypasses approval).
 - Rate limiting on newsletter endpoints (per-IP throttle).
 - Signed one-time token flow for unsubscribe links in emails (security hardening).
 
@@ -95,3 +98,4 @@ Without `GOOGLE_PLACES_API_KEY` or `SERPAPI_KEY`, the backend falls back to the 
 
 - Backend must be Python/FastAPI (not Node/Express) — full migration, not a side-by-side service.
 - Articles must default to `draft` status; publishing/scheduling requires explicit human approval via the API.
+- Daily auto-pilot is opt-in from the admin dashboard. It generates one draft per day at the configured time (Asia/Kolkata by default), rotates through editorial categories, and notifies the connected Gmail account.

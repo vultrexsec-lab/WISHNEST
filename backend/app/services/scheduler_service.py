@@ -1,7 +1,7 @@
 """
-Weekly auto-generation scheduler for WishNest.
+Daily auto-generation scheduler for WishNest.
 
-Runs three discovery-based pipeline jobs every week — one each for:
+Runs one discovery-based pipeline job per day, rotating through:
   • Hospitality / reviews
   • Best places / destinations
   • Villas / best-of
@@ -24,13 +24,16 @@ live properties can be found (e.g. API not configured, quota exhausted).
 """
 import logging
 import threading
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.triggers.cron import CronTrigger
 
+from app.config import get_settings
 from app.database import SessionLocal
+from app.models.automation import AutomationSettings
 from app.services.research_pipeline import ResearchPipelineError, run_research_pipeline
 
 logger = logging.getLogger("wishnest.scheduler")
@@ -115,7 +118,22 @@ def _record_run(category: str, label: str, status: str, message: str, article_co
             _HISTORY.pop(0)
 
 
-def _run_category(item: dict) -> None:
+def get_or_create_automation_settings(db) -> AutomationSettings:
+    """Return the singleton settings row, creating the opt-in default if needed."""
+    settings = db.query(AutomationSettings).filter(AutomationSettings.id == 1).first()
+    if settings:
+        return settings
+    settings = AutomationSettings(
+        id=1,
+        public_app_url=get_settings().public_app_url or None,
+    )
+    db.add(settings)
+    db.commit()
+    db.refresh(settings)
+    return settings
+
+
+def _run_category(item: dict) -> tuple[list, str, str]:
     """
     Single-category pipeline run using live Google Maps discovery.
 
@@ -135,6 +153,8 @@ def _run_category(item: dict) -> None:
 
     db = SessionLocal()
     total_created = 0
+    generated_articles = []
+    pipeline_error = False
     try:
         # ── Live discovery path ──────────────────────────────────────────────
         from app.services.discovery_service import (
@@ -221,14 +241,17 @@ def _run_category(item: dict) -> None:
                             place_id=listing.place_id,
                         )
                         total_created += len(created)
+                        generated_articles.extend(created)
                         logger.info(
                             "Scheduler: drafted %d article(s) for %r", len(created), listing.name
                         )
                     except ResearchPipelineError as exc:
+                        pipeline_error = True
                         logger.error(
                             "Scheduler: pipeline error for property %r: %s", listing.name, exc
                         )
                     except Exception as exc:  # noqa: BLE001
+                        pipeline_error = True
                         logger.exception(
                             "Scheduler: unexpected error for property %r: %s", listing.name, exc
                         )
@@ -239,10 +262,13 @@ def _run_category(item: dict) -> None:
                         with _ACTIVE_PLACE_IDS_LOCK:
                             _ACTIVE_PLACE_IDS.discard(pid)
 
+            status = "failed" if pipeline_error and not generated_articles else "success"
             msg = f"{total_created} article(s) drafted from {len(fresh_properties)} live-discovered properties."
+            if pipeline_error:
+                msg += " The pipeline reported an error; check the run history."
             logger.info("Scheduler: completed category=%r — %s", category, msg)
-            _record_run(category, label, "success", msg, total_created)
-            return
+            _record_run(category, label, status, msg, total_created)
+            return generated_articles, status, msg
 
         # ── Fallback: no live properties found — halt gracefully ─────────────
         logger.warning(
@@ -252,16 +278,100 @@ def _run_category(item: dict) -> None:
         )
         msg = "No new unique properties found — all discovered properties already exist in DB."
         _record_run(category, label, "skipped", msg, 0)
+        return [], "skipped", msg
 
     except Exception as exc:  # noqa: BLE001
         logger.exception("Scheduler: unexpected error for category=%r: %s", category, exc)
-        _record_run(category, label, "failed", f"Unexpected error: {exc}", 0)
+        msg = f"Unexpected error: {exc}"
+        _record_run(category, label, "failed", msg, 0)
+        return [], "failed", msg
     finally:
         db.close()
 
 
+def _category_for_day(day: date) -> dict:
+    """Rotate the daily slot deterministically so one article is drafted per day."""
+    return _FALLBACK_BRIEFS[day.toordinal() % len(_FALLBACK_BRIEFS)]
+
+
+def _daily_auto_generate() -> None:
+    """Generate one draft for the configured local calendar day."""
+    db = SessionLocal()
+    settings = None
+    try:
+        settings = get_or_create_automation_settings(db)
+        if not settings.enabled:
+            logger.info("Scheduler: daily automation is paused; skipping scheduled run.")
+            return
+
+        try:
+            local_now = datetime.now(ZoneInfo(settings.timezone))
+        except ZoneInfoNotFoundError:
+            logger.error(
+                "Scheduler: invalid timezone %r; daily run skipped.",
+                settings.timezone,
+            )
+            return
+        run_date = local_now.date()
+
+        # A DB row lock makes the job idempotent across reloads or multiple
+        # backend workers: only one process may claim a local calendar day.
+        locked = (
+            db.query(AutomationSettings)
+            .filter(AutomationSettings.id == 1)
+            .with_for_update()
+            .first()
+        )
+        if not locked or not locked.enabled or locked.last_run_date == run_date:
+            return
+        locked.last_run_date = run_date
+        locked.last_run_status = "running"
+        locked.last_run_message = "Daily article generation is in progress."
+        locked.last_run_at = datetime.now(timezone.utc)
+        db.commit()
+    finally:
+        db.close()
+
+    item = _category_for_day(run_date)
+    created, run_status, run_message = _run_category(item)
+    article_count = len(created)
+
+    notification_message = ""
+    if created:
+        try:
+            from app.services.gmail_service import send_article_ready_email
+            first = created[0]
+            send_article_ready_email(
+                headline=first.headline,
+                article_id=str(first.id),
+                category=first.category,
+                notification_email=settings.notification_email,
+                public_app_url=settings.public_app_url,
+            )
+            notification_message = " Gmail review notification sent."
+        except Exception as exc:  # noqa: BLE001
+            # Email must never delete or invalidate a successfully created
+            # article. Surface the problem in history and the settings panel.
+            notification_message = f" Gmail notification failed: {exc}"
+            logger.exception("Scheduler: article notification failed: %s", exc)
+
+    status = run_status
+    message = run_message + notification_message
+    update_db = SessionLocal()
+    try:
+        current = get_or_create_automation_settings(update_db)
+        current.last_run_status = status
+        current.last_run_message = message
+        current.last_run_at = datetime.now(timezone.utc)
+        if created:
+            current.last_article_id = str(created[0].id)
+        update_db.commit()
+    finally:
+        update_db.close()
+
+
 def _weekly_auto_generate() -> None:
-    """Weekly job: generates articles per category in sequence."""
+    """Legacy manual batch: generates one article per category in sequence."""
     progress_key = "all"
     with _PROGRESS_LOCK:
         if progress_key in _IN_PROGRESS:
@@ -270,10 +380,10 @@ def _weekly_auto_generate() -> None:
         _IN_PROGRESS.add(progress_key)
 
     try:
-        logger.info("Scheduler: weekly auto-generation started.")
+        logger.info("Scheduler: manual batch generation started.")
         for item in _FALLBACK_BRIEFS:
             _run_category(item)
-        logger.info("Scheduler: weekly auto-generation finished.")
+        logger.info("Scheduler: manual batch generation finished.")
     finally:
         with _PROGRESS_LOCK:
             _IN_PROGRESS.discard(progress_key)
@@ -281,7 +391,7 @@ def _weekly_auto_generate() -> None:
         # Refresh next_run after the job completes
         with _STATE_LOCK:
             if _scheduler:
-                job = _scheduler.get_job("weekly_auto_generate")
+                job = _scheduler.get_job("daily_auto_generate")
                 if job:
                     global _next_run
                     _next_run = job.next_run_time
@@ -293,16 +403,42 @@ def start_scheduler() -> None:
     """Start the background scheduler. Call once from FastAPI lifespan startup."""
     global _scheduler, _next_run, _started_at
 
+    db = SessionLocal()
+    try:
+        saved = get_or_create_automation_settings(db)
+        schedule_time = saved.daily_time
+        schedule_timezone = saved.timezone
+    finally:
+        db.close()
+
     with _STATE_LOCK:
         if _scheduler is not None:
             return  # already running
 
         sched = BackgroundScheduler(timezone="UTC")
-        trigger = IntervalTrigger(weeks=1)
+        # The job is always scheduled, but it checks the persisted enabled
+        # flag before doing work. This lets pause/resume survive restarts
+        # without repeatedly adding/removing APScheduler jobs.
+        try:
+            hour, minute = (int(part) for part in schedule_time.split(":"))
+            schedule_zone = ZoneInfo(schedule_timezone)
+        except (ValueError, ZoneInfoNotFoundError):
+            logger.warning(
+                "Scheduler: invalid saved schedule (%s, %s); using 08:00 Asia/Kolkata.",
+                schedule_time,
+                schedule_timezone,
+            )
+            hour, minute = 8, 0
+            schedule_zone = ZoneInfo("Asia/Kolkata")
+        trigger = CronTrigger(
+            hour=hour,
+            minute=minute,
+            timezone=schedule_zone,
+        )
         job = sched.add_job(
-            _weekly_auto_generate,
+            _daily_auto_generate,
             trigger,
-            id="weekly_auto_generate",
+            id="daily_auto_generate",
             replace_existing=True,
         )
         sched.start()
@@ -310,7 +446,25 @@ def start_scheduler() -> None:
         _next_run = job.next_run_time
         _started_at = datetime.now(timezone.utc).isoformat()
 
-    logger.info("Scheduler started. Next auto-generation: %s", _next_run)
+    logger.info("Scheduler started. Next daily automation run: %s", _next_run)
+
+
+def refresh_schedule(daily_time: str, timezone_name: str) -> None:
+    """Apply dashboard schedule changes to the live APScheduler job."""
+    global _next_run
+    hour, minute = (int(part) for part in daily_time.split(":"))
+    with _STATE_LOCK:
+        if _scheduler is None:
+            return
+        job = _scheduler.reschedule_job(
+            "daily_auto_generate",
+            trigger=CronTrigger(
+                hour=hour,
+                minute=minute,
+                timezone=ZoneInfo(timezone_name),
+            ),
+        )
+        _next_run = job.next_run_time if job else None
 
 
 def stop_scheduler() -> None:
@@ -327,6 +481,27 @@ def stop_scheduler() -> None:
 
 def get_scheduler_status() -> dict:
     """Return current scheduler state for the dashboard API."""
+    db = SessionLocal()
+    try:
+        settings = get_or_create_automation_settings(db)
+        automation = {
+            "enabled": bool(settings.enabled),
+            "daily_time": settings.daily_time,
+            "timezone": settings.timezone,
+            "notification_email": settings.notification_email,
+            "public_app_url": settings.public_app_url,
+            "last_run_date": settings.last_run_date.isoformat()
+            if settings.last_run_date
+            else None,
+            "last_run_status": settings.last_run_status,
+            "last_run_message": settings.last_run_message,
+            "last_run_at": settings.last_run_at.isoformat()
+            if settings.last_run_at
+            else None,
+        }
+    finally:
+        db.close()
+
     with _STATE_LOCK:
         running = _scheduler is not None and _scheduler.running
         # Refresh next_run from live job metadata while holding the lock
@@ -349,6 +524,7 @@ def get_scheduler_status() -> dict:
         "active_categories": active,
         "next_run": next_run_val.isoformat() if next_run_val else None,
         "started_at": started,
+        "automation": automation,
         "categories": [
             {"category": b["category"], "label": b["label"]} for b in _FALLBACK_BRIEFS
         ],
