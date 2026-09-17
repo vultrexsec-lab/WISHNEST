@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Menu, X, Search } from "lucide-react";
 import { SearchModal } from "@/components/SearchModal";
 import { NewsletterModal } from "@/components/NewsletterModal";
+import { DailyEditionBanner } from "@/components/DailyEditionBanner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -595,6 +596,7 @@ export const PremiumEditorial = (): JSX.Element => {
           ))}
         </div>
       </section>
+      <DailyEditionBanner latestArticle={publishedArticles[0]} />
       <section className="bg-[#f8f7f4] py-16 lg:py-24">
         <div className="mx-auto w-full max-w-[1166px] px-4 sm:px-8">
           <div className="flex items-center gap-5">

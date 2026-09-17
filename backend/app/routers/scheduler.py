@@ -4,6 +4,7 @@ POST /api/scheduler/trigger  — manually trigger auto-generation (admin only)
 """
 import logging
 import re
+from datetime import datetime, timedelta
 from typing import Any
 from typing import Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -15,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.database import get_db
 from app.dependencies import require_admin
+from app.models.article import Article, ArticleStatus
 from app.models.automation import AutomationSettings
 from app.services import scheduler_service
 
@@ -73,6 +75,64 @@ def _automation_response(settings: AutomationSettings) -> dict[str, Any]:
         "last_run_at": settings.last_run_at.isoformat()
         if settings.last_run_at
         else None,
+    }
+
+
+@router.get("/api/editorial/daily")
+def daily_editorial_status(db: Session = Depends(get_db)):
+    """Expose only safe, non-admin scheduling information to the public site."""
+    settings = scheduler_service.get_or_create_automation_settings(db)
+    try:
+        local_now = datetime.now(ZoneInfo(settings.timezone))
+    except ZoneInfoNotFoundError:
+        local_now = datetime.now(ZoneInfo("Asia/Kolkata"))
+
+    hour, minute = (int(part) for part in settings.daily_time.split(":"))
+    next_run = local_now.replace(
+        hour=hour,
+        minute=minute,
+        second=0,
+        microsecond=0,
+    )
+    if next_run <= local_now:
+        next_run += timedelta(days=1)
+
+    latest = (
+        db.query(Article)
+        .filter(
+            Article.is_trash.is_(False),
+            Article.status.in_(
+                [ArticleStatus.approved, ArticleStatus.scheduled, ArticleStatus.published]
+            ),
+        )
+        .order_by(Article.published_at.desc().nullslast(), Article.created_at.desc())
+        .first()
+    )
+    return {
+        "enabled": bool(settings.enabled),
+        "daily_time": settings.daily_time,
+        "timezone": settings.timezone,
+        "next_run_at": next_run.isoformat(),
+        "last_ready_date": (
+            settings.last_run_date.isoformat()
+            if settings.last_run_status == "success" and settings.last_run_date
+            else None
+        ),
+        "latest_article": (
+            {
+                "id": str(latest.id),
+                "headline": latest.headline,
+                "category": latest.category,
+                "hero_image_url": latest.hero_image_url,
+                "published_at": (
+                    latest.published_at.isoformat()
+                    if latest.published_at
+                    else latest.created_at.isoformat()
+                ),
+            }
+            if latest
+            else None
+        ),
     }
 
 
