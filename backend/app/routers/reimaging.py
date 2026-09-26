@@ -6,21 +6,20 @@ POST /api/reimaging/hotel
   → pulls Google Maps photos, redesigns, writes article, saves draft
 
 POST /api/reimaging/upload
-  multipart/form-data:
-    prompt: str
-    hotel_name: optional str
-    images: one or more image files
+  JSON body (no multipart — avoids python-multipart dependency at boot):
+  {
+    "prompt": str,
+    "hotel_name": optional str,
+    "images_base64": [ "base64...", ... ]   # raw base64, no data: prefix
+  }
   → redesigns uploaded images, writes article, saves draft
-
-GET /api/reimaging/status/{job_id}
-  (optional future polling; currently jobs run synchronously with generous timeout)
 """
 from __future__ import annotations
 
 import base64
 import logging
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.dependencies import require_admin
@@ -29,13 +28,21 @@ from app.services.reimaging_service import run_reimaging_hotel, run_reimaging_up
 router = APIRouter(tags=["reimaging"])
 logger = logging.getLogger("wishnest.reimaging")
 
-MAX_UPLOAD_BYTES = 12 * 1024 * 1024  # 12 MB per image
-ALLOWED_CONTENT = {"image/jpeg", "image/jpg", "image/png", "image/webp"}
+MAX_UPLOAD_BYTES = 12 * 1024 * 1024  # 12 MB per image (decoded)
+MAX_IMAGES = 6
 
 
 class HotelReimagingRequest(BaseModel):
     hotel_name: str = Field(..., min_length=2, max_length=300)
     prompt: str = Field(..., min_length=5, max_length=2000)
+
+
+class UploadReimagingRequest(BaseModel):
+    prompt: str = Field(..., min_length=5, max_length=2000)
+    hotel_name: str | None = Field(default=None, max_length=300)
+    # Raw base64 strings (no "data:image/...;base64," prefix required;
+    # prefix is stripped if present)
+    images_base64: list[str] = Field(..., min_length=1, max_length=MAX_IMAGES)
 
 
 class ReimagingResult(BaseModel):
@@ -51,6 +58,14 @@ class ReimagingResult(BaseModel):
     wishnest_verdict: str | None = None
     status: str = "draft"
     message: str = ""
+
+
+def _strip_data_url(s: str) -> str:
+    """Remove data-URL prefix if the client sent one."""
+    s = (s or "").strip()
+    if "," in s and s.lower().startswith("data:"):
+        return s.split(",", 1)[1].strip()
+    return s
 
 
 @router.post("/api/reimaging/hotel", response_model=ReimagingResult)
@@ -73,42 +88,44 @@ def reimaging_from_hotel(
 
 
 @router.post("/api/reimaging/upload", response_model=ReimagingResult)
-async def reimaging_from_upload(
-    prompt: str = Form(..., min_length=5, max_length=2000),
-    hotel_name: str | None = Form(default=None),
-    images: list[UploadFile] = File(...),
+def reimaging_from_upload(
+    body: UploadReimagingRequest,
     admin: str = Depends(require_admin),
 ):
-    """Mode B: user-uploaded image(s) + redesign prompt → AI redesign → draft article."""
-    if not images:
-        raise HTTPException(status_code=400, detail="At least one image file is required.")
+    """Mode B: base64 image(s) + redesign prompt → AI redesign → draft article.
 
+    Uses JSON body (not multipart) so the app boots without python-multipart.
+    """
     b64_list: list[str] = []
-    for f in images[:6]:
-        content_type = (f.content_type or "").lower()
-        if content_type not in ALLOWED_CONTENT:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unsupported file type “{content_type}”. Use JPEG, PNG, or WebP.",
-            )
-        data = await f.read()
-        if len(data) > MAX_UPLOAD_BYTES:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Image “{f.filename}” exceeds 12 MB limit.",
-            )
-        if len(data) < 100:
+    for raw in body.images_base64[:MAX_IMAGES]:
+        cleaned = _strip_data_url(raw)
+        if not cleaned or len(cleaned) < 100:
             continue
-        b64_list.append(base64.b64encode(data).decode("ascii"))
+        # Rough size check on base64 (decoded ≈ 3/4 of encoded length)
+        approx_bytes = (len(cleaned) * 3) // 4
+        if approx_bytes > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=400,
+                detail="One image exceeds the 12 MB limit.",
+            )
+        try:
+            # Validate it is valid base64
+            base64.b64decode(cleaned, validate=True)
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid base64 image data.",
+            ) from None
+        b64_list.append(cleaned)
 
     if not b64_list:
         raise HTTPException(status_code=400, detail="No valid images could be read.")
 
     try:
         result = run_reimaging_upload(
-            prompt=prompt.strip(),
+            prompt=body.prompt.strip(),
             image_b64_list=b64_list,
-            hotel_name=(hotel_name or "").strip() or None,
+            hotel_name=(body.hotel_name or "").strip() or None,
         )
         return ReimagingResult(**result)
     except RuntimeError as exc:

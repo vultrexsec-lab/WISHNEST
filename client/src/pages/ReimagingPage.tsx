@@ -92,15 +92,32 @@ export function ReimagingPage(): JSX.Element {
           setLoading(false);
           return;
         }
-        const form = new FormData();
-        form.append("prompt", prompt.trim());
-        if (hotelName.trim()) form.append("hotel_name", hotelName.trim());
-        Array.from(files).forEach((f) => form.append("images", f));
-
+        // Convert files to base64 so the API can accept JSON (no multipart)
+        const toBase64 = (file: File) =>
+          new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const result = String(reader.result || "");
+              const b64 = result.includes(",") ? result.split(",")[1] : result;
+              resolve(b64);
+            };
+            reader.onerror = () => reject(new Error("Failed to read image"));
+            reader.readAsDataURL(file);
+          });
+        const images_base64 = await Promise.all(
+          Array.from(files).slice(0, 6).map((f) => toBase64(f)),
+        );
         res = await fetch(apiUrl("/api/reimaging/upload"), {
           method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-          body: form,
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            prompt: prompt.trim(),
+            hotel_name: hotelName.trim() || null,
+            images_base64,
+          }),
         });
       }
 
