@@ -1,4 +1,1165 @@
+import { useState, useRef, useEffect } from "react";
+
+/**
+ * Inject referrerpolicy="no-referrer" into every <img> tag in raw article HTML
+ * so external scraped images load without sending a Referer header.
+ * Many image hosts block embedding when they see a foreign Referer.
+ */
+function sanitizeArticleHtml(html: string): string {
+  return html.replace(
+    /<img(?![^>]*referrerpolicy)([^>]*)(\/?>)/gi,
+    '<img referrerpolicy="no-referrer"$1$2',
+  );
+}
+import { Link, useLocation } from "wouter";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/hooks/use-toast";
+import { SiteNav } from "@/components/SiteNav";
+import { SiteFooter } from "@/components/SiteFooter";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
+  ChevronDown,
+  Loader2,
+  CheckCircle2,
+  Clock,
+  Calendar,
+  ExternalLink,
+  Sparkles,
+  FileText,
+  BadgeCheck,
+  Users,
+  Hourglass,
+  Linkedin,
+  Facebook,
+  Twitter,
+  Mail,
+  X,
+  Trash2,
+  Eye,
+  Timer,
+  Play,
+  Zap,
+  RefreshCw,
+} from "lucide-react";
+import {
+  ABCDE_GRADES,
+  Article,
+  ArticleStatus,
+  formatDate,
+  overallGrade,
+  isDestinationArticle,
+} from "@/lib/article-types";
+
+// ---------------------------------------------------------------------------
+// Metric cards
+// ---------------------------------------------------------------------------
+function MetricCard({
+  icon: Icon,
+  label,
+  value,
+  accent,
+  pulse,
+}: {
+  icon: typeof FileText;
+  label: string;
+  value: number | string;
+  accent: string;
+  pulse?: boolean;
+}) {
+  return (
+    <div
+      className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl transition-all duration-300 hover:-translate-y-0.5 hover:border-emerald-500/30 hover:bg-white/[0.06] hover:shadow-[0_8px_30px_rgba(16,185,129,0.12)]"
+      style={{
+        backgroundImage:
+          "linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01))",
+      }}
+    >
+      <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-emerald-500/10 blur-2xl transition-opacity duration-300 group-hover:opacity-80" />
+      <div className="flex items-center justify-between">
+        <span className="[font-family:'Inter',Helvetica] text-[10px] font-semibold uppercase tracking-[1.4px] text-white/50">
+          {label}
+        </span>
+        <div
+          className="flex h-8 w-8 items-center justify-center rounded-lg"
+          style={{ backgroundColor: `${accent}1a` }}
+        >
+          <Icon className="h-4 w-4" style={{ color: accent }} />
+        </div>
+      </div>
+      <div className="mt-3 flex items-baseline gap-2">
+        <span className="[font-family:'Playfair_Display',Helvetica] text-[32px] font-medium leading-none text-white">
+          {value}
+        </span>
+        {pulse && (
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MetricsBar({ articles }: { articles: Article[] | undefined }) {
+  const { data: subscriberData } = useQuery<{ count: number }>({
+    queryKey: ["/api/newsletter/count"],
+  });
+
+  const total = articles?.length ?? 0;
+  const approved =
+    articles?.filter(
+      (a) =>
+        a.status === "approved" ||
+        a.status === "scheduled" ||
+        a.status === "published",
+    ).length ?? 0;
+  const pending = articles?.filter((a) => a.status === "draft").length ?? 0;
+  const subscribers = subscriberData?.count ?? 0;
+
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <MetricCard
+        icon={FileText}
+        label="Total Drafts"
+        value={total}
+        accent="#34d399"
+      />
+      <MetricCard
+        icon={BadgeCheck}
+        label="Approved Articles"
+        value={approved}
+        accent="#60a5fa"
+      />
+      <MetricCard
+        icon={Users}
+        label="Newsletter Subscribers"
+        value={subscribers}
+        accent="#a78bfa"
+      />
+      <MetricCard
+        icon={Hourglass}
+        label="Pending Approvals"
+        value={pending}
+        accent="#fbbf24"
+        pulse={pending > 0}
+      />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Generate panel
+// ---------------------------------------------------------------------------
+const CATEGORY_OPTIONS = [
+  { value: "", label: "Auto-detect" },
+  { value: "intelligence", label: "Intelligence / Analysis" },
+  { value: "destinations", label: "Destinations" },
+  { value: "best-of", label: "Best Of" },
+  { value: "reimagined", label: "Reimagined™" },
+] as const;
+
+function GeneratePanel({ onGenerated }: { onGenerated: () => void }) {
+  const [brief, setBrief] = useState("");
+  const [category, setCategory] = useState("");
+  const [researchActive, setResearchActive] = useState(false);
+  const { toast } = useToast();
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const statusPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopArticlesPolling = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  };
+
+  const stopStatusPolling = () => {
+    if (statusPollRef.current) {
+      clearInterval(statusPollRef.current);
+      statusPollRef.current = null;
+    }
+  };
+
+  const startArticlesPolling = () => {
+    stopArticlesPolling();
+    const deadline = Date.now() + 3 * 60 * 1000;
+    pollRef.current = setInterval(() => {
+      queryClient.invalidateQueries({ queryKey: ["/api/articles"] });
+      if (Date.now() > deadline) {
+        stopArticlesPolling();
+        setResearchActive(false);
+      }
+    }, 5000);
+  };
+
+  const startStatusPolling = (jobId: string) => {
+    stopStatusPolling();
+    const deadline = Date.now() + 3 * 60 * 1000;
+    // Guard against overlapping requests: if the backend is slow to respond
+    // (e.g. still finishing a Render cold start), the interval below could
+    // otherwise fire several more times before the first request resolves,
+    // piling up concurrent polls against a server that's already struggling
+    // to keep up — which is what made the UI look "stuck" until an unrelated
+    // second request happened to land after the cold start finished.
+    let requestInFlight = false;
+
+    const poll = async () => {
+      if (requestInFlight) return;
+      requestInFlight = true;
+      try {
+        const res = await apiRequest("GET", `/api/research/status/${jobId}`);
+        const data = await res.json();
+
+        if (data.status === "failed") {
+          stopStatusPolling();
+          stopArticlesPolling();
+          setResearchActive(false);
+          toast({
+            title: "Research failed",
+            description:
+              data.message ||
+              "The research pipeline failed. Check the backend logs for details.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        if (data.status === "success") {
+          stopStatusPolling();
+          setResearchActive(false);
+          queryClient.invalidateQueries({ queryKey: ["/api/articles"] });
+          toast({
+            title: "Research complete",
+            description:
+              data.message ||
+              "Articles were drafted and added to Pending Review.",
+          });
+          return;
+        }
+      } catch {
+        // Transient failure (e.g. still waking up) — keep polling rather
+        // than giving up on the first hiccup; the fetchWithTimeout retry
+        // and the next interval tick will pick it back up.
+      } finally {
+        requestInFlight = false;
+      }
+
+      if (Date.now() > deadline) {
+        stopStatusPolling();
+      }
+    };
+
+    // Fire immediately instead of waiting for the first interval tick, so
+    // the UI starts reflecting real backend state as soon as possible.
+    poll();
+    statusPollRef.current = setInterval(poll, 2000);
+  };
+
+  const generateMutation = useMutation({
+    mutationFn: async ({ query, cat }: { query: string; cat: string }) => {
+      const res = await apiRequest("POST", "/api/research", {
+        query,
+        category: cat || null,
+      });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setBrief("");
+      setResearchActive(true);
+      queryClient.invalidateQueries({ queryKey: ["/api/articles"] });
+      onGenerated();
+      startArticlesPolling();
+      if (data.job_id) startStatusPolling(data.job_id);
+      toast({
+        title: "Research started",
+        description:
+          data.message ??
+          "The agent is researching sources and drafting articles — they'll appear in Pending Review shortly.",
+      });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Generation failed",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSubmit = () => {
+    const trimmed = brief.trim();
+    if (!trimmed) return;
+    generateMutation.mutate({ query: trimmed, cat: category });
+  };
+
+  // Lock the form while the HTTP request is in-flight (isPending) OR while the
+  // background pipeline is still running (researchActive). This prevents the
+  // user from submitting a second identical request during the ~2-3 minutes
+  // the agent spends on Firecrawl + OpenAI + image generation.
+  const isSubmitting = generateMutation.isPending || researchActive;
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-8 backdrop-blur-xl">
+      <div className="pointer-events-none absolute -left-16 -top-16 h-56 w-56 rounded-full bg-emerald-500/10 blur-3xl" />
+
+      <div className="flex items-center gap-2">
+        <Sparkles className="h-3.5 w-3.5 text-emerald-400" />
+        <p className="[font-family:'Inter',Helvetica] text-[9px] font-semibold tracking-[2px] text-emerald-400">
+          AI RESEARCH EDITOR AGENT
+        </p>
+      </div>
+      <h2 className="pt-2 [font-family:'Playfair_Display',Helvetica] text-[24px] font-medium text-white">
+        Generate Article Package
+      </h2>
+      <p className="mt-1 max-w-xl [font-family:'Inter',Helvetica] text-[13px] leading-[21px] text-white/50">
+        Describe the story you want researched. The agent will search live
+        sources, draft a complete editorial package, and place it in Pending
+        Review.
+      </p>
+
+      <div className="mt-6 flex flex-col gap-2">
+        <span className="[font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1.5px] text-white/40">
+          CATEGORY
+        </span>
+        <div className="flex flex-wrap gap-2">
+          {CATEGORY_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setCategory(opt.value)}
+              disabled={isSubmitting}
+              className={`rounded-full border px-3.5 py-1.5 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.6px] transition-all ${
+                category === opt.value
+                  ? "border-emerald-500 bg-emerald-500/15 text-emerald-300 shadow-[0_0_0_1px_rgba(16,185,129,0.3)]"
+                  : "border-white/10 bg-white/[0.03] text-white/50 hover:border-emerald-500/40 hover:text-emerald-300"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-stretch">
+        <Textarea
+          ref={textareaRef}
+          value={brief}
+          onChange={(e) => setBrief(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSubmit();
+          }}
+          placeholder='e.g. "Find the best boutique resorts in Goa for architecture-forward travellers" or "Write about the rise of silent luxury retreats in Himachal Pradesh"'
+          disabled={isSubmitting}
+          rows={3}
+          className="flex-1 resize-none rounded-xl border-white/10 bg-white/[0.03] [font-family:'Inter',Helvetica] text-[13px] leading-[21px] text-white placeholder:text-white/30 focus-visible:border-emerald-500/50 focus-visible:ring-2 focus-visible:ring-emerald-600/40 focus-visible:ring-offset-0"
+        />
+        <Button
+          onClick={handleSubmit}
+          disabled={isSubmitting || !brief.trim()}
+          className="shrink-0 h-auto rounded-xl bg-emerald-600 px-6 py-3 [font-family:'Inter',Helvetica] text-[11px] font-semibold tracking-[1.2px] text-white shadow-[0_8px_24px_rgba(16,185,129,0.35)] transition-all hover:bg-emerald-500 hover:shadow-[0_10px_28px_rgba(16,185,129,0.45)] disabled:opacity-40 disabled:shadow-none sm:self-stretch"
+        >
+          {isSubmitting ? (
+            <span className="flex items-center gap-2">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              QUEUING…
+            </span>
+          ) : (
+            <span className="flex items-center gap-2">
+              <Sparkles className="h-3.5 w-3.5" />
+              GENERATE
+            </span>
+          )}
+        </Button>
+      </div>
+
+      {researchActive && (
+        <div className="mt-4 flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 [font-family:'Inter',Helvetica] text-[12px] text-emerald-300">
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+          </span>
+          Research in progress — the agent is searching sources and drafting
+          articles. Pending Review will update automatically.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Auto-Schedule Panel
+// ---------------------------------------------------------------------------
+interface SchedulerRun {
+  category: string;
+  label: string;
+  status: "success" | "failed";
+  message: string;
+  article_count: number;
+  ran_at: string;
+}
+
+interface SchedulerStatus {
+  running: boolean;
+  next_run: string | null;
+  started_at: string | null;
+  categories: Array<{ category: string; label: string }>;
+  history: SchedulerRun[];
+}
+
+function AutoSchedulePanel() {
+  const { toast } = useToast();
+  const [triggeringCategory, setTriggeringCategory] = useState<string | null>(null);
+
+  const { data: schedulerData, refetch: refetchScheduler } = useQuery<SchedulerStatus>({
+    queryKey: ["/api/scheduler/status"],
+    refetchInterval: 30000,
+  });
+
+  const triggerMutation = useMutation({
+    mutationFn: async (category: string | null) => {
+      const res = await apiRequest("POST", "/api/scheduler/trigger", { category });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setTriggeringCategory(null);
+      toast({
+        title: "Auto-generation triggered",
+        description: data.message ?? "Pipeline started — articles will appear in Pending Review shortly.",
+      });
+      const pollTimer = setInterval(() => {
+        refetchScheduler();
+        queryClient.invalidateQueries({ queryKey: ["/api/articles"] });
+      }, 5000);
+      setTimeout(() => clearInterval(pollTimer), 3 * 60 * 1000);
+    },
+    onError: (err: Error) => {
+      setTriggeringCategory(null);
+      toast({ title: "Trigger failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const handleTrigger = (category: string | null) => {
+    setTriggeringCategory(category ?? "all");
+    triggerMutation.mutate(category);
+  };
+
+  const formatNextRun = (iso: string | null) => {
+    if (!iso) return "—";
+    return new Date(iso).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+  };
+
+  const recentHistory = (schedulerData?.history ?? []).slice(0, 6);
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-emerald-500/20 bg-white/[0.02] p-8 backdrop-blur-xl">
+      <div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-emerald-500/8 blur-3xl" />
+
+      <div className="flex flex-wrap items-start justify-between gap-6">
+        <div>
+          <div className="flex items-center gap-2">
+            <Timer className="h-3.5 w-3.5 text-emerald-400" />
+            <p className="[font-family:'Inter',Helvetica] text-[9px] font-semibold tracking-[2px] text-emerald-400">
+              WEEKLY AUTO-SCHEDULE
+            </p>
+            <span className={`ml-1 rounded-full px-2 py-0.5 [font-family:'Inter',Helvetica] text-[9px] font-medium ${
+              schedulerData?.running
+                ? "bg-emerald-500/15 text-emerald-400"
+                : "bg-white/10 text-white/40"
+            }`}>
+              {schedulerData?.running ? "ACTIVE" : "—"}
+            </span>
+          </div>
+          <h2 className="pt-2 [font-family:'Playfair_Display',Helvetica] text-[22px] font-medium text-white">
+            Automatic Weekly Generation
+          </h2>
+          <p className="mt-1 max-w-xl [font-family:'Inter',Helvetica] text-[13px] leading-[21px] text-white/50">
+            Every week the AI agent auto-generates articles for Hospitality, Destinations &amp; Villas.
+            Each one lands in Pending Review for your approval before going live.
+          </p>
+          {schedulerData?.next_run && (
+            <p className="mt-3 [font-family:'Inter',Helvetica] text-[12px] text-white/40">
+              Next scheduled run:{" "}
+              <span className="text-emerald-300">{formatNextRun(schedulerData.next_run)}</span>
+            </p>
+          )}
+        </div>
+
+        {/* Trigger buttons */}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            onClick={() => handleTrigger(null)}
+            disabled={triggerMutation.isPending}
+            className="h-auto rounded-xl bg-emerald-600 px-4 py-2.5 [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1px] text-white shadow-[0_6px_20px_rgba(16,185,129,0.3)] hover:bg-emerald-500 disabled:opacity-40 disabled:shadow-none"
+          >
+            {triggeringCategory === "all" && triggerMutation.isPending ? (
+              <span className="flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" /> RUNNING…</span>
+            ) : (
+              <span className="flex items-center gap-1.5"><Zap className="h-3 w-3" /> RUN ALL NOW</span>
+            )}
+          </Button>
+          {(schedulerData?.categories ?? []).map((cat) => (
+            <Button
+              key={cat.category}
+              onClick={() => handleTrigger(cat.category)}
+              disabled={triggerMutation.isPending}
+              variant="outline"
+              className="h-auto rounded-xl border-white/10 bg-white/[0.03] px-3.5 py-2 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/60 hover:border-emerald-500/40 hover:text-emerald-300 disabled:opacity-40"
+            >
+              {triggeringCategory === cat.category && triggerMutation.isPending ? (
+                <span className="flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" /> RUNNING…</span>
+              ) : (
+                <span className="flex items-center gap-1.5"><Play className="h-3 w-3" /> {cat.label.split(" &")[0].toUpperCase()}</span>
+              )}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      {/* Run history */}
+      {recentHistory.length > 0 && (
+        <div className="mt-7 border-t border-white/10 pt-5">
+          <p className="mb-3 [font-family:'Inter',Helvetica] text-[9px] font-semibold tracking-[1.8px] text-white/30">
+            RECENT RUNS
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {recentHistory.map((run, i) => (
+              <div
+                key={i}
+                className={`rounded-lg border px-3 py-2.5 ${
+                  run.status === "success"
+                    ? "border-emerald-500/20 bg-emerald-500/5"
+                    : "border-red-500/20 bg-red-500/5"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className={`[font-family:'Inter',Helvetica] text-[9px] font-semibold tracking-[1px] ${
+                    run.status === "success" ? "text-emerald-400" : "text-red-400"
+                  }`}>
+                    {run.status === "success" ? "✓" : "✕"} {run.label}
+                  </span>
+                  <span className="shrink-0 [font-family:'Inter',Helvetica] text-[9px] text-white/25">
+                    {new Date(run.ran_at).toLocaleDateString("en-IN")}
+                  </span>
+                </div>
+                <p className="mt-0.5 [font-family:'Inter',Helvetica] text-[11px] text-white/50 line-clamp-1">{run.message}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {recentHistory.length === 0 && (
+        <div className="mt-6 flex items-center gap-2 rounded-lg border border-dashed border-white/10 px-4 py-3">
+          <RefreshCw className="h-3.5 w-3.5 shrink-0 text-white/20" />
+          <p className="[font-family:'Inter',Helvetica] text-[12px] text-white/30">
+            No runs yet. Click "Run All Now" to generate the first batch, or wait for the weekly schedule.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Full Article Live Preview Modal
+// ---------------------------------------------------------------------------
+function ArticlePreviewModal({
+  article,
+  isTrash = false,
+  onClose,
+  onApprove,
+  onSchedule,
+  onDelete,
+  onRestore,
+  isApproving,
+  isDeleting,
+  isRestoring = false,
+}: {
+  article: Article;
+  isTrash?: boolean;
+  onClose: () => void;
+  onApprove: () => void;
+  onSchedule: (date: string) => void;
+  onDelete: () => void;
+  onRestore?: () => void;
+  isApproving: boolean;
+  isDeleting: boolean;
+  isRestoring?: boolean;
+}) {
+  const [scheduleDate, setScheduleDate] = useState("");
+  const grade = overallGrade(article);
+  const isReview = article.article_type === "review";
+  const isDestination = isDestinationArticle(article);
+  const snapshot: Record<string, unknown> =
+    (article.property_snapshot as Record<string, unknown>) ?? {};
+  const snapshotEntries = Object.entries(snapshot);
+
+  // Safely convert any property_snapshot value to a display string —
+  // identical logic to ArticleDetailPage to prevent "[object Object]"
+  // for array fields like google_live_sources.
+  function fmtSnap(value: unknown): string {
+    if (value == null) return "—";
+    if (Array.isArray(value)) {
+      if (value.length === 0) return "—";
+      return (
+        value
+          .map((item: unknown): string => {
+            if (item == null) return "";
+            if (typeof item !== "object") return String(item);
+            const o = item as Record<string, unknown>;
+            if (typeof o["name"] === "string" && o["name"]) return o["name"];
+            if (typeof o["source"] === "string" && o["source"])
+              return o["source"];
+            try {
+              return JSON.stringify(item);
+            } catch {
+              return String(item);
+            }
+          })
+          .filter(Boolean)
+          .join(", ") || "—"
+      );
+    }
+    if (typeof value === "object") {
+      const o = value as Record<string, unknown>;
+      if (typeof o["name"] === "string" && o["name"]) return o["name"];
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return "—";
+      }
+    }
+    return String(value);
+  }
+
+  // Lock body scroll while modal is open
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, []);
+
+  // Close on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-[#0a0f0d]">
+      {/* ── Top bar ── */}
+      <div className="flex shrink-0 items-center justify-between border-b border-white/10 bg-[#0d1512] px-6 py-4">
+        <div className="flex items-center gap-3">
+          <Eye className="h-4 w-4 text-emerald-400" />
+          <span className="[font-family:'Inter',Helvetica] text-[11px] font-semibold tracking-[1.6px] text-emerald-400">
+            FULL ARTICLE PREVIEW
+          </span>
+          <StatusBadge status={article.status} />
+        </div>
+        <button
+          onClick={onClose}
+          className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/50 transition-colors hover:border-white/25 hover:text-white"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* ── Split body ── */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
+        {/* ── LEFT: SEO & Socials ── */}
+        <div className="flex w-full shrink-0 flex-col border-b border-white/10 bg-[#0d1512] lg:w-[380px] lg:overflow-y-auto lg:border-b-0 lg:border-r">
+          <div className="p-4 sm:p-6">
+            <p className="mb-5 [font-family:'Inter',Helvetica] text-[9px] font-semibold tracking-[1.8px] text-emerald-400">
+              SEO &amp; SOCIAL MEDIA PACKAGE
+            </p>
+
+            <Tabs defaultValue="seo" className="w-full">
+              <TabsList className="grid w-full grid-cols-4 rounded-full border border-white/10 bg-white/[0.03] p-1">
+                <TabsTrigger
+                  value="seo"
+                  className="rounded-full [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[0.5px] text-white/50 data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-none"
+                >
+                  SEO
+                </TabsTrigger>
+                <TabsTrigger
+                  value="linkedin"
+                  className="rounded-full [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[0.5px] text-white/50 data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-none"
+                >
+                  <Linkedin className="h-3.5 w-3.5" />
+                </TabsTrigger>
+                <TabsTrigger
+                  value="facebook"
+                  className="rounded-full [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[0.5px] text-white/50 data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-none"
+                >
+                  <Facebook className="h-3.5 w-3.5" />
+                </TabsTrigger>
+                <TabsTrigger
+                  value="x"
+                  className="rounded-full [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[0.5px] text-white/50 data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-none"
+                >
+                  <Twitter className="h-3.5 w-3.5" />
+                </TabsTrigger>
+              </TabsList>
+
+              {/* SEO tab */}
+              <TabsContent value="seo" className="mt-4 space-y-4">
+                {article.focus_keyword && (
+                  <div>
+                    <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                      Focus Keyword
+                    </div>
+                    <span className="mt-1 inline-block rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 [font-family:'Inter',Helvetica] text-[12px] text-emerald-300">
+                      {article.focus_keyword}
+                    </span>
+                  </div>
+                )}
+                <div>
+                  <div className="flex items-center justify-between">
+                    <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                      SEO Title
+                    </div>
+                    {article.seo_title && (
+                      <span
+                        className={`[font-family:'Inter',Helvetica] text-[10px] tabular-nums ${
+                          article.seo_title.length >= 50 &&
+                          article.seo_title.length <= 60
+                            ? "text-emerald-400"
+                            : "text-amber-400"
+                        }`}
+                      >
+                        {article.seo_title.length} chars
+                      </span>
+                    )}
+                  </div>
+                  {article.seo_title && (
+                    <div className="pt-1 [font-family:'Inter',Helvetica] text-[13px] text-white/80">
+                      {article.seo_title}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <div className="flex items-center justify-between">
+                    <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                      Meta Description
+                    </div>
+                    {article.meta_description && (
+                      <span
+                        className={`[font-family:'Inter',Helvetica] text-[10px] tabular-nums ${
+                          article.meta_description.length >= 150 &&
+                          article.meta_description.length <= 160
+                            ? "text-emerald-400"
+                            : "text-amber-400"
+                        }`}
+                      >
+                        {article.meta_description.length} chars
+                      </span>
+                    )}
+                  </div>
+                  {article.meta_description && (
+                    <div className="pt-1 [font-family:'Inter',Helvetica] text-[13px] text-white/80">
+                      {article.meta_description}
+                    </div>
+                  )}
+                </div>
+                {article.keywords && article.keywords.length > 0 && (
+                  <div>
+                    <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                      Keywords ({article.keywords.length})
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {article.keywords.map((kw, i) => (
+                        <span
+                          key={i}
+                          className={`rounded-full border px-2 py-0.5 [font-family:'Inter',Helvetica] text-[11px] ${
+                            i < 3
+                              ? "border-white/15 bg-white/[0.04] text-white/80"
+                              : i < 7
+                                ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-300"
+                                : "border-sky-500/25 bg-sky-500/10 text-sky-300"
+                          }`}
+                        >
+                          {kw}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {article.internal_links &&
+                  article.internal_links.length > 0 && (
+                    <div>
+                      <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                        Internal Linking ({article.internal_links.length})
+                      </div>
+                      <div className="mt-2 space-y-2">
+                        {article.internal_links.map((link, i) => (
+                          <div
+                            key={i}
+                            className="rounded-lg border border-white/10 bg-white/[0.03] p-3"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="[font-family:'Inter',Helvetica] text-[12px] font-medium text-emerald-300">
+                                "{link.anchor_text}"
+                              </span>
+                              <span className="shrink-0 rounded-full border border-sky-500/25 bg-sky-500/10 px-1.5 py-0.5 [font-family:'Inter',Helvetica] text-[10px] text-sky-300">
+                                {link.target_page}
+                              </span>
+                            </div>
+                            <p className="mt-1 [font-family:'Inter',Helvetica] text-[11px] italic text-white/40">
+                              {link.context}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                {article.source_urls && article.source_urls.length > 0 && (
+                  <div>
+                    <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                      Source URLs ({article.source_urls.length})
+                    </div>
+                    <ul className="mt-2 space-y-1.5">
+                      {article.source_urls.map((url, i) => (
+                        <li key={i}>
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-block break-all rounded-full border border-white/10 bg-white/[0.03] px-2 py-1 [font-family:'Inter',Helvetica] text-[11px] text-emerald-300 hover:underline"
+                          >
+                            {url}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </TabsContent>
+
+              {/* LinkedIn tab */}
+              <TabsContent value="linkedin" className="mt-4 space-y-2">
+                <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                  LinkedIn Variations
+                </div>
+                <ul className="space-y-2">
+                  {(article.linkedin_variations ?? []).map((v, i) => (
+                    <li
+                      key={i}
+                      className="rounded-lg border border-white/10 bg-white/[0.03] p-3 [font-family:'Inter',Helvetica] text-[12px] leading-[19px] text-white/80"
+                    >
+                      {v}
+                    </li>
+                  ))}
+                  {(!article.linkedin_variations ||
+                    article.linkedin_variations.length === 0) && (
+                    <li className="[font-family:'Inter',Helvetica] text-[12px] text-white/30">
+                      No LinkedIn copy generated.
+                    </li>
+                  )}
+                </ul>
+              </TabsContent>
+
+              {/* Facebook tab */}
+              <TabsContent value="facebook" className="mt-4 space-y-2">
+                <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                  Facebook Variations
+                </div>
+                <ul className="space-y-2">
+                  {(article.facebook_variations ?? []).map((v, i) => (
+                    <li
+                      key={i}
+                      className="rounded-lg border border-white/10 bg-white/[0.03] p-3 [font-family:'Inter',Helvetica] text-[12px] leading-[19px] text-white/80"
+                    >
+                      {v}
+                    </li>
+                  ))}
+                  {(!article.facebook_variations ||
+                    article.facebook_variations.length === 0) && (
+                    <li className="[font-family:'Inter',Helvetica] text-[12px] text-white/30">
+                      No Facebook copy generated.
+                    </li>
+                  )}
+                </ul>
+              </TabsContent>
+
+              {/* X/Twitter tab */}
+              <TabsContent value="x" className="mt-4 space-y-2">
+                <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                  X / Twitter Thread
+                </div>
+                <ul className="space-y-2">
+                  {(article.twitter_thread ?? []).map((v, i) => (
+                    <li
+                      key={i}
+                      className="rounded-lg border border-white/10 bg-white/[0.03] p-3 [font-family:'Inter',Helvetica] text-[12px] leading-[19px] text-white/80"
+                    >
+                      {i + 1}/ {v}
+                    </li>
+                  ))}
+                  {(!article.twitter_thread ||
+                    article.twitter_thread.length === 0) && (
+                    <li className="[font-family:'Inter',Helvetica] text-[12px] text-white/30">
+                      No X thread generated.
+                    </li>
+                  )}
+                </ul>
+              </TabsContent>
+            </Tabs>
+
+            {/* Newsletter block */}
+            <div className="mt-6 border-t border-white/10 pt-5">
+              <div className="mb-3 flex items-center gap-2">
+                <Mail className="h-3.5 w-3.5 text-white/40" />
+                <span className="[font-family:'Inter',Helvetica] text-[9px] font-semibold tracking-[1.6px] text-emerald-400">
+                  NEWSLETTER
+                </span>
+              </div>
+              {article.newsletter_summary && (
+                <div className="mb-3">
+                  <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                    Summary
+                  </div>
+                  <div className="pt-1 [font-family:'Inter',Helvetica] text-[13px] text-white/80">
+                    {article.newsletter_summary}
+                  </div>
+                </div>
+              )}
+              {article.cta && (
+                <div className="mb-3">
+                  <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                    CTA
+                  </div>
+                  <div className="pt-1 [font-family:'Inter',Helvetica] text-[13px] text-white/80">
+                    {article.cta}
+                  </div>
+                </div>
+              )}
+              {article.suggested_hashtags &&
+                article.suggested_hashtags.length > 0 && (
+                  <div>
+                    <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/40">
+                      Hashtags
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {article.suggested_hashtags.map((tag, i) => (
+                        <span
+                          key={i}
+                          className="rounded-full border border-white/10 bg-white/[0.03] px-2 py-0.5 [font-family:'Inter',Helvetica] text-[11px] text-white/70"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
             </div>
+          </div>
+        </div>
+
+        {/* ── RIGHT: Full live article preview ── */}
+        <div className="min-w-0 flex-1 bg-[#f8f7f4] text-[#1e1e1e] lg:overflow-y-auto">
+          {/* Hero */}
+          <div
+            className="relative overflow-hidden bg-[#1a1a1a]"
+            style={
+              article.hero_image_url
+                ? {
+                    backgroundImage: `url(${article.hero_image_url})`,
+                    backgroundSize: "cover",
+                    backgroundPosition: "center",
+                  }
+                : undefined
+            }
+          >
+            <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(20,20,20,0.95)_0%,rgba(20,20,20,0.6)_60%,rgba(0,0,0,0.3)_100%)]" />
+            <div className="relative flex min-h-[220px] flex-col justify-end px-5 pb-8 pt-8 sm:min-h-[320px] sm:px-10 sm:pb-12 sm:pt-10">
+              <div className="mb-3 inline-flex w-fit items-center gap-3">
+                {article.location && (
+                  <div className="bg-[#2e4a3f] px-3 py-[7px]">
+                    <span className="[font-family:'Inter',Helvetica] text-[10px] font-normal tracking-[1.40px] text-white">
+                      {article.location.toUpperCase()}
+                    </span>
+                  </div>
+                )}
+                <span className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[2.60px] text-[#ffffff80]">
+                  {isReview ? "PROPERTY REVIEW" : "EDITORIAL"}
+                </span>
+              </div>
+              <h1 className="[font-family:'Playfair_Display',Helvetica] text-[26px] font-normal leading-[1.15] text-white sm:text-[36px] lg:text-[48px]">
+                {article.headline}
+              </h1>
+              {article.subtitle && (
+                <p className="max-w-[600px] pt-4 [font-family:'Inter',Helvetica] text-[14px] leading-[24px] text-[#ffffffb2] sm:text-[15px] sm:leading-[26px]">
+                  {article.subtitle}
+                </p>
+              )}
+              <p className="pt-5 [font-family:'Inter',Helvetica] text-[11px] text-[#ffffff66]">
+                {formatDate(article.created_at)}
+              </p>
+            </div>
+          </div>
+
+          {/* Snapshot stats */}
+          {snapshotEntries.length > 0 && (
+            <div className="border-b border-[#1e1e1e1a] bg-white">
+              <div className="px-5 py-6 sm:px-10 sm:py-7">
+                <div className="grid grid-cols-2 gap-4 gap-y-5 sm:gap-6 md:grid-cols-4">
+                  {snapshotEntries.map(([key, value]) => (
+                    <div key={key}>
+                      <div className="[font-family:'Inter',Helvetica] text-[9px] font-normal tracking-[1.44px] text-[#6b6b6b]">
+                        {key.replace(/_/g, " ").toUpperCase()}
+                      </div>
+                      <div className="pt-1 [font-family:'Inter',Helvetica] text-[14px] text-[#1e1e1e]">
+                        {fmtSnap(value)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Section images strip (before body) */}
+          {article.section_image_urls &&
+            article.section_image_urls.some(
+              (url) =>
+                typeof url === "string" &&
+                (url.startsWith("http://") ||
+                  url.startsWith("https://") ||
+                  url.startsWith("/api/image-proxy?url=")),
+            ) && (
+              <div className="border-b border-[#1e1e1e1a] bg-white px-5 py-6 sm:px-10">
+                <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
+                  {article.section_image_urls
+                    .map((url, originalIdx) => ({ url, caption: article.captions?.[originalIdx] }))
+                    .filter(
+                      ({ url }) =>
+                        typeof url === "string" &&
+                        (url.startsWith("http://") ||
+                          url.startsWith("https://") ||
+                          url.startsWith("/api/image-proxy?url=")),
+                    )
+                    .map(({ url, caption }, i) => (
+                    <div key={i}>
+                      <img
+                        src={url}
+                        alt={caption || `Section ${i + 1} — ${article.headline}`}
+                        className="h-[120px] w-full rounded-lg object-cover sm:h-[160px]"
+                        onError={(event) => {
+                          const container = event.currentTarget.parentElement;
+                          if (container instanceof HTMLElement) {
+                            container.hidden = true;
+                          }
+                        }}
+                      />
+                      {caption && (
+                        <p className="mt-1.5 [font-family:'Inter',Helvetica] text-[11px] italic text-[#6b6b6b]">
+                          {caption}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+          {/* Main article body */}
+          <div className="px-5 py-10 sm:px-10 sm:py-14">
+            <div className="mx-auto max-w-[780px]">
+              {/* ABCDE sidebar + body two-column */}
+              <div className="grid gap-10 lg:grid-cols-[minmax(0,540px)_200px] lg:gap-12">
+                <div>
+                  {article.executive_summary && (
+                    <p className="pb-8 [font-family:'Inter',Helvetica] text-[17px] font-normal italic leading-[30px] text-[#2e4a3f]">
+                      {article.executive_summary}
+                    </p>
+                  )}
+
+                  {article.full_article ? (
+                    <div
+                      data-testid="text-article-body"
+                      className="article-body [font-family:'Inter',Helvetica] text-[17px] font-normal leading-[30px] text-[#1e1e1e]
+                        [&_h2]:mt-12 [&_h2]:[font-family:'Playfair_Display',Helvetica] [&_h2]:text-[26px] [&_h2]:font-normal [&_h2]:text-[#1e1e1e]
+                        [&_h3]:mt-8 [&_h3]:[font-family:'Playfair_Display',Helvetica] [&_h3]:text-[20px] [&_h3]:font-normal [&_h3]:text-[#1e1e1e]
+                        [&_p]:pt-6 [&_p:first-child]:pt-0
+                        [&_ul]:mt-4 [&_ul]:space-y-2 [&_ul]:pl-5 [&_ul]:list-disc
+                        [&_ol]:mt-4 [&_ol]:space-y-2 [&_ol]:pl-5 [&_ol]:list-decimal
+                        [&_li]:text-[16px] [&_li]:leading-[28px] [&_li]:text-[#1e1e1e]
+                        [&_figure]:my-8 [&_figure]:text-center
+                        [&_figure_img]:max-w-full [&_figure_img]:w-full [&_figure_img]:h-auto [&_figure_img]:rounded-lg [&_figure_img]:object-cover
+                        [&_figcaption]:mt-2 [&_figcaption]:text-[13px] [&_figcaption]:italic [&_figcaption]:text-[#6b6b6b]
+                        [&_table]:mt-8 [&_table]:w-full [&_table]:border-collapse [&_table]:text-[14px]
+                        [&_th]:border [&_th]:border-[#1e1e1e1a] [&_th]:bg-[#2e4a3f] [&_th]:text-white [&_th]:px-4 [&_th]:py-3 [&_th]:text-left [&_th]:[font-family:'Inter',Helvetica] [&_th]:text-[11px] [&_th]:tracking-[0.8px] [&_th]:font-medium
+                        [&_td]:border [&_td]:border-[#1e1e1e1a] [&_td]:px-4 [&_td]:py-3 [&_td]:align-top [&_td]:leading-[22px]
+                        [&_tr:nth-child(even)_td]:bg-[#f8f7f4]
+                        [&_br]:block [&_br]:mt-4"
+                      dangerouslySetInnerHTML={{ __html: article.full_article }}
+                    />
+                  ) : (
+                    <div className="rounded-lg border border-dashed border-[#1e1e1e20] py-10 text-center [font-family:'Inter',Helvetica] text-[13px] text-[#6b6b6b]">
+                      Full article body not yet generated.
+                    </div>
+                  )}
+
+                  {/* Pull quotes */}
+                  {article.pull_quotes && article.pull_quotes.length > 0 && (
+                    <div className="mt-12 space-y-6 border-l-2 border-[#2e4a3f] pl-6">
+                      {article.pull_quotes.map((quote, i) => (
+                        <p
+                          key={i}
+                          className="[font-family:'Playfair_Display',Helvetica] text-[22px] italic leading-[32px] text-[#2e4a3f]"
+                        >
+                          "{quote}"
+                        </p>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* FAQ */}
+                  {article.faq_section && article.faq_section.length > 0 && (
+                    <div className="mt-16 border-t border-[#1e1e1e1a] pt-10">
+                      <h2 className="[font-family:'Playfair_Display',Helvetica] text-[26px] font-normal text-[#1e1e1e]">
+                        Frequently Asked Questions
+                      </h2>
+                      <div className="mt-6 space-y-6">
+                        {article.faq_section.map((faq, i) => (
+                          <div key={i}>
+                            <p className="[font-family:'Inter',Helvetica] text-[15px] font-medium text-[#1e1e1e]">
+                              {faq.question}
+                            </p>
+                            <p className="pt-2 [font-family:'Inter',Helvetica] text-[14px] leading-[24px] text-[#6b6b6b]">
+                              {faq.answer}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   )}
 
                   {/* WishNest Verdict */}
