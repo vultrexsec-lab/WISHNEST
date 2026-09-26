@@ -7,3 +7,4 @@ openai==1.14.1
 requests==2.31.0
 alembic==1.13.1
 pytest
+python-multipart>=0.0.9
