@@ -23,7 +23,7 @@ from openai import OpenAI
 
 from app.config import get_settings
 from app.database import SessionLocal
-from app.models.article import Article, ArticleStatus, ArticleType
+from app.models.article import Article, ArticleStatus, ArticleType, Grade
 from app.services.places_service import text_search_place, PropertyListing
 
 logger = logging.getLogger("wishnest.reimaging_service")
@@ -299,28 +299,33 @@ Include  the number of captions/alt_text equal to the number of redesign notes a
 
 
 
-def _normalise_grade_value(raw) -> str | None:
-    """Map LLM grade strings to Grade enum values (e.g. a_plus -> A+)."""
+def _normalise_grade_value(raw):
+    """Map LLM grade strings to Grade enum members (or None)."""
     if raw is None:
         return None
+    if isinstance(raw, Grade):
+        return raw
     s = str(raw).strip()
     if not s:
         return None
-    # Already a valid letter grade
-    valid = {"A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D"}
+    valid = {
+        "A+": Grade.a_plus, "A": Grade.a, "A-": Grade.a_minus,
+        "B+": Grade.b_plus, "B": Grade.b, "B-": Grade.b_minus,
+        "C+": Grade.c_plus, "C": Grade.c, "C-": Grade.c_minus,
+        "D+": Grade.d_plus, "D": Grade.d,
+    }
     if s in valid:
-        return s
-    # Common LLM variants: a_plus, A_PLUS, a+
+        return valid[s]
     key = s.lower().replace(" ", "").replace("-", "_")
     mapping = {
-        "a_plus": "A+", "aplus": "A+", "a+": "A+",
-        "a": "A", "a_minus": "A-", "aminus": "A-", "a-": "A-",
-        "b_plus": "B+", "bplus": "B+", "b+": "B+",
-        "b": "B", "b_minus": "B-", "bminus": "B-", "b-": "B-",
-        "c_plus": "C+", "cplus": "C+", "c+": "C+",
-        "c": "C", "c_minus": "C-", "cminus": "C-", "c-": "C-",
-        "d_plus": "D+", "dplus": "D+", "d+": "D+",
-        "d": "D",
+        "a_plus": Grade.a_plus, "aplus": Grade.a_plus, "a+": Grade.a_plus,
+        "a": Grade.a, "a_minus": Grade.a_minus, "aminus": Grade.a_minus, "a-": Grade.a_minus,
+        "b_plus": Grade.b_plus, "bplus": Grade.b_plus, "b+": Grade.b_plus,
+        "b": Grade.b, "b_minus": Grade.b_minus, "bminus": Grade.b_minus, "b-": Grade.b_minus,
+        "c_plus": Grade.c_plus, "cplus": Grade.c_plus, "c+": Grade.c_plus,
+        "c": Grade.c, "c_minus": Grade.c_minus, "cminus": Grade.c_minus, "c-": Grade.c_minus,
+        "d_plus": Grade.d_plus, "dplus": Grade.d_plus, "d+": Grade.d_plus,
+        "d": Grade.d,
     }
     return mapping.get(key)
 
@@ -414,6 +419,16 @@ def _save_as_draft(
         db.close()
 
 
+
+def _compact_image_url(url: str | None) -> str | None:
+    """Avoid multi-MB data URLs in HTTP JSON responses (DB still keeps full value)."""
+    if not url:
+        return None
+    if url.startswith("data:") and len(url) > 2000:
+        return None  # client should open Dashboard to view full images
+    return url
+
+
 def run_reimaging_hotel(
     hotel_name: str,
     prompt: str,
@@ -487,7 +502,7 @@ def run_reimaging_hotel(
         "listing_name": listing.name if listing else hotel_name,
         "google_rating": listing.rating if listing else None,
         "original_photo_urls": source_urls,
-        "redesigned_image_urls": redesigned_urls,
+        "redesigned_image_urls": [u for u in (_compact_image_url(x) for x in redesigned_urls) if u],
         "headline": package.get("headline"),
         "subtitle": package.get("subtitle"),
         "executive_summary": package.get("executive_summary"),
@@ -553,7 +568,7 @@ def run_reimaging_upload(
         "listing_name": hotel_name,
         "google_rating": None,
         "original_photo_urls": [],
-        "redesigned_image_urls": redesigned_urls,
+        "redesigned_image_urls": [u for u in (_compact_image_url(x) for x in redesigned_urls) if u],
         "headline": package.get("headline"),
         "subtitle": package.get("subtitle"),
         "executive_summary": package.get("executive_summary"),

@@ -145,10 +145,16 @@ def reimaging_from_hotel(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("Reimaging hotel mode failed")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Reimaging failed: {exc}",
-        ) from exc
+        msg = str(exc)
+        if "uq_articles_place_id_active" in msg or "UniqueViolation" in msg or "duplicate key" in msg.lower():
+            msg = (
+                "A draft for this property already exists. "
+                "Open the main Dashboard, trash or publish it, then try again — "
+                "or wait for the latest backend deploy which allows multiple reimaging drafts."
+            )
+        else:
+            msg = f"Reimaging failed: {msg[:400]}"
+        raise HTTPException(status_code=500, detail=msg) from exc
 
 
 @router.post("/api/reimaging/upload", response_model=ReimagingResult)
