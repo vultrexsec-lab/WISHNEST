@@ -17,6 +17,7 @@ import {
   Search,
   X,
   Plus,
+  Download,
 } from "lucide-react";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
@@ -125,6 +126,52 @@ export function ReimagingPage(): JSX.Element {
       }
       return prev.filter((p) => p.id !== id);
     });
+  };
+
+  const downloadPhoto = async (photo: SelectablePhoto, index: number) => {
+    try {
+      let blob: Blob;
+      let filename = `wishnest-photo-${index + 1}.jpg`;
+
+      if (photo.file) {
+        blob = photo.file;
+        filename = photo.file.name || filename;
+      } else {
+        // Fetch remote (Google Maps) or local display URL
+        const res = await fetch(photo.displayUrl, { mode: "cors", referrerPolicy: "no-referrer" });
+        if (!res.ok) throw new Error("Could not fetch image");
+        blob = await res.blob();
+        const ct = blob.type || "image/jpeg";
+        if (ct.includes("png")) filename = filename.replace(/\.jpg$/i, ".png");
+        else if (ct.includes("webp")) filename = filename.replace(/\.jpg$/i, ".webp");
+      }
+
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = filename;
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+      toast({ title: "Downloaded", description: filename });
+    } catch (err) {
+      // Fallback: open in new tab so user can save manually
+      try {
+        window.open(photo.displayUrl, "_blank", "noopener,noreferrer");
+        toast({
+          title: "Opened in new tab",
+          description: "Right-click the image → Save image as…",
+        });
+      } catch {
+        toast({
+          title: "Download failed",
+          description: err instanceof Error ? err.message : "Could not download photo",
+          variant: "destructive",
+        });
+      }
+    }
   };
 
   const addFilesAsPhotos = (list: FileList | null, replace = false) => {
@@ -571,7 +618,7 @@ export function ReimagingPage(): JSX.Element {
                   </div>
                 </div>
                 <p className="[font-family:'Inter',Helvetica] text-[11px] text-white/30">
-                  Click a photo to select/deselect. ✕ removes it. Tip: 2–4 photos redesigns faster and is more reliable.
+                  Click to select/deselect. Download saves the photo. ✕ removes it. Tip: 1–2 photos keeps OpenAI cost low.
                 </p>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
                   {photos.map((p) => (
@@ -595,17 +642,32 @@ export function ReimagingPage(): JSX.Element {
                           <CheckCircle2 className="h-4 w-4" />
                         </div>
                       )}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removePhoto(p.id);
-                        }}
-                        className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition group-hover:opacity-100"
-                        aria-label="Remove photo"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
+                      <div className="absolute right-1.5 top-1.5 flex gap-1 opacity-0 transition group-hover:opacity-100">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void downloadPhoto(p, photos.indexOf(p));
+                          }}
+                          className="flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-emerald-600"
+                          aria-label="Download photo"
+                          title="Download"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removePhoto(p.id);
+                          }}
+                          className="flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-red-600"
+                          aria-label="Remove photo"
+                          title="Remove"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                       {p.file && (
                         <p className="truncate px-2 py-1 [font-family:'Inter',Helvetica] text-[10px] text-white/40">
                           {p.file.name}
