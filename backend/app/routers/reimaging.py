@@ -1,16 +1,20 @@
 """
 Reimaging Studio API — admin-only.
 
+POST /api/reimaging/fetch-photos
+  { "hotel_name": str }
+  → returns 6–8 Google Maps photos for the property (preview only)
+
 POST /api/reimaging/hotel
   { "hotel_name": str, "prompt": str }
   → pulls Google Maps photos, redesigns, writes article, saves draft
 
 POST /api/reimaging/upload
-  JSON body (no multipart — avoids python-multipart dependency at boot):
+  JSON body (no multipart):
   {
     "prompt": str,
     "hotel_name": optional str,
-    "images_base64": [ "base64...", ... ]   # raw base64, no data: prefix
+    "images_base64": [ "base64...", ... ]
   }
   → redesigns uploaded images, writes article, saves draft
 """
@@ -23,13 +27,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.dependencies import require_admin
+from app.services.places_service import text_search_place
 from app.services.reimaging_service import run_reimaging_hotel, run_reimaging_upload
 
 router = APIRouter(tags=["reimaging"])
 logger = logging.getLogger("wishnest.reimaging")
 
-MAX_UPLOAD_BYTES = 12 * 1024 * 1024  # 12 MB per image (decoded)
+MAX_UPLOAD_BYTES = 12 * 1024 * 1024
 MAX_IMAGES = 6
+FETCH_PHOTO_COUNT = 8
 
 
 class HotelReimagingRequest(BaseModel):
@@ -37,11 +43,23 @@ class HotelReimagingRequest(BaseModel):
     prompt: str = Field(..., min_length=5, max_length=2000)
 
 
+class FetchPhotosRequest(BaseModel):
+    hotel_name: str = Field(..., min_length=2, max_length=300)
+
+
+class FetchPhotosResponse(BaseModel):
+    hotel_name: str
+    listing_name: str | None = None
+    google_rating: float | None = None
+    review_count: int | None = None
+    address: str | None = None
+    photo_urls: list[str] = []
+    message: str = ""
+
+
 class UploadReimagingRequest(BaseModel):
     prompt: str = Field(..., min_length=5, max_length=2000)
     hotel_name: str | None = Field(default=None, max_length=300)
-    # Raw base64 strings (no "data:image/...;base64," prefix required;
-    # prefix is stripped if present)
     images_base64: list[str] = Field(..., min_length=1, max_length=MAX_IMAGES)
 
 
@@ -61,11 +79,51 @@ class ReimagingResult(BaseModel):
 
 
 def _strip_data_url(s: str) -> str:
-    """Remove data-URL prefix if the client sent one."""
     s = (s or "").strip()
     if "," in s and s.lower().startswith("data:"):
         return s.split(",", 1)[1].strip()
     return s
+
+
+@router.post("/api/reimaging/fetch-photos", response_model=FetchPhotosResponse)
+def fetch_hotel_photos(
+    body: FetchPhotosRequest,
+    admin: str = Depends(require_admin),
+):
+    """Preview: resolve hotel name and return 6–8 Google Maps photo URLs."""
+    name = body.hotel_name.strip()
+    listing = text_search_place(name, max_photos=FETCH_PHOTO_COUNT)
+    if not listing:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No Google Maps listing found for “{name}”. Try a more specific name.",
+        )
+
+    urls: list[str] = []
+    if listing.photo_url:
+        urls.append(listing.photo_url)
+    if listing.photo_urls:
+        for u in listing.photo_urls:
+            if u and u not in urls:
+                urls.append(u)
+            if len(urls) >= FETCH_PHOTO_COUNT:
+                break
+
+    if not urls:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Found “{listing.name}” but no photos are available.",
+        )
+
+    return FetchPhotosResponse(
+        hotel_name=name,
+        listing_name=listing.name,
+        google_rating=listing.rating,
+        review_count=listing.review_count,
+        address=listing.address,
+        photo_urls=urls[:FETCH_PHOTO_COUNT],
+        message=f"Found {len(urls[:FETCH_PHOTO_COUNT])} photos for {listing.name}.",
+    )
 
 
 @router.post("/api/reimaging/hotel", response_model=ReimagingResult)
@@ -92,16 +150,12 @@ def reimaging_from_upload(
     body: UploadReimagingRequest,
     admin: str = Depends(require_admin),
 ):
-    """Mode B: base64 image(s) + redesign prompt → AI redesign → draft article.
-
-    Uses JSON body (not multipart) so the app boots without python-multipart.
-    """
+    """Mode B: base64 image(s) + redesign prompt → AI redesign → draft article."""
     b64_list: list[str] = []
     for raw in body.images_base64[:MAX_IMAGES]:
         cleaned = _strip_data_url(raw)
         if not cleaned or len(cleaned) < 100:
             continue
-        # Rough size check on base64 (decoded ≈ 3/4 of encoded length)
         approx_bytes = (len(cleaned) * 3) // 4
         if approx_bytes > MAX_UPLOAD_BYTES:
             raise HTTPException(
@@ -109,7 +163,6 @@ def reimaging_from_upload(
                 detail="One image exceeds the 12 MB limit.",
             )
         try:
-            # Validate it is valid base64
             base64.b64decode(cleaned, validate=True)
         except Exception:
             raise HTTPException(
