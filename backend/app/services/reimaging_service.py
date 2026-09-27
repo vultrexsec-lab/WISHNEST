@@ -152,7 +152,6 @@ def _generate_redesigned_image(client: OpenAI, gen_prompt: str) -> str | None:
             size="1792x1024",
             quality="standard",
             n=1,
-            response_format="url",
         )
         if result.data and result.data[0].url:
             return result.data[0].url
