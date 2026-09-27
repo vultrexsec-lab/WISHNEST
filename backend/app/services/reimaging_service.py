@@ -34,7 +34,7 @@ MAX_SOURCE_PHOTOS = 9
 # How many redesigned images to generate per run
 MAX_REDESIGNED = 6
 
-IMAGE_GEN_MODEL = "dall-e-3"
+IMAGE_GEN_MODEL = "gpt-image-1"
 VISION_MODEL = "gpt-4o"
 ARTICLE_MODEL = "gpt-4o-mini"
 
@@ -142,21 +142,45 @@ def _vision_redesign_prompt(
 
 def _generate_redesigned_image(client: OpenAI, gen_prompt: str) -> str | None:
     """
-    Call DALL-E 3 and return a temporary URL of the generated image.
-    Returns None on failure.
+    Generate a redesigned image via OpenAI GPT Image models.
+    Returns a data-URL (base64) so the image is durable in drafts.
+    Falls back across model names if the primary is unavailable.
     """
-    try:
-        result = client.images.generate(
-            model=IMAGE_GEN_MODEL,
-            prompt=gen_prompt[:3900],
-            size="1792x1024",
-            quality="standard",
-            n=1,
-        )
-        if result.data and result.data[0].url:
-            return result.data[0].url
-    except Exception as exc:
-        logger.error("DALL-E generation failed: %s", exc)
+    models_to_try = (
+        IMAGE_GEN_MODEL,
+        "gpt-image-1",
+        "gpt-image-1-mini",
+        "gpt-image-2",
+    )
+    seen: set[str] = set()
+    last_err: Exception | None = None
+    for model in models_to_try:
+        if model in seen:
+            continue
+        seen.add(model)
+        try:
+            result = client.images.generate(
+                model=model,
+                prompt=gen_prompt[:32000],
+                size="1536x1024",
+                n=1,
+            )
+            if not result.data:
+                continue
+            item = result.data[0]
+            # GPT Image models return b64_json by default; legacy models may return url
+            b64 = getattr(item, "b64_json", None)
+            if b64:
+                return f"data:image/png;base64,{b64}"
+            url = getattr(item, "url", None)
+            if url:
+                return url
+        except Exception as exc:
+            last_err = exc
+            logger.warning("Image generation with model %s failed: %s", model, exc)
+            continue
+    if last_err:
+        logger.error("Image generation failed for all models: %s", last_err)
     return None
 
 
