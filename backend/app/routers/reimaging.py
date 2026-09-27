@@ -210,25 +210,51 @@ def reimaging_from_upload(
 _MEDIA_DIR = Path(__file__).resolve().parent.parent / "data" / "reimaging_media"
 
 
-@router.get("/api/reimaging/media/{filename}")
-def serve_reimaging_media(filename: str):
-    """Serve a redesigned image written by the reimaging studio."""
-    # Prevent path traversal
-    safe = Path(filename).name
-    if safe != filename or ".." in filename or "/" in filename or "\\" in filename:
-        raise HTTPException(status_code=400, detail="Invalid filename.")
-    if not safe.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-        raise HTTPException(status_code=400, detail="Unsupported file type.")
+@router.get("/api/reimaging/media/{media_id}")
+def serve_reimaging_media(media_id: str):
+    """
+    Serve a redesigned image from Postgres (media_blobs).
+    Accepts a UUID (preferred) or a legacy filename for disk-cache fallback.
+    """
+    import uuid as _uuid
+    from fastapi.responses import Response
+    from app.database import SessionLocal
+    from app.models.media_blob import MediaBlob
+
+    # Try UUID lookup in DB first
+    try:
+        uid = _uuid.UUID(media_id)
+    except ValueError:
+        uid = None
+
+    if uid is not None:
+        db = SessionLocal()
+        try:
+            row = db.query(MediaBlob).filter(MediaBlob.id == uid).first()
+            if row and row.data:
+                return Response(
+                    content=bytes(row.data),
+                    media_type=row.content_type or "image/png",
+                    headers={"Cache-Control": "public, max-age=31536000, immutable"},
+                )
+        finally:
+            db.close()
+
+    # Legacy disk-cache fallback (pre-DB filenames)
+    safe = Path(media_id).name
+    if safe != media_id or ".." in media_id:
+        raise HTTPException(status_code=400, detail="Invalid media id.")
     file_path = _MEDIA_DIR / safe
-    if not file_path.is_file():
-        raise HTTPException(status_code=404, detail="Image not found.")
-    media = "image/png"
-    if safe.lower().endswith((".jpg", ".jpeg")):
-        media = "image/jpeg"
-    elif safe.lower().endswith(".webp"):
-        media = "image/webp"
-    return FileResponse(
-        file_path,
-        media_type=media,
-        headers={"Cache-Control": "public, max-age=31536000, immutable"},
-    )
+    if file_path.is_file():
+        media = "image/png"
+        if safe.lower().endswith((".jpg", ".jpeg")):
+            media = "image/jpeg"
+        elif safe.lower().endswith(".webp"):
+            media = "image/webp"
+        return FileResponse(
+            file_path,
+            media_type=media,
+            headers={"Cache-Control": "public, max-age=31536000, immutable"},
+        )
+
+    raise HTTPException(status_code=404, detail="Image not found.")

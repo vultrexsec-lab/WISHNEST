@@ -14,6 +14,7 @@ from app.config import get_settings
 from app.routers import approve, articles, auth, image_proxy, newsletter, research, vision, reimaging
 from app.routers import scheduler as scheduler_router
 from app.models import automation  # noqa: F401 ensures settings table metadata is loaded
+from app.models import media_blob  # noqa: F401 ensures media_blobs table metadata is loaded
 
 logging.basicConfig(
     level=logging.INFO,
@@ -85,8 +86,20 @@ def _sync_schema() -> None:
                 "ON articles (place_id) "
                 "WHERE place_id IS NOT NULL AND is_trash = false"
             ))
+            # Persistent image storage for Reimaging Studio (survives disk resets)
+            conn.execute(text(
+                """
+                CREATE TABLE IF NOT EXISTS media_blobs (
+                    id UUID PRIMARY KEY,
+                    content_type VARCHAR(64) NOT NULL DEFAULT 'image/png',
+                    filename VARCHAR(255),
+                    data BYTEA NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            ))
             conn.commit()
-        log.info("Schema sync: columns and place_id unique index present.")
+        log.info("Schema sync: columns, place_id index, media_blobs present.")
     except Exception as exc:
         # Log but don't crash — the articles table may not exist yet on a
         # completely fresh DB; create_tables.py in start.sh handles that case.

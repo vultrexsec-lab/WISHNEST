@@ -34,7 +34,7 @@ logger = logging.getLogger("wishnest.reimaging_service")
 MIN_SOURCE_PHOTOS = 6
 MAX_SOURCE_PHOTOS = 9
 # How many redesigned images to generate per run
-MAX_REDESIGNED = 6
+MAX_REDESIGNED = 4
 
 IMAGE_GEN_MODEL = "gpt-image-1"
 VISION_MODEL = "gpt-4o"
@@ -155,10 +155,52 @@ def _ensure_media_dir() -> Path:
 
 
 def _persist_image_bytes(data: bytes, ext: str = "png") -> str:
-    folder = _ensure_media_dir()
-    name = f"{uuid.uuid4().hex}.{ext.lstrip('.')}"
-    (folder / name).write_bytes(data)
-    return f"{_MEDIA_URL_PREFIX}/{name}"
+    """
+    Store image bytes in Postgres (media_blobs) so they survive Render restarts.
+    Also mirror to local disk as a hot cache. Returns /api/reimaging/media/{uuid}.
+    """
+    from app.models.media_blob import MediaBlob
+
+    if not data:
+        raise RuntimeError("Cannot persist empty image")
+
+    ext = (ext or "png").lstrip(".").lower()
+    if ext in ("jpg", "jpeg"):
+        ctype = "image/jpeg"
+    elif ext == "webp":
+        ctype = "image/webp"
+    else:
+        ctype = "image/png"
+        ext = "png"
+
+    blob_id = uuid.uuid4()
+    filename = f"{blob_id.hex}.{ext}"
+
+    db = SessionLocal()
+    try:
+        row = MediaBlob(
+            id=blob_id,
+            content_type=ctype,
+            filename=filename,
+            data=data,
+        )
+        db.add(row)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+    # Best-effort disk cache (optional; DB is source of truth)
+    try:
+        folder = _ensure_media_dir()
+        (folder / filename).write_bytes(data)
+    except Exception as disk_exc:
+        logger.warning("Disk cache write skipped: %s", disk_exc)
+
+    logger.info("Persisted redesign image %s (%d bytes) to media_blobs", blob_id, len(data))
+    return f"{_MEDIA_URL_PREFIX}/{blob_id}"
 
 
 def _bytes_to_file(data: bytes, filename: str = "source.png"):
@@ -196,36 +238,77 @@ def _edit_image_with_prompt(
 
     last_err: Exception | None = None
     seen: set[str] = set()
+    sizes_to_try = ("1536x1024", "1024x1024", "auto")
+
+    # Write a real temp file — some SDK versions are picky about BytesIO
+    import tempfile
+    import os
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            tmp.write(image_bytes)
+            tmp_path = tmp.name
+    except Exception as exc:
+        logger.warning("Temp file write failed, using BytesIO: %s", exc)
+        tmp_path = None
+
     for model in EDIT_MODELS:
         if model in seen:
             continue
         seen.add(model)
-        try:
-            result = client.images.edit(
-                model=model,
-                image=_bytes_to_file(image_bytes, "source.png"),
-                prompt=prompt[:32000],
-                size="1536x1024",
-                n=1,
-            )
-            if not result.data:
-                continue
-            item = result.data[0]
-            b64 = getattr(item, "b64_json", None)
-            if b64:
-                return _persist_image_bytes(base64.b64decode(b64), "png")
-            url = getattr(item, "url", None)
-            if url:
+        for size in sizes_to_try:
+            try:
+                if tmp_path:
+                    img_handle = open(tmp_path, "rb")
+                else:
+                    img_handle = _bytes_to_file(image_bytes, "source.png")
                 try:
-                    r = requests.get(url, timeout=30)
-                    r.raise_for_status()
-                    return _persist_image_bytes(r.content, "png")
-                except Exception as dl_exc:
-                    logger.warning("Download edit result failed: %s", dl_exc)
-                    return url
-        except Exception as exc:
-            last_err = exc
-            logger.warning("images.edit model=%s failed: %s", model, exc)
+                    kwargs = {
+                        "model": model,
+                        "image": img_handle,
+                        "prompt": prompt[:32000],
+                        "n": 1,
+                    }
+                    if size != "auto":
+                        kwargs["size"] = size
+                    result = client.images.edit(**kwargs)
+                finally:
+                    try:
+                        img_handle.close()
+                    except Exception:
+                        pass
+
+                if not result or not result.data:
+                    logger.warning("images.edit model=%s size=%s returned empty data", model, size)
+                    continue
+                item = result.data[0]
+                b64 = getattr(item, "b64_json", None)
+                if b64:
+                    out = _persist_image_bytes(base64.b64decode(b64), "png")
+                    logger.info("images.edit success model=%s size=%s -> %s", model, size, out)
+                    return out
+                url = getattr(item, "url", None)
+                if url:
+                    try:
+                        r = requests.get(url, timeout=30)
+                        r.raise_for_status()
+                        out = _persist_image_bytes(r.content, "png")
+                        logger.info("images.edit URL success model=%s -> %s", model, out)
+                        return out
+                    except Exception as dl_exc:
+                        logger.warning("Download edit result failed: %s", dl_exc)
+                        return url
+            except Exception as exc:
+                last_err = exc
+                logger.warning("images.edit model=%s size=%s failed: %s", model, size, exc)
+                # If size is unsupported, try next size; otherwise next model
+                continue
+
+    if tmp_path:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
 
     # Fallback: generate without reference
     for model in EDIT_MODELS:

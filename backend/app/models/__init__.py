@@ -10,3 +10,4 @@ __all__ = [
     "NewsletterSubscriber",
     "AutomationSettings",
 ]
+from app.models import media_blob  # noqa: F401
