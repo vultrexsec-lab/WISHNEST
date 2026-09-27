@@ -34,7 +34,7 @@ logger = logging.getLogger("wishnest.reimaging_service")
 MIN_SOURCE_PHOTOS = 6
 MAX_SOURCE_PHOTOS = 9
 # How many redesigned images to generate per run
-MAX_REDESIGNED = 4
+MAX_REDESIGNED = 2  # keep API cost low; user can re-run for more
 
 IMAGE_GEN_MODEL = "gpt-image-1"
 VISION_MODEL = "gpt-4o"
@@ -140,12 +140,10 @@ def _vision_redesign_prompt(
 _MEDIA_DIR = Path(__file__).resolve().parent.parent / "data" / "reimaging_media"
 _MEDIA_URL_PREFIX = "/api/reimaging/media"
 
+# Prefer one model to avoid burning credits on retries
 EDIT_MODELS = (
-    IMAGE_GEN_MODEL,
-    "gpt-image-1",
-    "gpt-image-1-mini",
-    "gpt-image-1.5",
-    "gpt-image-2",
+    IMAGE_GEN_MODEL,  # gpt-image-1
+    "gpt-image-1-mini",  # cheaper fallback only if primary fails
 )
 
 
@@ -238,7 +236,7 @@ def _edit_image_with_prompt(
 
     last_err: Exception | None = None
     seen: set[str] = set()
-    sizes_to_try = ("1536x1024", "1024x1024", "auto")
+    sizes_to_try = ("1024x1024",)  # single size = fewer failed retries / lower cost
 
     # Write a real temp file — some SDK versions are picky about BytesIO
     import tempfile
@@ -310,13 +308,13 @@ def _edit_image_with_prompt(
         except Exception:
             pass
 
-    # Fallback: generate without reference
-    for model in EDIT_MODELS:
+    # Fallback: one text-only generate (last resort, costs another image call)
+    for model in EDIT_MODELS[:1]:
         try:
             result = client.images.generate(
                 model=model,
                 prompt=prompt[:32000],
-                size="1536x1024",
+                size="1024x1024",
                 n=1,
             )
             if not result.data:
@@ -357,8 +355,14 @@ def _redesign_from_url(
         return None
     if not raw or len(raw) < 100:
         return None
-    b64 = base64.b64encode(raw).decode("ascii")
-    edit_prompt = _vision_redesign_prompt(client, b64, user_prompt, hotel_context)
+    # Skip GPT-4o vision (expensive). Use the user's redesign brief directly.
+    context = f"Property: {hotel_context}. " if hotel_context else ""
+    edit_prompt = (
+        f"Edit this architectural photo. {context}"
+        f"{user_prompt} "
+        "Keep the same camera angle and overall structure; improve materials, "
+        "lighting, and finishes. Photorealistic hospitality architecture photography."
+    )
     return _edit_image_with_prompt(client, raw, edit_prompt)
 
 
@@ -373,7 +377,13 @@ def _redesign_from_b64(
     except Exception as exc:
         logger.warning("Invalid base64 image: %s", exc)
         return None
-    edit_prompt = _vision_redesign_prompt(client, image_b64, user_prompt, hotel_context)
+    context = f"Property: {hotel_context}. " if hotel_context else ""
+    edit_prompt = (
+        f"Edit this architectural photo. {context}"
+        f"{user_prompt} "
+        "Keep the same camera angle and overall structure; improve materials, "
+        "lighting, and finishes. Photorealistic hospitality architecture photography."
+    )
     return _edit_image_with_prompt(client, raw, edit_prompt)
 
 

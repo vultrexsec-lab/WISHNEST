@@ -188,7 +188,7 @@ export function ReimagingPage(): JSX.Element {
           displayUrl: url,
           remoteUrl: url,
           file: null,
-          selected: i < 4, // default: first 4 selected (faster redesign)
+          selected: i < 2, // default: first 2 only — saves OpenAI image credits
         }));
         return [...remote, ...locals];
       });
