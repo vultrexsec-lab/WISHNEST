@@ -113,6 +113,7 @@ function isRenderable(url: string | null | undefined): boolean {
     url.startsWith("http://") ||
     url.startsWith("https://") ||
     url.startsWith("/api/image-proxy?url=") ||
+    url.startsWith("/api/reimaging/media/") ||
     url.startsWith("data:image/")
   );
 }

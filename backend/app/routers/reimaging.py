@@ -23,7 +23,10 @@ from __future__ import annotations
 import base64
 import logging
 
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from app.dependencies import require_admin
@@ -201,3 +204,31 @@ def reimaging_from_upload(
             status_code=500,
             detail=f"Reimaging failed: {exc}",
         ) from exc
+
+
+# ── Serve persisted redesign images ──────────────────────────────────────────
+_MEDIA_DIR = Path(__file__).resolve().parent.parent / "data" / "reimaging_media"
+
+
+@router.get("/api/reimaging/media/{filename}")
+def serve_reimaging_media(filename: str):
+    """Serve a redesigned image written by the reimaging studio."""
+    # Prevent path traversal
+    safe = Path(filename).name
+    if safe != filename or ".." in filename or "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename.")
+    if not safe.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+        raise HTTPException(status_code=400, detail="Unsupported file type.")
+    file_path = _MEDIA_DIR / safe
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Image not found.")
+    media = "image/png"
+    if safe.lower().endswith((".jpg", ".jpeg")):
+        media = "image/jpeg"
+    elif safe.lower().endswith(".webp"):
+        media = "image/webp"
+    return FileResponse(
+        file_path,
+        media_type=media,
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )

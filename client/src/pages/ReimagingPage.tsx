@@ -328,12 +328,16 @@ export function ReimagingPage(): JSX.Element {
       }
 
       if (!res.ok) {
-        let detail = "Reimaging failed";
+        let detail: string = "Reimaging failed";
         try {
           const body = await res.json();
-          detail = body.detail || detail;
+          const d = body.detail;
+          if (typeof d === "string") detail = d;
+          else if (Array.isArray(d))
+            detail = d.map((x: { msg?: string }) => x?.msg || JSON.stringify(x)).join("; ");
+          else if (d) detail = JSON.stringify(d);
         } catch {}
-        throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+        throw new Error(detail);
       }
 
       const data: ReimagingResult = await res.json();

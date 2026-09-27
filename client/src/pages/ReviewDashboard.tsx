@@ -1063,6 +1063,7 @@ function ArticlePreviewModal({
                 (url.startsWith("http://") ||
                   url.startsWith("https://") ||
                   url.startsWith("data:image/") ||
+                  url.startsWith("/api/reimaging/media/") ||
                   url.startsWith("/api/image-proxy?url=")),
             ) && (
               <div className="border-b border-[#1e1e1e1a] bg-white px-5 py-6 sm:px-10">
@@ -1075,6 +1076,7 @@ function ArticlePreviewModal({
                         (url.startsWith("http://") ||
                           url.startsWith("https://") ||
                           url.startsWith("data:image/") ||
+                          url.startsWith("/api/reimaging/media/") ||
                           url.startsWith("/api/image-proxy?url=")),
                     )
                     .map(({ url, caption }, i) => (
@@ -1898,6 +1900,7 @@ function ArticleCard({
                         (url.startsWith("http://") ||
                           url.startsWith("https://") ||
                           url.startsWith("data:image/") ||
+                          url.startsWith("/api/reimaging/media/") ||
                           url.startsWith("/api/image-proxy?url=")),
                     ))) && (
                   <div>
@@ -1927,6 +1930,7 @@ function ArticleCard({
                              (url.startsWith("http://") ||
                                url.startsWith("https://") ||
                                url.startsWith("data:image/") ||
+                               url.startsWith("/api/reimaging/media/") ||
                                url.startsWith("/api/image-proxy?url=")),
                          )
                         .slice(0, 2)

@@ -12,6 +12,8 @@ Does NOT modify any existing research / image / article pipelines.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import base64
 import io
 import logging
@@ -140,11 +142,30 @@ def _vision_redesign_prompt(
     return (resp.choices[0].message.content or "").strip()
 
 
+# Durable storage for redesigned images (relative URL served by the API).
+_MEDIA_DIR = Path(__file__).resolve().parent.parent / "data" / "reimaging_media"
+_MEDIA_URL_PREFIX = "/api/reimaging/media"
+
+
+def _ensure_media_dir() -> Path:
+    _MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+    return _MEDIA_DIR
+
+
+def _persist_image_bytes(data: bytes, ext: str = "png") -> str:
+    """Write image bytes to disk and return a public API path."""
+    folder = _ensure_media_dir()
+    name = f"{uuid.uuid4().hex}.{ext.lstrip('.')}"
+    path = folder / name
+    path.write_bytes(data)
+    return f"{_MEDIA_URL_PREFIX}/{name}"
+
+
 def _generate_redesigned_image(client: OpenAI, gen_prompt: str) -> str | None:
     """
     Generate a redesigned image via OpenAI GPT Image models.
-    Returns a data-URL (base64) so the image is durable in drafts.
-    Falls back across model names if the primary is unavailable.
+    Persists the result as a file and returns a short /api/reimaging/media/... URL
+    (never multi-MB data URIs — those blow up the DB and /api/articles).
     """
     models_to_try = (
         IMAGE_GEN_MODEL,
@@ -168,13 +189,22 @@ def _generate_redesigned_image(client: OpenAI, gen_prompt: str) -> str | None:
             if not result.data:
                 continue
             item = result.data[0]
-            # GPT Image models return b64_json by default; legacy models may return url
             b64 = getattr(item, "b64_json", None)
             if b64:
-                return f"data:image/png;base64,{b64}"
+                raw = base64.b64decode(b64)
+                return _persist_image_bytes(raw, "png")
             url = getattr(item, "url", None)
             if url:
-                return url
+                # Download remote URL and persist so it does not expire
+                try:
+                    r = requests.get(url, timeout=30)
+                    r.raise_for_status()
+                    ctype = (r.headers.get("Content-Type") or "image/png").split(";")[0]
+                    ext = "jpg" if "jpeg" in ctype or "jpg" in ctype else "png"
+                    return _persist_image_bytes(r.content, ext)
+                except Exception as dl_exc:
+                    logger.warning("Could not persist remote image URL: %s", dl_exc)
+                    return url
         except Exception as exc:
             last_err = exc
             logger.warning("Image generation with model %s failed: %s", model, exc)
@@ -502,7 +532,7 @@ def run_reimaging_hotel(
         "listing_name": listing.name if listing else hotel_name,
         "google_rating": listing.rating if listing else None,
         "original_photo_urls": source_urls,
-        "redesigned_image_urls": [u for u in (_compact_image_url(x) for x in redesigned_urls) if u],
+        "redesigned_image_urls": redesigned_urls,
         "headline": package.get("headline"),
         "subtitle": package.get("subtitle"),
         "executive_summary": package.get("executive_summary"),
@@ -568,7 +598,7 @@ def run_reimaging_upload(
         "listing_name": hotel_name,
         "google_rating": None,
         "original_photo_urls": [],
-        "redesigned_image_urls": [u for u in (_compact_image_url(x) for x in redesigned_urls) if u],
+        "redesigned_image_urls": redesigned_urls,
         "headline": package.get("headline"),
         "subtitle": package.get("subtitle"),
         "executive_summary": package.get("executive_summary"),
