@@ -16,6 +16,7 @@ import {
   CheckCircle2,
   Search,
   X,
+  Plus,
 } from "lucide-react";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
@@ -51,6 +52,17 @@ interface FetchedPhotos {
 
 type Mode = "hotel" | "upload";
 
+/** One selectable photo — either a remote URL or a local File preview */
+interface SelectablePhoto {
+  id: string;
+  /** Remote Google Maps URL (hotel mode) or object URL (upload) */
+  displayUrl: string;
+  /** For redesign: remote URL if from Maps, else null (use base64 from file) */
+  remoteUrl: string | null;
+  file: File | null;
+  selected: boolean;
+}
+
 export function ReimagingPage(): JSX.Element {
   const { isAdmin } = useAuth();
   const { toast } = useToast();
@@ -58,47 +70,80 @@ export function ReimagingPage(): JSX.Element {
   const [mode, setMode] = useState<Mode>("hotel");
   const [hotelName, setHotelName] = useState("");
   const [prompt, setPrompt] = useState("");
-  const [files, setFiles] = useState<File[]>([]);
-  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
-  const [fetched, setFetched] = useState<FetchedPhotos | null>(null);
+  const [photos, setPhotos] = useState<SelectablePhoto[]>([]);
+  const [fetchedMeta, setFetchedMeta] = useState<Omit<FetchedPhotos, "photo_urls"> | null>(null);
   const [fetchingPhotos, setFetchingPhotos] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ReimagingResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const addMoreInputRef = useRef<HTMLInputElement>(null);
 
-  // Revoke object URLs on cleanup / change
   useEffect(() => {
     return () => {
-      previewUrls.forEach((u) => URL.revokeObjectURL(u));
+      photos.forEach((p) => {
+        if (p.file && p.displayUrl.startsWith("blob:")) {
+          URL.revokeObjectURL(p.displayUrl);
+        }
+      });
     };
-  }, [previewUrls]);
+  }, [photos]);
 
   if (!isAdmin) return <Redirect to="/login" />;
 
+  const selectedPhotos = photos.filter((p) => p.selected);
+  const selectedCount = selectedPhotos.length;
+
+  const clearPhotos = () => {
+    photos.forEach((p) => {
+      if (p.file && p.displayUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(p.displayUrl);
+      }
+    });
+    setPhotos([]);
+    setFetchedMeta(null);
+  };
+
   const resetModeState = () => {
     setResult(null);
-    setFetched(null);
     setPrompt("");
-    previewUrls.forEach((u) => URL.revokeObjectURL(u));
-    setPreviewUrls([]);
-    setFiles([]);
+    clearPhotos();
     if (fileInputRef.current) fileInputRef.current.value = "";
+    if (addMoreInputRef.current) addMoreInputRef.current.value = "";
   };
 
-  const handleFilesSelected = (list: FileList | null) => {
+  const togglePhoto = (id: string) => {
+    setPhotos((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, selected: !p.selected } : p)),
+    );
+  };
+
+  const removePhoto = (id: string) => {
+    setPhotos((prev) => {
+      const target = prev.find((p) => p.id === id);
+      if (target?.file && target.displayUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(target.displayUrl);
+      }
+      return prev.filter((p) => p.id !== id);
+    });
+  };
+
+  const addFilesAsPhotos = (list: FileList | null, replace = false) => {
     if (!list || list.length === 0) return;
-    const selected = Array.from(list).slice(0, 6);
-    previewUrls.forEach((u) => URL.revokeObjectURL(u));
-    const urls = selected.map((f) => URL.createObjectURL(f));
-    setFiles(selected);
-    setPreviewUrls(urls);
+    const incoming = Array.from(list).slice(0, 8);
+    const newOnes: SelectablePhoto[] = incoming.map((f, i) => ({
+      id: `local-${Date.now()}-${i}-${f.name}`,
+      displayUrl: URL.createObjectURL(f),
+      remoteUrl: null,
+      file: f,
+      selected: true,
+    }));
+    if (replace) {
+      clearPhotos();
+      setPhotos(newOnes);
+    } else {
+      setPhotos((prev) => [...prev, ...newOnes].slice(0, 12));
+    }
     setResult(null);
-  };
-
-  const removePreview = (index: number) => {
-    URL.revokeObjectURL(previewUrls[index]);
-    setPreviewUrls((prev) => prev.filter((_, i) => i !== index));
-    setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleFetchPhotos = async () => {
@@ -116,7 +161,6 @@ export function ReimagingPage(): JSX.Element {
       return;
     }
     setFetchingPhotos(true);
-    setFetched(null);
     setResult(null);
     try {
       const res = await fetch(apiUrl("/api/reimaging/fetch-photos"), {
@@ -136,10 +180,29 @@ export function ReimagingPage(): JSX.Element {
         throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
       }
       const data: FetchedPhotos = await res.json();
-      setFetched(data);
+      // Keep any locally added files; replace only remote Maps photos
+      setPhotos((prev) => {
+        const locals = prev.filter((p) => p.file);
+        const remote: SelectablePhoto[] = data.photo_urls.map((url, i) => ({
+          id: `maps-${i}-${url.slice(-20)}`,
+          displayUrl: url,
+          remoteUrl: url,
+          file: null,
+          selected: i < 4, // default: first 4 selected (faster redesign)
+        }));
+        return [...remote, ...locals];
+      });
+      setFetchedMeta({
+        hotel_name: data.hotel_name,
+        listing_name: data.listing_name,
+        google_rating: data.google_rating,
+        review_count: data.review_count,
+        address: data.address,
+        message: data.message,
+      });
       toast({
         title: "Photos loaded",
-        description: data.message || `${data.photo_urls.length} photos found.`,
+        description: `${data.photo_urls.length} photos found. First 4 selected — click to toggle.`,
       });
     } catch (err) {
       toast({
@@ -152,64 +215,104 @@ export function ReimagingPage(): JSX.Element {
     }
   };
 
+  const fileToBase64 = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = String(reader.result || "");
+        resolve(result.includes(",") ? result.split(",")[1] : result);
+      };
+      reader.onerror = () => reject(new Error("Failed to read image"));
+      reader.readAsDataURL(file);
+    });
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setResult(null);
-    setLoading(true);
+
+    if (selectedCount === 0) {
+      toast({
+        title: "No photos selected",
+        description: "Select at least one photo to redesign.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!prompt.trim()) {
+      toast({
+        title: "Prompt required",
+        description: "Describe how you want the photos redesigned.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     const token = getStoredToken();
     if (!token) {
       toast({ title: "Not authenticated", description: "Please log in again.", variant: "destructive" });
-      setLoading(false);
       return;
     }
 
+    setLoading(true);
     try {
       let res: Response;
 
       if (mode === "hotel") {
-        if (!hotelName.trim() || !prompt.trim()) {
-          toast({
-            title: "Missing fields",
-            description: "Hotel name and redesign prompt are required.",
-            variant: "destructive",
-          });
+        if (!hotelName.trim()) {
+          toast({ title: "Hotel name required", variant: "destructive" });
           setLoading(false);
           return;
         }
-        res = await fetch(apiUrl("/api/reimaging/hotel"), {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            hotel_name: hotelName.trim(),
-            prompt: prompt.trim(),
-          }),
-        });
+        const remoteSelected = selectedPhotos
+          .filter((p) => p.remoteUrl)
+          .map((p) => p.remoteUrl as string);
+        const localSelected = selectedPhotos.filter((p) => p.file);
+
+        // If only local files selected in hotel mode, use upload endpoint
+        if (remoteSelected.length === 0 && localSelected.length > 0) {
+          const images_base64 = await Promise.all(
+            localSelected.map((p) => fileToBase64(p.file!)),
+          );
+          res = await fetch(apiUrl("/api/reimaging/upload"), {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              prompt: prompt.trim(),
+              hotel_name: hotelName.trim(),
+              images_base64,
+            }),
+          });
+        } else {
+          res = await fetch(apiUrl("/api/reimaging/hotel"), {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              hotel_name: hotelName.trim(),
+              prompt: prompt.trim(),
+              photo_urls: remoteSelected.length > 0 ? remoteSelected : undefined,
+            }),
+          });
+        }
       } else {
-        if (files.length === 0 || !prompt.trim()) {
+        const localSelected = selectedPhotos.filter((p) => p.file);
+        if (localSelected.length === 0) {
           toast({
-            title: "Missing fields",
-            description: "At least one image and a prompt are required.",
+            title: "No images",
+            description: "Upload and select at least one image.",
             variant: "destructive",
           });
           setLoading(false);
           return;
         }
-        const toBase64 = (file: File) =>
-          new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-              const result = String(reader.result || "");
-              const b64 = result.includes(",") ? result.split(",")[1] : result;
-              resolve(b64);
-            };
-            reader.onerror = () => reject(new Error("Failed to read image"));
-            reader.readAsDataURL(file);
-          });
-        const images_base64 = await Promise.all(files.slice(0, 6).map((f) => toBase64(f)));
+        const images_base64 = await Promise.all(
+          localSelected.map((p) => fileToBase64(p.file!)),
+        );
         res = await fetch(apiUrl("/api/reimaging/upload"), {
           method: "POST",
           headers: {
@@ -282,7 +385,6 @@ export function ReimagingPage(): JSX.Element {
       </header>
 
       <div className="mx-auto max-w-5xl px-6 py-10">
-        {/* Mode switcher */}
         <div className="mb-8 flex gap-2">
           <button
             type="button"
@@ -328,7 +430,7 @@ export function ReimagingPage(): JSX.Element {
                     <Input
                       value={hotelName}
                       onChange={(e) => setHotelName(e.target.value)}
-                      placeholder="e.g. Amanbagh, Rajasthan or The Oberoi Udaivilas"
+                      placeholder="e.g. Hyatt Place Haridwar"
                       className="flex-1 border-white/10 bg-white/5 text-white placeholder:text-white/30 focus-visible:ring-emerald-500/40"
                       disabled={loading || fetchingPhotos}
                     />
@@ -352,46 +454,9 @@ export function ReimagingPage(): JSX.Element {
                     </Button>
                   </div>
                   <p className="mt-1.5 [font-family:'Inter',Helvetica] text-[11px] text-white/30">
-                    Click “Fetch Photos” to load 6–8 real Google Maps photos (rooms, exterior, amenities).
+                    Fetch photos, then click to select/deselect. Only selected photos are redesigned.
                   </p>
                 </div>
-
-                {/* Fetched Google Maps photos preview */}
-                {fetched && fetched.photo_urls.length > 0 && (
-                  <div className="space-y-3">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <h3 className="[font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1.4px] text-white/40">
-                        GOOGLE MAPS PHOTOS — {fetched.listing_name || fetched.hotel_name}
-                      </h3>
-                      {fetched.google_rating != null && (
-                        <span className="rounded-full bg-white/10 px-2.5 py-0.5 [font-family:'Inter',Helvetica] text-[11px] text-white/60">
-                          ★ {fetched.google_rating}
-                          {fetched.review_count != null ? ` (${fetched.review_count})` : ""}
-                        </span>
-                      )}
-                    </div>
-                    {fetched.address && (
-                      <p className="[font-family:'Inter',Helvetica] text-[12px] text-white/40">
-                        {fetched.address}
-                      </p>
-                    )}
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-                      {fetched.photo_urls.map((url, i) => (
-                        <div
-                          key={i}
-                          className="overflow-hidden rounded-xl border border-white/10 bg-white/5"
-                        >
-                          <img
-                            src={url}
-                            alt={`${fetched.listing_name || "Property"} photo ${i + 1}`}
-                            className="aspect-[4/3] w-full object-cover"
-                            referrerPolicy="no-referrer"
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
             ) : (
               <div className="space-y-5">
@@ -405,12 +470,12 @@ export function ReimagingPage(): JSX.Element {
                   >
                     <ImageIcon className="mb-3 h-8 w-8 text-white/25" />
                     <p className="[font-family:'Inter',Helvetica] text-[13px] text-white/50">
-                      {files.length > 0
-                        ? `${files.length} file${files.length > 1 ? "s" : ""} selected — click to change`
+                      {photos.length > 0
+                        ? `${photos.length} image(s) — click to add more`
                         : "Click to select JPEG, PNG or WebP"}
                     </p>
                     <p className="mt-1 [font-family:'Inter',Helvetica] text-[11px] text-white/25">
-                      Up to 6 images · max 12 MB each
+                      Up to 6–8 images · max 12 MB each
                     </p>
                     <input
                       ref={fileInputRef}
@@ -418,46 +483,14 @@ export function ReimagingPage(): JSX.Element {
                       accept="image/jpeg,image/png,image/webp"
                       multiple
                       className="hidden"
-                      onChange={(e) => handleFilesSelected(e.target.files)}
+                      onChange={(e) => {
+                        addFilesAsPhotos(e.target.files, photos.length === 0);
+                        e.target.value = "";
+                      }}
                       disabled={loading}
                     />
                   </div>
                 </div>
-
-                {/* Upload previews — always visible after selection */}
-                {previewUrls.length > 0 && (
-                  <div className="space-y-3">
-                    <h3 className="[font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1.4px] text-white/40">
-                      SELECTED PHOTOS ({previewUrls.length})
-                    </h3>
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-                      {previewUrls.map((url, i) => (
-                        <div
-                          key={url}
-                          className="group relative overflow-hidden rounded-xl border border-white/10 bg-white/5"
-                        >
-                          <img
-                            src={url}
-                            alt={files[i]?.name || `Upload ${i + 1}`}
-                            className="aspect-[4/3] w-full object-cover"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => removePreview(i)}
-                            className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition group-hover:opacity-100"
-                            aria-label="Remove photo"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                          <p className="truncate px-2 py-1.5 [font-family:'Inter',Helvetica] text-[10px] text-white/40">
-                            {files[i]?.name}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 <div>
                   <label className="mb-1.5 block [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1.4px] text-white/40">
                     PROPERTY NAME (OPTIONAL)
@@ -473,7 +506,113 @@ export function ReimagingPage(): JSX.Element {
               </div>
             )}
 
-            {/* Prompt — always below photos */}
+            {/* Photo grid — select / remove / add more */}
+            {photos.length > 0 && (
+              <div className="mt-6 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <h3 className="[font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1.4px] text-white/40">
+                      PHOTOS — {selectedCount} of {photos.length} selected
+                    </h3>
+                    {fetchedMeta?.listing_name && (
+                      <span className="[font-family:'Inter',Helvetica] text-[11px] text-white/50">
+                        {fetchedMeta.listing_name}
+                        {fetchedMeta.google_rating != null
+                          ? ` · ★ ${fetchedMeta.google_rating}`
+                          : ""}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="h-8 px-3 text-[11px] text-white/50 hover:text-white"
+                      onClick={() =>
+                        setPhotos((prev) => prev.map((p) => ({ ...p, selected: true })))
+                      }
+                    >
+                      Select all
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="h-8 px-3 text-[11px] text-white/50 hover:text-white"
+                      onClick={() =>
+                        setPhotos((prev) => prev.map((p) => ({ ...p, selected: false })))
+                      }
+                    >
+                      Clear selection
+                    </Button>
+                    <Button
+                      type="button"
+                      className="h-8 bg-white/10 px-3 text-[11px] text-white hover:bg-white/15"
+                      onClick={() => addMoreInputRef.current?.click()}
+                    >
+                      <Plus className="mr-1 h-3.5 w-3.5" />
+                      Add images
+                    </Button>
+                    <input
+                      ref={addMoreInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        addFilesAsPhotos(e.target.files, false);
+                        e.target.value = "";
+                      }}
+                      disabled={loading}
+                    />
+                  </div>
+                </div>
+                <p className="[font-family:'Inter',Helvetica] text-[11px] text-white/30">
+                  Click a photo to select/deselect. ✕ removes it. Tip: 2–4 photos redesigns faster and is more reliable.
+                </p>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                  {photos.map((p) => (
+                    <div
+                      key={p.id}
+                      className={`group relative cursor-pointer overflow-hidden rounded-xl border bg-white/5 transition ${
+                        p.selected
+                          ? "border-emerald-500/60 ring-2 ring-emerald-500/30"
+                          : "border-white/10 opacity-60"
+                      }`}
+                      onClick={() => togglePhoto(p.id)}
+                    >
+                      <img
+                        src={p.displayUrl}
+                        alt="Photo"
+                        className="aspect-[4/3] w-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                      {p.selected && (
+                        <div className="absolute left-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-white">
+                          <CheckCircle2 className="h-4 w-4" />
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removePhoto(p.id);
+                        }}
+                        className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition group-hover:opacity-100"
+                        aria-label="Remove photo"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                      {p.file && (
+                        <p className="truncate px-2 py-1 [font-family:'Inter',Helvetica] text-[10px] text-white/40">
+                          {p.file.name}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="mt-5">
               <label className="mb-1.5 block [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1.4px] text-white/40">
                 REDESIGN PROMPT
@@ -481,7 +620,7 @@ export function ReimagingPage(): JSX.Element {
               <Textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                placeholder="e.g. Make the courtyard more luxurious with a reflecting pool, soft evening lighting, natural stone, and refined Rajasthani craft details."
+                placeholder="e.g. Make it more luxurious with soft evening lighting, natural stone, and a refined modern look."
                 rows={4}
                 className="border-white/10 bg-white/5 text-white placeholder:text-white/30 focus-visible:ring-emerald-500/40"
                 disabled={loading}
@@ -489,33 +628,33 @@ export function ReimagingPage(): JSX.Element {
               />
             </div>
 
-            <div className="mt-6 flex items-center gap-3">
+            <div className="mt-6 flex flex-wrap items-center gap-3">
               <Button
                 type="submit"
-                disabled={
-                  loading ||
-                  (mode === "hotel" && (!hotelName.trim() || !prompt.trim())) ||
-                  (mode === "upload" && (files.length === 0 || !prompt.trim()))
-                }
+                disabled={loading || selectedCount === 0 || !prompt.trim()}
                 className="bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50"
               >
                 {loading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Reimagining… this can take 1–3 minutes
+                    Reimagining {selectedCount} photo{selectedCount > 1 ? "s" : ""}… 1–3 min
                   </>
                 ) : (
                   <>
                     <Sparkles className="mr-2 h-4 w-4" />
-                    Reimagine & Create Draft
+                    Reimagine {selectedCount > 0 ? `${selectedCount} selected` : ""} & Create Draft
                   </>
                 )}
               </Button>
+              {loading && (
+                <p className="[font-family:'Inter',Helvetica] text-[12px] text-white/40">
+                  Keep this tab open. Redesigning several photos can take a few minutes.
+                </p>
+              )}
             </div>
           </div>
         </form>
 
-        {/* Results */}
         {result && (
           <div className="mt-10 space-y-8">
             <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/5 p-6">
@@ -544,11 +683,6 @@ export function ReimagingPage(): JSX.Element {
                     <span className="rounded-full bg-white/10 px-3 py-1 [font-family:'Inter',Helvetica] text-[11px] text-white/60">
                       Status: {result.status}
                     </span>
-                    {result.google_rating != null && (
-                      <span className="rounded-full bg-white/10 px-3 py-1 [font-family:'Inter',Helvetica] text-[11px] text-white/60">
-                        Google ★ {result.google_rating}
-                      </span>
-                    )}
                     <Link href="/dashboard">
                       <a className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-4 py-1.5 [font-family:'Inter',Helvetica] text-[11px] font-medium text-white transition hover:bg-emerald-500">
                         Open in Dashboard to Publish
@@ -575,29 +709,6 @@ export function ReimagingPage(): JSX.Element {
                         src={url}
                         alt={`Reimagined ${i + 1}`}
                         className="aspect-[16/10] w-full object-cover"
-                        referrerPolicy="no-referrer"
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {result.original_photo_urls?.length > 0 && (
-              <div>
-                <h3 className="mb-3 [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1.6px] text-white/40">
-                  ORIGINAL GOOGLE MAPS PHOTOS
-                </h3>
-                <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                  {result.original_photo_urls.map((url, i) => (
-                    <div
-                      key={i}
-                      className="overflow-hidden rounded-lg border border-white/10 bg-white/5"
-                    >
-                      <img
-                        src={url}
-                        alt={`Original ${i + 1}`}
-                        className="aspect-[4/3] w-full object-cover opacity-80"
                         referrerPolicy="no-referrer"
                       />
                     </div>

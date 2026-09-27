@@ -382,23 +382,29 @@ def _save_as_draft(
 def run_reimaging_hotel(
     hotel_name: str,
     prompt: str,
+    photo_urls: list[str] | None = None,
 ) -> dict[str, Any]:
     """
     Mode A: hotel name + prompt.
-    Returns a result dict with article_id, original_urls, redesigned_urls, package summary.
+    If photo_urls is provided (user-selected), only those are redesigned.
+    Otherwise fetches from Google Maps as before.
     """
     client = _client()
-    listing, photo_urls = _fetch_hotel_photos(hotel_name.strip())
+    listing, fetched_urls = _fetch_hotel_photos(hotel_name.strip())
 
-    if len(photo_urls) < 1:
+    if photo_urls:
+        # User picked specific photos — use only those (still cap)
+        source_urls = [u for u in photo_urls if u and u.startswith("http")][:MAX_SOURCE_PHOTOS]
+    else:
+        source_urls = fetched_urls[:MAX_SOURCE_PHOTOS]
+
+    if len(source_urls) < 1:
         raise RuntimeError(
-            f"No Google Maps photos found for “{hotel_name}”. "
-            "Check the name or ensure SERPAPI_KEY is configured."
+            f"No photos available for “{hotel_name}”. "
+            "Fetch photos first and select at least one, or check SERPAPI_KEY."
         )
 
-    # Prefer at least MIN_SOURCE_PHOTOS when available
-    source_urls = photo_urls[:MAX_SOURCE_PHOTOS]
-    redesign_count = min(MAX_REDESIGNED, max(3, len(source_urls)))
+    redesign_count = min(MAX_REDESIGNED, len(source_urls))
 
     redesigned_urls: list[str] = []
     redesign_notes: list[str] = []

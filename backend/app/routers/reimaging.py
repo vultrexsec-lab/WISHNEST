@@ -41,6 +41,8 @@ FETCH_PHOTO_COUNT = 8
 class HotelReimagingRequest(BaseModel):
     hotel_name: str = Field(..., min_length=2, max_length=300)
     prompt: str = Field(..., min_length=5, max_length=2000)
+    # Optional: user-selected photo URLs from fetch-photos (only these are redesigned)
+    photo_urls: list[str] | None = Field(default=None, max_length=9)
 
 
 class FetchPhotosRequest(BaseModel):
@@ -133,7 +135,11 @@ def reimaging_from_hotel(
 ):
     """Mode A: hotel name + redesign prompt → Google Maps photos → AI redesign → draft article."""
     try:
-        result = run_reimaging_hotel(body.hotel_name.strip(), body.prompt.strip())
+        result = run_reimaging_hotel(
+            body.hotel_name.strip(),
+            body.prompt.strip(),
+            photo_urls=body.photo_urls,
+        )
         return ReimagingResult(**result)
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
