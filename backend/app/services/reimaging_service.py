@@ -298,6 +298,33 @@ Include  the number of captions/alt_text equal to the number of redesign notes a
         }
 
 
+
+def _normalise_grade_value(raw) -> str | None:
+    """Map LLM grade strings to Grade enum values (e.g. a_plus -> A+)."""
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    # Already a valid letter grade
+    valid = {"A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D"}
+    if s in valid:
+        return s
+    # Common LLM variants: a_plus, A_PLUS, a+
+    key = s.lower().replace(" ", "").replace("-", "_")
+    mapping = {
+        "a_plus": "A+", "aplus": "A+", "a+": "A+",
+        "a": "A", "a_minus": "A-", "aminus": "A-", "a-": "A-",
+        "b_plus": "B+", "bplus": "B+", "b+": "B+",
+        "b": "B", "b_minus": "B-", "bminus": "B-", "b-": "B-",
+        "c_plus": "C+", "cplus": "C+", "c+": "C+",
+        "c": "C", "c_minus": "C-", "cminus": "C-", "c-": "C-",
+        "d_plus": "D+", "dplus": "D+", "d+": "D+",
+        "d": "D",
+    }
+    return mapping.get(key)
+
+
 def _save_as_draft(
     package: dict[str, Any],
     *,
@@ -343,11 +370,11 @@ def _save_as_draft(
             location=(listing.address if listing else None) or hotel_name,
             best_for=package.get("best_for"),
             not_ideal_for=package.get("not_ideal_for"),
-            architecture_grade=package.get("architecture_grade"),
-            landscape_grade=package.get("landscape_grade"),
-            connectivity_grade=package.get("connectivity_grade"),
-            delight_grade=package.get("delight_grade"),
-            eat_explore_grade=package.get("eat_explore_grade"),
+            architecture_grade=_normalise_grade_value(package.get("architecture_grade")),
+            landscape_grade=_normalise_grade_value(package.get("landscape_grade")),
+            connectivity_grade=_normalise_grade_value(package.get("connectivity_grade")),
+            delight_grade=_normalise_grade_value(package.get("delight_grade")),
+            eat_explore_grade=_normalise_grade_value(package.get("eat_explore_grade")),
             architecture_score=package.get("architecture_score"),
             landscape_score=package.get("landscape_score"),
             connectivity_score=package.get("connectivity_score"),
@@ -361,18 +388,26 @@ def _save_as_draft(
             newsletter_summary=package.get("newsletter_summary"),
             suggested_hashtags=package.get("suggested_hashtags"),
             cta=package.get("cta"),
-            place_id=listing.place_id if listing else None,
+            # Do NOT set place_id — unique index uq_articles_place_id_active
+            # blocks a second non-trash article for the same Maps place.
+            # Reimaging can produce many concept drafts per property.
+            place_id=None,
             property_snapshot={
                 "reimaging": True,
                 "user_prompt": user_prompt,
                 "original_photo_urls": original_urls,
                 "source": "reimaging_studio",
+                "maps_place_id": listing.place_id if listing else None,
                 "google_rating": listing.rating if listing else None,
                 "google_review_count": listing.review_count if listing else None,
             },
         )
         db.add(article)
-        db.commit()
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
         db.refresh(article)
         return str(article.id)
     finally:
