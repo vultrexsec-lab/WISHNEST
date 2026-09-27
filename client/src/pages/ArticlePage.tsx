@@ -47,7 +47,7 @@ export const ArticlePage = (): JSX.Element => {
           <Link href="/">
             <div className="flex min-w-0 cursor-pointer flex-col">
               <div className="[font-family:'Playfair_Display',Helvetica] text-[26px] font-bold leading-[26px] tracking-[3.90px] text-[#1e1e1e]">
-                WestNest
+                WishNest
               </div>
               <div className="pt-0.5 [font-family:'Inter',Helvetica] text-[9px] font-normal leading-[9px] tracking-[1.80px] text-[#6b6b6b]">
                 HOSPITALITY · ARCHITECTURE · SECOND HOME INTELLIGENCE
@@ -211,7 +211,7 @@ export const ArticlePage = (): JSX.Element => {
               <div>
                 <Link href="/">
                   <div className="cursor-pointer [font-family:'Playfair_Display',Helvetica] text-2xl font-bold leading-9 tracking-[3.36px] text-white">
-                    WestNest
+                    WishNest
                   </div>
                 </Link>
                 <div className="pt-2 [font-family:'Inter',Helvetica] text-[9px] font-normal leading-[13.5px] tracking-[1.62px] text-[#ffffff59]">

@@ -108,11 +108,12 @@ function extractFigcaptions(html: string | null | undefined): string[] {
  */
 function isRenderable(url: string | null | undefined): boolean {
   if (!url) return false;
-  // Accept both absolute HTTP(S) URLs and our own relative image-proxy paths
+  // Accept HTTP(S), image-proxy paths, and data-URI images (reimaging studio)
   return (
     url.startsWith("http://") ||
     url.startsWith("https://") ||
-    url.startsWith("/api/image-proxy?url=")
+    url.startsWith("/api/image-proxy?url=") ||
+    url.startsWith("data:image/")
   );
 }
 
@@ -231,8 +232,19 @@ export const ArticleDetailPage = (): JSX.Element => {
   // Exclude internal pipeline fields that are not meaningful to readers.
   // "google_live_sources" is an array of listing objects that renders as
   // "[object Object]" when stringified; remove it from the display entirely.
+  // Hide internal pipeline / reimaging-studio fields from the public page.
+  const HIDDEN_SNAPSHOT_KEYS = new Set([
+    "google_live_sources",
+    "reimaging",
+    "user_prompt",
+    "source",
+    "original_photo_urls",
+    "maps_place_id",
+    "google_rating",
+    "google_review_count",
+  ]);
   const snapshotEntries = Object.entries(snapshot).filter(
-    ([key]) => key !== "google_live_sources",
+    ([key]) => !HIDDEN_SNAPSHOT_KEYS.has(key),
   );
 
   // useEffect moved above early returns to satisfy React Rules of Hooks.

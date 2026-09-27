@@ -615,7 +615,17 @@ function ArticlePreviewModal({
   const isDestination = isDestinationArticle(article);
   const snapshot: Record<string, unknown> =
     (article.property_snapshot as Record<string, unknown>) ?? {};
-  const snapshotEntries = Object.entries(snapshot);
+  const HIDDEN_SNAPSHOT_KEYS = new Set([
+    "google_live_sources",
+    "reimaging",
+    "user_prompt",
+    "source",
+    "original_photo_urls",
+    "maps_place_id",
+  ]);
+  const snapshotEntries = Object.entries(snapshot).filter(
+    ([key]) => !HIDDEN_SNAPSHOT_KEYS.has(key),
+  );
 
   // Safely convert any property_snapshot value to a display string —
   // identical logic to ArticleDetailPage to prevent "[object Object]"
@@ -1052,6 +1062,7 @@ function ArticlePreviewModal({
                 typeof url === "string" &&
                 (url.startsWith("http://") ||
                   url.startsWith("https://") ||
+                  url.startsWith("data:image/") ||
                   url.startsWith("/api/image-proxy?url=")),
             ) && (
               <div className="border-b border-[#1e1e1e1a] bg-white px-5 py-6 sm:px-10">
@@ -1063,6 +1074,7 @@ function ArticlePreviewModal({
                         typeof url === "string" &&
                         (url.startsWith("http://") ||
                           url.startsWith("https://") ||
+                          url.startsWith("data:image/") ||
                           url.startsWith("/api/image-proxy?url=")),
                     )
                     .map(({ url, caption }, i) => (
@@ -1885,6 +1897,7 @@ function ArticleCard({
                         typeof url === "string" &&
                         (url.startsWith("http://") ||
                           url.startsWith("https://") ||
+                          url.startsWith("data:image/") ||
                           url.startsWith("/api/image-proxy?url=")),
                     ))) && (
                   <div>
@@ -1913,6 +1926,7 @@ function ArticleCard({
                              typeof url === "string" &&
                              (url.startsWith("http://") ||
                                url.startsWith("https://") ||
+                               url.startsWith("data:image/") ||
                                url.startsWith("/api/image-proxy?url=")),
                          )
                         .slice(0, 2)

@@ -59,7 +59,7 @@ export const SiteFooter = () => {
             <div>
               <Link href="/">
                 <div className="cursor-pointer [font-family:'Playfair_Display',Helvetica] text-2xl font-bold leading-9 tracking-[3.36px] text-white">
-                  WestNest
+                  WishNest
                 </div>
               </Link>
               <div className="pt-2 [font-family:'Inter',Helvetica] text-[9px] font-normal leading-[13.5px] tracking-[1.62px] text-[#ffffff59]">

@@ -30,7 +30,7 @@ export const SiteNav = () => {
           <Link href="/">
             <div className="flex min-w-0 cursor-pointer flex-col">
               <div className="[font-family:'Playfair_Display',Helvetica] text-[22px] font-bold leading-[22px] tracking-[3px] text-[#1e1e1e] sm:text-[26px] sm:leading-[26px] sm:tracking-[3.90px]">
-                WestNest
+                WishNest
               </div>
               <div className="hidden pt-0.5 [font-family:'Inter',Helvetica] text-[9px] font-normal leading-[9px] tracking-[1.80px] text-[#6b6b6b] sm:block">
                 HOSPITALITY · ARCHITECTURE · SECOND HOME INTELLIGENCE
