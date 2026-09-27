@@ -95,56 +95,58 @@ def _vision_redesign_prompt(
     user_prompt: str,
     hotel_context: str | None = None,
 ) -> str:
-    """
-    Use GPT-4o vision to understand the photo and produce a detailed
-    DALL-E generation prompt that applies the user's redesign brief.
-    """
-    context_line = (
-        f"This photo is from the property: {hotel_context}. "
-        if hotel_context
-        else "This is a photo of a building / interior / outdoor space. "
-    )
-    system = (
-        "You are a world-class hospitality architect and interior designer. "
-        "Given a real photo and a redesign brief, write a single detailed "
-        "image-generation prompt (80–150 words) for DALL-E 3 that produces "
-        "a photorealistic redesigned version of the SAME space. "
-        "Preserve the overall layout and architecture identity; only apply "
-        "the improvements described in the brief. "
-        "Output ONLY the generation prompt — no quotes, no preamble."
-    )
-    user_content = [
-        {
-            "type": "text",
-            "text": (
-                f"{context_line}"
-                f"User redesign brief: {user_prompt}\n\n"
-                "Write the DALL-E 3 prompt now."
-            ),
-        },
-        {
-            "type": "image_url",
-            "image_url": {
-                "url": f"data:image/jpeg;base64,{image_b64}",
-                "detail": "low",
+    """Enrich a short user brief into a stronger image-edit instruction."""
+    try:
+        context_line = (
+            f"This photo is from the property: {hotel_context}. "
+            if hotel_context
+            else "This is a photo of a building / interior / outdoor space. "
+        )
+        system = (
+            "You are a world-class hospitality architect and interior designer. "
+            "Given a real photo and a redesign brief, write a single detailed "
+            "image-edit instruction (60–120 words). Preserve the same space and "
+            "layout; only apply the brief. Output ONLY the instruction."
+        )
+        user_content = [
+            {
+                "type": "text",
+                "text": f"{context_line}User redesign brief: {user_prompt}\n\nWrite the edit instruction now.",
             },
-        },
-    ]
-    resp = client.chat.completions.create(
-        model=VISION_MODEL,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user_content},
-        ],
-        max_tokens=300,
-        temperature=0.4,
-    )
-    return (resp.choices[0].message.content or "").strip()
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/jpeg;base64,{image_b64}",
+                    "detail": "low",
+                },
+            },
+        ]
+        resp = client.chat.completions.create(
+            model=VISION_MODEL,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_content},
+            ],
+            max_tokens=280,
+            temperature=0.4,
+        )
+        out = (resp.choices[0].message.content or "").strip()
+        return out if len(out) > 20 else user_prompt
+    except Exception as exc:
+        logger.warning("Vision redesign prompt failed, using raw prompt: %s", exc)
+        return user_prompt
 
 
-# Durable storage for redesigned images (relative URL served by the API).
 _MEDIA_DIR = Path(__file__).resolve().parent.parent / "data" / "reimaging_media"
 _MEDIA_URL_PREFIX = "/api/reimaging/media"
+
+EDIT_MODELS = (
+    IMAGE_GEN_MODEL,
+    "gpt-image-1",
+    "gpt-image-1-mini",
+    "gpt-image-1.5",
+    "gpt-image-2",
+)
 
 
 def _ensure_media_dir() -> Path:
@@ -153,36 +155,56 @@ def _ensure_media_dir() -> Path:
 
 
 def _persist_image_bytes(data: bytes, ext: str = "png") -> str:
-    """Write image bytes to disk and return a public API path."""
     folder = _ensure_media_dir()
     name = f"{uuid.uuid4().hex}.{ext.lstrip('.')}"
-    path = folder / name
-    path.write_bytes(data)
+    (folder / name).write_bytes(data)
     return f"{_MEDIA_URL_PREFIX}/{name}"
 
 
-def _generate_redesigned_image(client: OpenAI, gen_prompt: str) -> str | None:
+def _bytes_to_file(data: bytes, filename: str = "source.png"):
+    buf = io.BytesIO(data)
+    buf.name = filename
+    return buf
+
+
+def _edit_image_with_prompt(
+    client: OpenAI,
+    image_bytes: bytes,
+    edit_prompt: str,
+) -> str | None:
     """
-    Generate a redesigned image via OpenAI GPT Image models.
-    Persists the result as a file and returns a short /api/reimaging/media/... URL
-    (never multi-MB data URIs — those blow up the DB and /api/articles).
+    Redesign using OpenAI images.edit with the real source photo as reference.
+    Falls back to text-only images.generate if edit is unavailable.
     """
-    models_to_try = (
-        IMAGE_GEN_MODEL,
-        "gpt-image-1",
-        "gpt-image-1-mini",
-        "gpt-image-2",
-    )
-    seen: set[str] = set()
+    if not image_bytes or len(image_bytes) < 100:
+        logger.warning("Empty or tiny source image for edit")
+        return None
+    if len(image_bytes) > 20 * 1024 * 1024:
+        logger.warning("Source image too large (%d bytes)", len(image_bytes))
+        return None
+
+    prompt = (edit_prompt or "").strip()
+    if len(prompt) < 5:
+        prompt = (
+            "Edit this photo to look more luxurious and refined while keeping "
+            "the same layout and architecture. Photorealistic hospitality photography."
+        )
+    if not prompt.lower().startswith(
+        ("edit", "redesign", "modify", "transform", "improve", "make")
+    ):
+        prompt = f"Edit this photo: {prompt}"
+
     last_err: Exception | None = None
-    for model in models_to_try:
+    seen: set[str] = set()
+    for model in EDIT_MODELS:
         if model in seen:
             continue
         seen.add(model)
         try:
-            result = client.images.generate(
+            result = client.images.edit(
                 model=model,
-                prompt=gen_prompt[:32000],
+                image=_bytes_to_file(image_bytes, "source.png"),
+                prompt=prompt[:32000],
                 size="1536x1024",
                 n=1,
             )
@@ -191,27 +213,85 @@ def _generate_redesigned_image(client: OpenAI, gen_prompt: str) -> str | None:
             item = result.data[0]
             b64 = getattr(item, "b64_json", None)
             if b64:
-                raw = base64.b64decode(b64)
-                return _persist_image_bytes(raw, "png")
+                return _persist_image_bytes(base64.b64decode(b64), "png")
             url = getattr(item, "url", None)
             if url:
-                # Download remote URL and persist so it does not expire
                 try:
                     r = requests.get(url, timeout=30)
                     r.raise_for_status()
-                    ctype = (r.headers.get("Content-Type") or "image/png").split(";")[0]
-                    ext = "jpg" if "jpeg" in ctype or "jpg" in ctype else "png"
-                    return _persist_image_bytes(r.content, ext)
+                    return _persist_image_bytes(r.content, "png")
                 except Exception as dl_exc:
-                    logger.warning("Could not persist remote image URL: %s", dl_exc)
+                    logger.warning("Download edit result failed: %s", dl_exc)
                     return url
         except Exception as exc:
             last_err = exc
-            logger.warning("Image generation with model %s failed: %s", model, exc)
-            continue
+            logger.warning("images.edit model=%s failed: %s", model, exc)
+
+    # Fallback: generate without reference
+    for model in EDIT_MODELS:
+        try:
+            result = client.images.generate(
+                model=model,
+                prompt=prompt[:32000],
+                size="1536x1024",
+                n=1,
+            )
+            if not result.data:
+                continue
+            item = result.data[0]
+            b64 = getattr(item, "b64_json", None)
+            if b64:
+                return _persist_image_bytes(base64.b64decode(b64), "png")
+            url = getattr(item, "url", None)
+            if url:
+                return url
+        except Exception as exc:
+            last_err = exc
+            logger.warning("images.generate model=%s failed: %s", model, exc)
+
     if last_err:
-        logger.error("Image generation failed for all models: %s", last_err)
+        logger.error("All image redesign attempts failed: %s", last_err)
     return None
+
+
+def _redesign_from_url(
+    client: OpenAI,
+    source_url: str,
+    user_prompt: str,
+    hotel_context: str | None = None,
+) -> str | None:
+    try:
+        r = requests.get(
+            source_url,
+            timeout=20,
+            headers={"User-Agent": "WishNest-Reimaging/1.0"},
+            allow_redirects=True,
+        )
+        r.raise_for_status()
+        raw = r.content
+    except Exception as exc:
+        logger.warning("Download source photo failed: %s", exc)
+        return None
+    if not raw or len(raw) < 100:
+        return None
+    b64 = base64.b64encode(raw).decode("ascii")
+    edit_prompt = _vision_redesign_prompt(client, b64, user_prompt, hotel_context)
+    return _edit_image_with_prompt(client, raw, edit_prompt)
+
+
+def _redesign_from_b64(
+    client: OpenAI,
+    image_b64: str,
+    user_prompt: str,
+    hotel_context: str | None = None,
+) -> str | None:
+    try:
+        raw = base64.b64decode(image_b64)
+    except Exception as exc:
+        logger.warning("Invalid base64 image: %s", exc)
+        return None
+    edit_prompt = _vision_redesign_prompt(client, image_b64, user_prompt, hotel_context)
+    return _edit_image_with_prompt(client, raw, edit_prompt)
 
 
 def _generate_article_package(
@@ -488,25 +568,25 @@ def run_reimaging_hotel(
 
     redesigned_urls: list[str] = []
     redesign_notes: list[str] = []
+    hotel_ctx = listing.name if listing else hotel_name
 
     for i, url in enumerate(source_urls[:redesign_count]):
-        b64 = _download_image_as_b64(url)
-        if not b64:
-            continue
         try:
-            gen_prompt = _vision_redesign_prompt(
-                client, b64, prompt, hotel_context=hotel_name
-            )
-            new_url = _generate_redesigned_image(client, gen_prompt)
+            new_url = _redesign_from_url(client, url, prompt, hotel_context=hotel_ctx)
             if new_url:
                 redesigned_urls.append(new_url)
-                redesign_notes.append(gen_prompt[:200])
+                redesign_notes.append(prompt[:200])
+            else:
+                logger.warning("Redesign returned empty for photo %d", i)
         except Exception as exc:
             logger.warning("Redesign failed for photo %d: %s", i, exc)
             continue
 
     if not redesigned_urls:
-        raise RuntimeError("Image redesign failed for all source photos. Please try again.")
+        raise RuntimeError(
+            "Image redesign failed for all source photos. "
+            "Confirm OPENAI_API_KEY has GPT Image access, then try 1–2 photos."
+        )
 
     package = _generate_article_package(
         client,
@@ -560,19 +640,21 @@ def run_reimaging_upload(
 
     for i, b64 in enumerate(image_b64_list[:MAX_REDESIGNED]):
         try:
-            gen_prompt = _vision_redesign_prompt(
-                client, b64, prompt, hotel_context=hotel_name
-            )
-            new_url = _generate_redesigned_image(client, gen_prompt)
+            new_url = _redesign_from_b64(client, b64, prompt, hotel_context=hotel_name)
             if new_url:
                 redesigned_urls.append(new_url)
-                redesign_notes.append(gen_prompt[:200])
+                redesign_notes.append(prompt[:200])
+            else:
+                logger.warning("Redesign returned empty for upload %d", i)
         except Exception as exc:
             logger.warning("Redesign failed for uploaded image %d: %s", i, exc)
             continue
 
     if not redesigned_urls:
-        raise RuntimeError("Image redesign failed. Please try a different photo or prompt.")
+        raise RuntimeError(
+            "Image redesign failed. "
+            "Confirm OPENAI_API_KEY has GPT Image access, then try a clearer photo."
+        )
 
     package = _generate_article_package(
         client,
