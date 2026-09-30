@@ -5,7 +5,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://wishnest-backend-mjpa.onrender.com/api/:path*"
+      "destination": "https://wishnest-backend-kgu2.onrender.com/api/:path*"
     },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
