@@ -209,32 +209,99 @@ export function SocialPage(): JSX.Element {
     return `${b}\n\n${shareUrl}`;
   };
 
-  const downloadHero = async () => {
-    if (!selected?.hero_image_url) {
-      toast({ title: "No hero image", variant: "destructive" });
-      return;
-    }
+  /** Fetch hero as Blob (for download / clipboard). */
+  const fetchHeroBlob = async (): Promise<Blob | null> => {
+    if (!selected?.hero_image_url) return null;
     try {
       const res = await fetch(selected.hero_image_url, {
         mode: "cors",
         referrerPolicy: "no-referrer",
       });
-      if (!res.ok) throw new Error("fetch failed");
-      const blob = await res.blob();
+      if (!res.ok) return null;
+      return await res.blob();
+    } catch {
+      return null;
+    }
+  };
+
+  const downloadHero = async () => {
+    if (!selected?.hero_image_url) {
+      toast({ title: "No hero image", variant: "destructive" });
+      return;
+    }
+    const blob = await fetchHeroBlob();
+    if (blob) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `wishnest-${selected.id.slice(0, 8)}.jpg`;
+      const ext = blob.type.includes("png") ? "png" : "jpg";
+      a.download = `wishnest-${selected.id.slice(0, 8)}.${ext}`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
       toast({ title: "Image downloaded" });
-    } catch {
-      window.open(selected.hero_image_url, "_blank", "noopener,noreferrer");
+      return;
+    }
+    window.open(selected.hero_image_url, "_blank", "noopener,noreferrer");
+    toast({
+      title: "Opened image",
+      description: "Right-click → Save image as…",
+    });
+  };
+
+  /**
+   * Full social pack: copy caption+link, try image to clipboard, always offer download.
+   * Browsers rarely allow image+text in one paste into LinkedIn — download is the reliable path.
+   */
+  const packAndCopy = async (caption: string, platformLabel: string) => {
+    const text = withLink(caption);
+    const ok = await copyText(text);
+    let imageNote = "No image on this article.";
+    const blob = await fetchHeroBlob();
+    if (blob) {
+      // Try clipboard image (Chrome etc.) — optional
+      try {
+        if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+          const type = blob.type || "image/png";
+          await navigator.clipboard.write([
+            new ClipboardItem({
+              [type]: blob,
+              "text/plain": new Blob([text], { type: "text/plain" }),
+            }),
+          ]);
+          imageNote = "Caption+link and image copied (if the app allows paste).";
+        }
+      } catch {
+        // Clipboard image often blocked with mixed types — fall through to download
+      }
+      // Always download so user can attach on LinkedIn / IG / X
+      try {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        const ext = blob.type.includes("png") ? "png" : "jpg";
+        a.download = `wishnest-${selected!.id.slice(0, 8)}.${ext}`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        imageNote =
+          "Caption + link copied. Image downloaded — attach it when you post.";
+      } catch {
+        imageNote = "Caption + link copied. Download the image from Post Image below.";
+      }
+    }
+    if (ok) {
       toast({
-        title: "Opened image",
-        description: "Right-click → Save image as…",
+        title: `${platformLabel} pack ready`,
+        description: imageNote,
+      });
+    } else {
+      toast({
+        title: "Copy failed",
+        description: "Try Copy link / caption buttons below.",
+        variant: "destructive",
       });
     }
   };
@@ -471,32 +538,65 @@ export function SocialPage(): JSX.Element {
               </div>
 
               {/* Ready-to-post packs with link */}
-              {(linkedin[0] || facebook[0] || twitter[0]) && (
+              {(linkedin[0] || facebook[0] || twitter[0] || selected.hero_image_url) && (
                 <div className="rounded-2xl border border-sky-500/25 bg-sky-500/5 p-5">
-                  <p className="mb-3 [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1.4px] text-sky-300/90">
-                    ONE-CLICK POST PACK (caption + link)
+                  <p className="mb-1 [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1.4px] text-sky-300/90">
+                    ONE-CLICK POST PACK (caption + image + link)
+                  </p>
+                  <p className="mb-3 [font-family:'Inter',Helvetica] text-[12px] text-white/40">
+                    Copies caption + website link, and downloads the post image so you can attach it on LinkedIn, Instagram, or X.
                   </p>
                   <div className="flex flex-wrap gap-2">
                     {linkedin[0] && (
-                      <CopyButton
-                        text={withLink(linkedin[0])}
-                        label="LinkedIn + link"
-                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => void packAndCopy(linkedin[0], "LinkedIn")}
+                        className="h-9 gap-1.5 border border-sky-500/30 bg-sky-500/15 px-3 text-[11px] text-sky-200 hover:bg-sky-500/25"
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                        LinkedIn + image + link
+                      </Button>
                     )}
                     {facebook[0] && (
-                      <CopyButton
-                        text={withLink(facebook[0])}
-                        label="Facebook / IG + link"
-                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => void packAndCopy(facebook[0], "Facebook / IG")}
+                        className="h-9 gap-1.5 border border-sky-500/30 bg-sky-500/15 px-3 text-[11px] text-sky-200 hover:bg-sky-500/25"
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                        Facebook / IG + image + link
+                      </Button>
                     )}
                     {twitter.length > 0 && (
-                      <CopyButton
-                        text={
-                          twitter.map((t, i) => `${i + 1}/${twitter.length} ${t}`).join("\n\n") +
-                          `\n\n${shareUrl}`
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() =>
+                          void packAndCopy(
+                            twitter
+                              .map((t, i) => `${i + 1}/${twitter.length} ${t}`)
+                              .join("\n\n"),
+                            "X thread",
+                          )
                         }
-                        label="X thread + link"
-                      />
+                        className="h-9 gap-1.5 border border-sky-500/30 bg-sky-500/15 px-3 text-[11px] text-sky-200 hover:bg-sky-500/25"
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                        X thread + image + link
+                      </Button>
+                    )}
+                    {!linkedin[0] && !facebook[0] && !twitter.length && selected.hero_image_url && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => void packAndCopy(selected.headline || "", "Post")}
+                        className="h-9 gap-1.5 border border-sky-500/30 bg-sky-500/15 px-3 text-[11px] text-sky-200 hover:bg-sky-500/25"
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                        Headline + image + link
+                      </Button>
                     )}
                   </div>
                 </div>
@@ -541,8 +641,7 @@ export function SocialPage(): JSX.Element {
               )}
 
               <p className="[font-family:'Inter',Helvetica] text-[12px] text-white/30">
-                Tip: Post image + caption on LinkedIn / Instagram / X, and always include the
-                website link so readers open the full article on WishNest.
+                Tip: Use the post pack above — caption & link are copied, image downloads automatically. Attach the image when creating the post, paste the caption, done.
               </p>
             </>
           )}
