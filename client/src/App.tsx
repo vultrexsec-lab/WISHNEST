@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Switch, Route, useLocation, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -27,24 +28,42 @@ function ProtectedDashboard() {
   return <ReviewDashboard />;
 }
 
+/** On every route change, jump to the top of the page. */
+function ScrollToTop() {
+  const [location] = useLocation();
+
+  useEffect(() => {
+    // Instant jump — avoids keeping footer scroll position on the new page
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    // Some browsers keep scroll on documentElement
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, [location]);
+
+  return null;
+}
+
 function Router() {
   return (
-    <Switch>
-      <Route path="/" component={PremiumEditorial} />
-      <Route path="/article/seclude-ramgarh-willows" component={ArticlePage} />
-      <Route path="/article/:id" component={ArticleDetailPage} />
-      <Route path="/reviews" component={ReviewsPage} />
-      <Route path="/destinations" component={DestinationsPage} />
-      <Route path="/best-of" component={BestOfPage} />
-      <Route path="/intelligence" component={IntelligencePage} />
-      <Route path="/contributors" component={ContributorsPage} />
-      <Route path="/reimagined" component={ReimaginedPage} />
-      <Route path="/login" component={LoginPage} />
-      <Route path="/dashboard" component={ProtectedDashboard} />
-      <Route path="/reimaging" component={ReimagingPage} />
-      <Route path="/social" component={SocialPage} />
-      <Route component={NotFound} />
-    </Switch>
+    <>
+      <ScrollToTop />
+      <Switch>
+        <Route path="/" component={PremiumEditorial} />
+        <Route path="/article/seclude-ramgarh-willows" component={ArticlePage} />
+        <Route path="/article/:id" component={ArticleDetailPage} />
+        <Route path="/reviews" component={ReviewsPage} />
+        <Route path="/destinations" component={DestinationsPage} />
+        <Route path="/best-of" component={BestOfPage} />
+        <Route path="/intelligence" component={IntelligencePage} />
+        <Route path="/contributors" component={ContributorsPage} />
+        <Route path="/reimagined" component={ReimaginedPage} />
+        <Route path="/login" component={LoginPage} />
+        <Route path="/dashboard" component={ProtectedDashboard} />
+        <Route path="/reimaging" component={ReimagingPage} />
+        <Route path="/social" component={SocialPage} />
+        <Route component={NotFound} />
+      </Switch>
+    </>
   );
 }
 
