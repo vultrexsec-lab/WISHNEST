@@ -1,144 +1,79 @@
 import { Link } from "wouter";
 
-const footerColumns = [
-  {
-    title: "FOR READERS",
-    links: [
-      { label: "Latest Reviews", href: "/reviews" },
-      { label: "Destinations", href: "/destinations" },
-      { label: "Best Of", href: "/best-of" },
-      { label: "Intelligence", href: "/intelligence" },
-      { label: "Contributors", href: "/contributors" },
-    ],
-  },
-  {
-    title: "FOR DEVELOPERS",
-    links: [
-      { label: "Property Insights", href: "/intelligence" },
-      { label: "Architecture Guides", href: "/intelligence" },
-      { label: "Design Standards", href: "/reimagined" },
-      { label: "Case Studies", href: "/reimagined" },
-    ],
-  },
-  {
-    title: "FOR OPERATORS",
-    links: [
-      { label: "Get Reviewed", href: "/reviews" },
-      { label: "Hospitality Research", href: "/intelligence" },
-      { label: "WishNest Pro", href: "/contributors" },
-      { label: "Submit a Property", href: "/contributors" },
-    ],
-  },
-  {
-    title: "FOR INVESTORS",
-    links: [
-      { label: "Market Intelligence", href: "/intelligence" },
-      { label: "Second Home Index", href: "/best-of" },
-      { label: "Destination Reports", href: "/destinations" },
-      { label: "Briefings", href: "/intelligence" },
-    ],
-  },
-  {
-    title: "ABOUT",
-    links: [
-      { label: "Our Mission", href: "/contributors" },
-      { label: "Privacy Policy", href: "/contributors" },
-      { label: "Terms of Use", href: "/contributors" },
-      { label: "Contact", href: "/contributors" },
-      { label: "Newsletter", href: "/#newsletter" },
-    ],
-  },
+/** Only routes that actually exist in the app */
+const footerLinks = [
+  { label: "Reviews", href: "/reviews" },
+  { label: "Destinations", href: "/destinations" },
+  { label: "Best Of", href: "/best-of" },
+  { label: "Intelligence", href: "/intelligence" },
+  { label: "Contributors", href: "/contributors" },
+  { label: "Reimagined", href: "/reimagined" },
+  { label: "Newsletter", href: "/#newsletter" },
+];
+
+const socialLinks = [
+  { label: "LI", href: "#", title: "LinkedIn" },
+  { label: "TW", href: "#", title: "X / Twitter" },
+  { label: "IN", href: "#", title: "Instagram" },
+  { label: "YO", href: "#", title: "YouTube" },
 ];
 
 export const SiteFooter = () => {
   return (
     <footer className="bg-[#161614]">
-      <div className="mx-auto w-full max-w-[1166px] px-4 py-12 sm:px-8 lg:py-20">
-        <div className="border-b border-[#ffffff14] pb-16">
-          <div className="grid gap-12 lg:grid-cols-[240px_minmax(0,1fr)]">
-            <div>
-              <Link href="/">
-                <div className="cursor-pointer [font-family:'Playfair_Display',Helvetica] text-2xl font-bold leading-9 tracking-[3.36px] text-white">
-                  WishNest
-                </div>
-              </Link>
-              <div className="pt-2 [font-family:'Inter',Helvetica] text-[9px] font-normal leading-[13.5px] tracking-[1.62px] text-[#ffffff59]">
-                HOSPITALITY · ARCHITECTURE
-                <br />
-                SECOND HOME INTELLIGENCE
+      <div className="mx-auto w-full max-w-[1166px] px-4 py-10 sm:px-8 sm:py-12">
+        {/* Brand + links in one responsive band */}
+        <div className="flex flex-col gap-8 border-b border-white/[0.08] pb-8 lg:flex-row lg:items-start lg:justify-between lg:gap-12">
+          <div className="shrink-0 lg:max-w-[220px]">
+            <Link href="/">
+              <div className="cursor-pointer [font-family:'Playfair_Display',Helvetica] text-xl font-bold tracking-[2.5px] text-white sm:text-2xl">
+                WishNest
               </div>
-              <p className="w-[200px] pt-6 [font-family:'Inter',Helvetica] text-[13px] font-normal leading-[22.8px] text-[#ffffff73]">
-                Independent editorial trusted by architects, developers,
-                hospitality professionals and discerning investors.
-              </p>
-              <div className="flex gap-5 pt-8">
-                {["LI", "TW", "IN", "YO"].map((item) => (
-                  <button
-                    key={item}
-                    className="[font-family:'Inter',Helvetica] text-[10px] font-normal leading-[15px] tracking-[1px] text-[#ffffff4c] transition-opacity hover:opacity-70"
-                  >
-                    {item}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="grid gap-10 sm:grid-cols-2 xl:grid-cols-3">
-              {footerColumns.slice(0, 3).map((column) => (
-                <div key={column.title}>
-                  <div className="[font-family:'Inter',Helvetica] text-[9px] font-normal leading-[13.5px] tracking-[1.98px] text-[#ffffff4c]">
-                    {column.title}
-                  </div>
-                  <ul className="space-y-3 pt-5">
-                    {column.links.map((link) => (
-                      <li key={link.label}>
-                        <Link href={link.href}>
-                          <span className="cursor-pointer [font-family:'Inter',Helvetica] text-[13px] font-normal leading-[19.5px] text-[#ffffff8c] transition-opacity hover:opacity-70">
-                            {link.label}
-                          </span>
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+            </Link>
+            <p className="pt-1.5 [font-family:'Inter',Helvetica] text-[9px] tracking-[1.4px] text-white/35">
+              HOSPITALITY · ARCHITECTURE · SECOND HOME INTELLIGENCE
+            </p>
+            <p className="pt-3 max-w-[240px] [font-family:'Inter',Helvetica] text-[12px] leading-relaxed text-white/40">
+              Independent editorial for architects, developers, and discerning investors.
+            </p>
+            <div className="mt-4 flex gap-3">
+              {socialLinks.map((s) => (
+                <a
+                  key={s.label}
+                  href={s.href}
+                  title={s.title}
+                  className="[font-family:'Inter',Helvetica] text-[11px] tracking-[1px] text-white/30 transition hover:text-white/70"
+                >
+                  {s.label}
+                </a>
               ))}
             </div>
           </div>
-          <div className="mt-14 grid gap-10 sm:grid-cols-2 xl:grid-cols-3 xl:pl-[304px]">
-            {footerColumns.slice(3).map((column) => (
-              <div key={column.title}>
-                <div className="[font-family:'Inter',Helvetica] text-[9px] font-normal leading-[13.5px] tracking-[1.98px] text-[#ffffff4c]">
-                  {column.title}
-                </div>
-                <ul className="space-y-3 pt-5">
-                  {column.links.map((link) => (
-                    <li key={link.label}>
-                      <Link href={link.href}>
-                        <span className="cursor-pointer [font-family:'Inter',Helvetica] text-[13px] font-normal leading-[19.5px] text-[#ffffff8c] transition-opacity hover:opacity-70">
-                          {link.label}
-                        </span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+
+          {/* Real site links — single flowing row on desktop, wrap on mobile */}
+          <nav
+            aria-label="Footer"
+            className="flex flex-1 flex-wrap content-start gap-x-5 gap-y-2.5 sm:gap-x-7 lg:justify-end lg:pt-1"
+          >
+            {footerLinks.map((link) => (
+              <Link key={link.href + link.label} href={link.href}>
+                <a className="[font-family:'Inter',Helvetica] text-[13px] text-white/55 transition hover:text-white">
+                  {link.label}
+                </a>
+              </Link>
             ))}
-          </div>
+          </nav>
         </div>
-        <div className="flex flex-col justify-between gap-6 pt-8 md:flex-row md:items-center">
-          <div className="[font-family:'Inter',Helvetica] text-[11px] font-normal leading-[16.5px] text-[#ffffff40]">
-            © 2025 WishNest. All rights reserved. Independent editorial — no
-            paid placements.
-          </div>
-          <div className="flex flex-wrap gap-7">
-            {["Privacy", "Terms", "Newsletter", "Sitemap"].map((item) => (
-              <button
-                key={item}
-                className="[font-family:'Inter',Helvetica] text-[11px] font-normal leading-[16.5px] text-[#ffffff40] transition-opacity hover:opacity-70"
-              >
-                {item}
-              </button>
-            ))}
-          </div>
+
+        <div className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center sm:justify-between">
+          <p className="[font-family:'Inter',Helvetica] text-[11px] text-white/30">
+            © {new Date().getFullYear()} WishNest. All rights reserved. Independent editorial — no paid placements.
+          </p>
+          <Link href="/">
+            <a className="[font-family:'Inter',Helvetica] text-[11px] text-white/30 transition hover:text-white/50">
+              Home
+            </a>
+          </Link>
         </div>
       </div>
     </footer>

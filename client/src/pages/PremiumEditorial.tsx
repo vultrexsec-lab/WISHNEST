@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Menu, X, Search } from "lucide-react";
 import { SearchModal } from "@/components/SearchModal";
+import { SiteFooter } from "@/components/SiteFooter";
 import { NewsletterModal } from "@/components/NewsletterModal";
 import { DailyEditionBanner } from "@/components/DailyEditionBanner";
 import { Button } from "@/components/ui/button";
@@ -297,56 +298,6 @@ const bestOfItems = [
     category: "INVESTMENT INTELLIGENCE",
     title: "Top Investment Plays in Boutique Indian Hospitality",
     meta: "10 markets",
-  },
-];
-
-const footerColumns = [
-  {
-    title: "FOR READERS",
-    links: [
-      "Latest Reviews",
-      "Destinations",
-      "Best Of",
-      "Intelligence",
-      "Contributors",
-    ],
-  },
-  {
-    title: "FOR DEVELOPERS",
-    links: [
-      "Property Insights",
-      "Architecture Guides",
-      "Design Standards",
-      "Case Studies",
-    ],
-  },
-  {
-    title: "FOR OPERATORS",
-    links: [
-      "Get Reviewed",
-      "Hospitality Research",
-      "WishNest Pro",
-      "Submit a Property",
-    ],
-  },
-  {
-    title: "FOR INVESTORS",
-    links: [
-      "Market Intelligence",
-      "Second Home Index",
-      "Destination Reports",
-      "Briefings",
-    ],
-  },
-  {
-    title: "ABOUT",
-    links: [
-      "Our Mission",
-      "Privacy Policy",
-      "Terms of Use",
-      "Contact",
-      "Newsletter",
-    ],
   },
 ];
 
@@ -1125,88 +1076,7 @@ export const PremiumEditorial = (): JSX.Element => {
           </div>
         </div>
       </section>
-      <footer className="bg-[#161614]">
-        <div className="mx-auto w-full max-w-[1166px] px-4 py-12 sm:px-8 lg:py-20">
-          <div className="border-b border-[#ffffff14] pb-16">
-            <div className="grid gap-12 lg:grid-cols-[240px_minmax(0,1fr)]">
-              <div>
-                <div className="[font-family:'Playfair_Display',Helvetica] text-2xl font-bold leading-9 tracking-[3.36px] text-white">WishNest</div>
-                <div className="pt-2 [font-family:'Inter',Helvetica] text-[9px] font-normal leading-[13.5px] tracking-[1.62px] text-[#ffffff59]">
-                  HOSPITALITY · ARCHITECTURE
-                  <br />
-                  SECOND HOME INTELLIGENCE
-                </div>
-                <p className="w-[200px] pt-6 [font-family:'Inter',Helvetica] text-[13px] font-normal leading-[22.8px] text-[#ffffff73]">
-                  Independent editorial trusted by architects, developers,
-                  hospitality professionals and discerning investors.
-                </p>
-                <div className="flex gap-5 pt-8">
-                  {["LI", "TW", "IN", "YO"].map((item) => (
-                    <button
-                      key={item}
-                      className="[font-family:'Inter',Helvetica] text-[10px] font-normal leading-[15px] tracking-[1px] text-[#ffffff4c]"
-                    >
-                      {item}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="grid gap-10 sm:grid-cols-2 xl:grid-cols-3">
-                {footerColumns.slice(0, 3).map((column) => (
-                  <div key={column.title}>
-                    <div className="[font-family:'Inter',Helvetica] text-[9px] font-normal leading-[13.5px] tracking-[1.98px] text-[#ffffff4c]">
-                      {column.title}
-                    </div>
-                    <ul className="space-y-3 pt-5">
-                      {column.links.map((link) => (
-                        <li key={link}>
-                          <button className="[font-family:'Inter',Helvetica] text-[13px] font-normal leading-[19.5px] text-[#ffffff8c]">
-                            {link}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="mt-14 grid gap-10 sm:grid-cols-2 xl:grid-cols-3 xl:pl-[304px]">
-              {footerColumns.slice(3).map((column) => (
-                <div key={column.title}>
-                  <div className="[font-family:'Inter',Helvetica] text-[9px] font-normal leading-[13.5px] tracking-[1.98px] text-[#ffffff4c]">
-                    {column.title}
-                  </div>
-                  <ul className="space-y-3 pt-5">
-                    {column.links.map((link) => (
-                      <li key={link}>
-                        <button className="[font-family:'Inter',Helvetica] text-[13px] font-normal leading-[19.5px] text-[#ffffff8c]">
-                          {link}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="flex flex-col justify-between gap-6 pt-8 md:flex-row md:items-center">
-            <div className="[font-family:'Inter',Helvetica] text-[11px] font-normal leading-[16.5px] text-[#ffffff40]">
-              © 2025 WishNest. All rights reserved. Independent editorial — no
-              paid placements.
-            </div>
-            <div className="flex flex-wrap gap-7">
-              {["Privacy", "Terms", "Newsletter", "Sitemap"].map((item) => (
-                <button
-                  key={item}
-                  className="[font-family:'Inter',Helvetica] text-[11px] font-normal leading-[16.5px] text-[#ffffff40]"
-                >
-                  {item}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
     </main>
   );
 };

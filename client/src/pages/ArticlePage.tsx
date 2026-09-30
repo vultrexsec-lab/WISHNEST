@@ -1,4 +1,5 @@
 import { Link } from "wouter";
+import { SiteFooter } from "@/components/SiteFooter";
 import { Button } from "@/components/ui/button";
 
 const navItems = [
@@ -8,34 +9,6 @@ const navItems = [
   "INTELLIGENCE",
   "CONTRIBUTORS",
   "REIMAGINED™",
-];
-
-const footerColumns = [
-  {
-    title: "FOR READERS",
-    links: ["Reviews", "Destinations", "Best Of", "Intelligence", "Contributors"],
-  },
-  {
-    title: "FOR PRACTITIONERS",
-    links: ["Reimagined™", "Market Reports", "Investment Intel", "Architect's Eye"],
-  },
-  {
-    title: "EDITORIAL",
-    links: ["About WishNest", "Our Framework", "ABCDE™ System", "Write For Us"],
-  },
-  {
-    title: "CONNECT",
-    links: ["Newsletter", "Contact", "Advertise", "Press"],
-  },
-];
-
-const stats = [
-  { label: "ADR", value: "₹15,500" },
-  { label: "ROOMS", value: "12" },
-  { label: "BEST SEASON", value: "Mar–Jun" },
-  { label: "BEST FOR", value: "Couples" },
-  { label: "TYPE", value: "Boutique" },
-  { label: "ELEVATION", value: "1,800m" },
 ];
 
 export const ArticlePage = (): JSX.Element => {
@@ -204,63 +177,7 @@ export const ArticlePage = (): JSX.Element => {
       </section>
 
       {/* Footer */}
-      <footer className="bg-[#161614]">
-        <div className="mx-auto w-full max-w-[1166px] px-8 py-20">
-          <div className="border-b border-[#ffffff14] pb-16">
-            <div className="grid gap-12 lg:grid-cols-[240px_minmax(0,1fr)]">
-              <div>
-                <Link href="/">
-                  <div className="cursor-pointer [font-family:'Playfair_Display',Helvetica] text-2xl font-bold leading-9 tracking-[3.36px] text-white">
-                    WishNest
-                  </div>
-                </Link>
-                <div className="pt-2 [font-family:'Inter',Helvetica] text-[9px] font-normal leading-[13.5px] tracking-[1.62px] text-[#ffffff59]">
-                  HOSPITALITY · ARCHITECTURE
-                  <br />
-                  SECOND HOME INTELLIGENCE
-                </div>
-                <p className="w-[200px] pt-6 [font-family:'Inter',Helvetica] text-[13px] font-normal leading-[22.8px] text-[#ffffff73]">
-                  Independent editorial trusted by architects, developers,
-                  hospitality professionals and discerning investors.
-                </p>
-              </div>
-              <div className="grid gap-10 sm:grid-cols-2 xl:grid-cols-4">
-                {footerColumns.map((column) => (
-                  <div key={column.title}>
-                    <div className="[font-family:'Inter',Helvetica] text-[9px] font-normal leading-[13.5px] tracking-[1.98px] text-[#ffffff4c]">
-                      {column.title}
-                    </div>
-                    <ul className="space-y-3 pt-5">
-                      {column.links.map((link) => (
-                        <li key={link}>
-                          <button className="[font-family:'Inter',Helvetica] text-[13px] font-normal leading-[19.5px] text-[#ffffff8c]">
-                            {link}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-          <div className="flex flex-col justify-between gap-6 pt-8 md:flex-row md:items-center">
-            <div className="[font-family:'Inter',Helvetica] text-[11px] font-normal leading-[16.5px] text-[#ffffff40]">
-              © 2025 WishNest. All rights reserved. Independent editorial — no paid placements.
-            </div>
-            <div className="flex flex-wrap gap-7">
-              {["Privacy", "Terms", "Newsletter", "Sitemap"].map((item) => (
-                <button
-                  key={item}
-                  className="[font-family:'Inter',Helvetica] text-[11px] font-normal leading-[16.5px] text-[#ffffff40]"
-                >
-                  {item}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
     </main>
   );
 };
