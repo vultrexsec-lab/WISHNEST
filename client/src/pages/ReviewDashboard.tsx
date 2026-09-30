@@ -46,6 +46,7 @@ import {
   Calendar,
   ExternalLink,
   Sparkles,
+  Share2,
   FileText,
   BadgeCheck,
   Users,
@@ -2455,6 +2456,15 @@ export const ReviewDashboard = (): JSX.Element => {
                 >
                   <Sparkles className="h-3.5 w-3.5" />
                   REIMAGING™
+                </a>
+              </Link>
+              <Link href="/social">
+                <a
+                  className="inline-flex items-center gap-2 rounded-full border border-sky-500/40 bg-sky-500/15 px-4 py-2 [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1px] text-sky-300 shadow-[0_0_20px_rgba(56,189,248,0.12)] transition hover:border-sky-400/60 hover:bg-sky-500/25 hover:text-sky-200"
+                  data-testid="btn-open-social"
+                >
+                  <Share2 className="h-3.5 w-3.5" />
+                  SOCIAL™
                 </a>
               </Link>
               <button
