@@ -65,9 +65,11 @@ class Settings(BaseSettings):
     # Resend.com HTTPS API (works on Render free — SMTP ports are often blocked)
     # Free tier: https://resend.com — set RESEND_API_KEY; optional RESEND_FROM
     resend_api_key: str = os.environ.get("RESEND_API_KEY", "")
+    # Never default to @gmail.com — Resend rejects unverified domains (403).
+    # Use onboarding@resend.dev until wishnest.info is verified on Resend.
     resend_from: str = os.environ.get(
         "RESEND_FROM",
-        os.environ.get("GMAIL_USER", "") and f"WishNest <{os.environ.get('GMAIL_USER', '')}>" or "WishNest <onboarding@resend.dev>",
+        "WishNest <onboarding@resend.dev>",
     )
 
 

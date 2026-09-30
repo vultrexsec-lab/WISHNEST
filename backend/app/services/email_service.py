@@ -107,13 +107,16 @@ def _send_via_resend(
     text_body: str | None = None,
 ) -> None:
     settings = get_settings()
-    from_addr = (settings.resend_from or "").strip()
-    if not from_addr:
-        # Fallback: use Gmail address as display if set
-        if settings.gmail_user:
-            from_addr = f"WishNest <{settings.gmail_user.strip()}>"
-        else:
-            from_addr = "WishNest <onboarding@resend.dev>"
+    from_addr = (settings.resend_from or "").strip() or "WishNest <onboarding@resend.dev>"
+    # Resend cannot send FROM gmail.com / yahoo.com etc. — force safe default
+    lower = from_addr.lower()
+    if "gmail.com" in lower or "yahoo.com" in lower or "outlook.com" in lower or "hotmail.com" in lower:
+        logger.warning(
+            "RESEND_FROM uses an unverified consumer domain (%s); "
+            "using onboarding@resend.dev instead. Verify wishnest.info on resend.com/domains.",
+            from_addr,
+        )
+        from_addr = "WishNest <onboarding@resend.dev>"
 
     payload = {
         "from": from_addr,
