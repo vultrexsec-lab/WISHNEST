@@ -1,13 +1,19 @@
 """
-Send newsletter emails via Gmail SMTP (App Password).
+Newsletter email delivery.
+
+Render free instances often block outbound SMTP (ports 587/465) →
+  [Errno 101] Network is unreachable
+
+Supported transports (first available wins):
+  1. Resend HTTPS API  — RESEND_API_KEY  (recommended on Render, free tier)
+  2. Gmail SMTP        — GMAIL_USER + GMAIL_APP_PASSWORD (tries 465 SSL then 587 STARTTLS)
 
 Env:
-  GMAIL_USER          — full Gmail address
-  GMAIL_APP_PASSWORD  — 16-character Google App Password
-  SMTP_HOST           — default smtp.gmail.com
-  SMTP_PORT           — default 587
-  SMTP_FROM_NAME      — default WishNest
-  PUBLIC_APP_URL      — e.g. https://wishnest.info
+  RESEND_API_KEY      — from https://resend.com (free)
+  RESEND_FROM         — e.g. WishNest <noreply@wishnest.info> (verified domain)
+  GMAIL_USER          — Gmail address
+  GMAIL_APP_PASSWORD  — Google App Password
+  PUBLIC_APP_URL      — https://wishnest.info
 """
 from __future__ import annotations
 
@@ -19,6 +25,8 @@ from email.mime.text import MIMEText
 from html import escape
 from typing import Sequence
 
+import requests
+
 from app.config import get_settings
 
 logger = logging.getLogger("wishnest.email_service")
@@ -29,10 +37,19 @@ def smtp_configured() -> bool:
     return bool(s.gmail_user and s.gmail_app_password)
 
 
+def resend_configured() -> bool:
+    s = get_settings()
+    return bool(s.resend_api_key)
+
+
+def email_configured() -> bool:
+    """True if any working transport is configured."""
+    return resend_configured() or smtp_configured()
+
+
 def _public_base() -> str:
     s = get_settings()
-    base = (s.public_app_url or "https://wishnest.info").rstrip("/")
-    return base
+    return (s.public_app_url or "https://wishnest.info").rstrip("/")
 
 
 def build_article_email_html(
@@ -72,7 +89,6 @@ def build_article_email_html(
           </p>
           <p style="margin:0;font-family:Arial,sans-serif;font-size:11px;color:#666;">
             You received this because you subscribed to WishNest.
-            <a href="{url}" style="color:#888;">View in browser</a>
           </p>
         </td></tr>
       </table>
@@ -83,7 +99,7 @@ def build_article_email_html(
 """
 
 
-def send_email(
+def _send_via_resend(
     *,
     to_email: str,
     subject: str,
@@ -91,31 +107,121 @@ def send_email(
     text_body: str | None = None,
 ) -> None:
     settings = get_settings()
-    if not smtp_configured():
-        raise RuntimeError(
-            "Gmail SMTP not configured. Set GMAIL_USER and GMAIL_APP_PASSWORD on Render."
-        )
+    from_addr = (settings.resend_from or "").strip()
+    if not from_addr:
+        # Fallback: use Gmail address as display if set
+        if settings.gmail_user:
+            from_addr = f"WishNest <{settings.gmail_user.strip()}>"
+        else:
+            from_addr = "WishNest <onboarding@resend.dev>"
 
+    payload = {
+        "from": from_addr,
+        "to": [to_email],
+        "subject": subject,
+        "html": html_body,
+    }
+    if text_body:
+        payload["text"] = text_body
+
+    r = requests.post(
+        "https://api.resend.com/emails",
+        headers={
+            "Authorization": f"Bearer {settings.resend_api_key.strip()}",
+            "Content-Type": "application/json",
+        },
+        json=payload,
+        timeout=30,
+    )
+    if r.status_code >= 400:
+        raise RuntimeError(f"Resend API {r.status_code}: {r.text[:300]}")
+
+
+def _send_via_smtp(
+    *,
+    to_email: str,
+    subject: str,
+    html_body: str,
+    text_body: str | None = None,
+) -> None:
+    """Try SSL:465 first, then STARTTLS:587 (Render often blocks both)."""
+    settings = get_settings()
     from_addr = settings.gmail_user.strip()
     password = settings.gmail_app_password.replace(" ", "").strip()
     from_name = settings.smtp_from_name or "WishNest"
+    host = settings.smtp_host or "smtp.gmail.com"
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = f"{from_name} <{from_addr}>"
     msg["To"] = to_email
-
     if text_body:
         msg.attach(MIMEText(text_body, "plain", "utf-8"))
     msg.attach(MIMEText(html_body, "html", "utf-8"))
+    raw = msg.as_string()
 
     context = ssl.create_default_context()
-    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=30) as server:
-        server.ehlo()
-        server.starttls(context=context)
-        server.ehlo()
-        server.login(from_addr, password)
-        server.sendmail(from_addr, [to_email], msg.as_string())
+    errors: list[str] = []
+
+    # 1) Implicit SSL on 465
+    try:
+        with smtplib.SMTP_SSL(host, 465, timeout=25, context=context) as server:
+            server.login(from_addr, password)
+            server.sendmail(from_addr, [to_email], raw)
+        return
+    except Exception as exc:
+        errors.append(f"SMTP_SSL:465 → {exc}")
+        logger.warning("SMTP_SSL:465 failed: %s", exc)
+
+    # 2) STARTTLS on configured port (default 587)
+    port = int(settings.smtp_port or 587)
+    try:
+        with smtplib.SMTP(host, port, timeout=25) as server:
+            server.ehlo()
+            server.starttls(context=context)
+            server.ehlo()
+            server.login(from_addr, password)
+            server.sendmail(from_addr, [to_email], raw)
+        return
+    except Exception as exc:
+        errors.append(f"STARTTLS:{port} → {exc}")
+        logger.warning("STARTTLS:%s failed: %s", port, exc)
+
+    raise RuntimeError(
+        "Gmail SMTP unreachable from this host (Render often blocks SMTP). "
+        + " | ".join(errors)
+        + " — Set RESEND_API_KEY for HTTPS delivery (free at resend.com)."
+    )
+
+
+def send_email(
+    *,
+    to_email: str,
+    subject: str,
+    html_body: str,
+    text_body: str | None = None,
+) -> None:
+    """Prefer Resend (HTTPS); fall back to Gmail SMTP."""
+    if resend_configured():
+        _send_via_resend(
+            to_email=to_email,
+            subject=subject,
+            html_body=html_body,
+            text_body=text_body,
+        )
+        return
+    if smtp_configured():
+        _send_via_smtp(
+            to_email=to_email,
+            subject=subject,
+            html_body=html_body,
+            text_body=text_body,
+        )
+        return
+    raise RuntimeError(
+        "No email transport configured. Set RESEND_API_KEY (recommended) "
+        "or GMAIL_USER + GMAIL_APP_PASSWORD."
+    )
 
 
 def send_article_to_subscribers(
@@ -126,13 +232,11 @@ def send_article_to_subscribers(
     article_id: str,
     hero_image_url: str | None = None,
 ) -> dict:
-    """
-    Send one article newsletter to each subscriber.
-    Returns {sent: int, failed: int, skipped: bool, error?: str}.
-    """
-    if not smtp_configured():
-        logger.warning("Newsletter skipped — GMAIL_USER / GMAIL_APP_PASSWORD not set")
-        return {"sent": 0, "failed": 0, "skipped": True, "error": "SMTP not configured"}
+    if not email_configured():
+        logger.warning(
+            "Newsletter skipped — set RESEND_API_KEY or GMAIL_USER + GMAIL_APP_PASSWORD"
+        )
+        return {"sent": 0, "failed": 0, "skipped": True, "error": "Email not configured"}
 
     emails = [e.strip().lower() for e in emails if e and "@" in e]
     if not emails:
@@ -148,8 +252,12 @@ def send_article_to_subscribers(
     )
     text = f"{headline}\n\n{summary}\n\nRead: {article_url}\n"
 
+    transport = "resend" if resend_configured() else "smtp"
+    logger.info("Newsletter via %s to %d subscriber(s)", transport, len(emails))
+
     sent = 0
     failed = 0
+    last_err = None
     for email in emails:
         try:
             send_email(
@@ -159,9 +267,16 @@ def send_article_to_subscribers(
                 text_body=text,
             )
             sent += 1
-            logger.info("Newsletter sent to %s", email)
+            logger.info("Newsletter sent to %s via %s", email, transport)
         except Exception as exc:
             failed += 1
+            last_err = str(exc)
             logger.error("Newsletter failed for %s: %s", email, exc)
 
-    return {"sent": sent, "failed": failed, "skipped": False}
+    return {
+        "sent": sent,
+        "failed": failed,
+        "skipped": False,
+        "transport": transport,
+        "error": last_err,
+    }

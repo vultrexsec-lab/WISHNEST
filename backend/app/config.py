@@ -62,6 +62,14 @@ class Settings(BaseSettings):
         or os.environ.get("SMTP_PASSWORD", "")
     )
     smtp_from_name: str = os.environ.get("SMTP_FROM_NAME", "WishNest")
+    # Resend.com HTTPS API (works on Render free — SMTP ports are often blocked)
+    # Free tier: https://resend.com — set RESEND_API_KEY; optional RESEND_FROM
+    resend_api_key: str = os.environ.get("RESEND_API_KEY", "")
+    resend_from: str = os.environ.get(
+        "RESEND_FROM",
+        os.environ.get("GMAIL_USER", "") and f"WishNest <{os.environ.get('GMAIL_USER', '')}>" or "WishNest <onboarding@resend.dev>",
+    )
+
 
 
 

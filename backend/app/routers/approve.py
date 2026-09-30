@@ -21,7 +21,7 @@ from app.dependencies import require_admin
 from app.models.article import Article, ArticleStatus
 from app.models.newsletter import NewsletterSubscriber
 from app.schemas.article import ApproveArticleRequest, ApproveArticleResponse
-from app.services.email_service import send_article_to_subscribers, smtp_configured
+from app.services.email_service import send_article_to_subscribers, email_configured
 
 router = APIRouter(tags=["approval"])
 logger = logging.getLogger("wishnest.approve")
@@ -100,7 +100,7 @@ def approve_article(
     db.refresh(article)
 
     # Fire-and-forget newsletter (does not block the approve response)
-    if smtp_configured():
+    if email_configured():
         threading.Thread(
             target=_send_newsletter_background,
             args=(str(article.id),),
@@ -109,7 +109,7 @@ def approve_article(
         logger.info("Newsletter job started for article %s", article.id)
     else:
         logger.info(
-            "Approve ok; newsletter not sent (set GMAIL_USER + GMAIL_APP_PASSWORD)"
+            "Approve ok; newsletter not sent (set RESEND_API_KEY or GMAIL_USER + GMAIL_APP_PASSWORD)"
         )
 
     return article
