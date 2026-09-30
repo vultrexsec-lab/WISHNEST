@@ -5,8 +5,9 @@ Render free instances often block outbound SMTP (ports 587/465) →
   [Errno 101] Network is unreachable
 
 Supported transports (first available wins):
-  1. Resend HTTPS API  — RESEND_API_KEY  (recommended on Render, free tier)
-  2. Gmail SMTP        — GMAIL_USER + GMAIL_APP_PASSWORD (tries 465 SSL then 587 STARTTLS)
+  1. Brevo HTTPS API   — BREVO_API_KEY + BREVO_FROM_EMAIL (recommended, free)
+  2. Resend HTTPS API  — RESEND_API_KEY
+  3. Gmail SMTP        — GMAIL_USER + GMAIL_APP_PASSWORD (often blocked on Render)
 
 Env:
   RESEND_API_KEY      — from https://resend.com (free)
@@ -42,9 +43,14 @@ def resend_configured() -> bool:
     return bool(s.resend_api_key)
 
 
+def brevo_configured() -> bool:
+    s = get_settings()
+    return bool(s.brevo_api_key and s.brevo_from_email)
+
+
 def email_configured() -> bool:
     """True if any working transport is configured."""
-    return resend_configured() or smtp_configured()
+    return brevo_configured() or resend_configured() or smtp_configured()
 
 
 def _public_base() -> str:
@@ -99,7 +105,43 @@ def build_article_email_html(
 """
 
 
+def _send_via_brevo(
+    *,
+    to_email: str,
+    subject: str,
+    html_body: str,
+    text_body: str | None = None,
+) -> None:
+    """Brevo transactional API — https://developers.brevo.com/reference/sendtransacemail"""
+    settings = get_settings()
+    payload = {
+        "sender": {
+            "name": (settings.brevo_from_name or "WishNest").strip(),
+            "email": settings.brevo_from_email.strip(),
+        },
+        "to": [{"email": to_email}],
+        "subject": subject,
+        "htmlContent": html_body,
+    }
+    if text_body:
+        payload["textContent"] = text_body
+
+    r = requests.post(
+        "https://api.brevo.com/v3/smtp/email",
+        headers={
+            "api-key": settings.brevo_api_key.strip(),
+            "accept": "application/json",
+            "content-type": "application/json",
+        },
+        json=payload,
+        timeout=30,
+    )
+    if r.status_code >= 400:
+        raise RuntimeError(f"Brevo API {r.status_code}: {r.text[:400]}")
+
+
 def _send_via_resend(
+
     *,
     to_email: str,
     subject: str,
@@ -204,7 +246,15 @@ def send_email(
     html_body: str,
     text_body: str | None = None,
 ) -> None:
-    """Prefer Resend (HTTPS); fall back to Gmail SMTP."""
+    """Prefer Brevo, then Resend, then Gmail SMTP."""
+    if brevo_configured():
+        _send_via_brevo(
+            to_email=to_email,
+            subject=subject,
+            html_body=html_body,
+            text_body=text_body,
+        )
+        return
     if resend_configured():
         _send_via_resend(
             to_email=to_email,
@@ -222,8 +272,8 @@ def send_email(
         )
         return
     raise RuntimeError(
-        "No email transport configured. Set RESEND_API_KEY (recommended) "
-        "or GMAIL_USER + GMAIL_APP_PASSWORD."
+        "No email transport configured. Set BREVO_API_KEY + BREVO_FROM_EMAIL "
+        "(recommended), or RESEND_API_KEY, or GMAIL_USER + GMAIL_APP_PASSWORD."
     )
 
 
@@ -237,7 +287,7 @@ def send_article_to_subscribers(
 ) -> dict:
     if not email_configured():
         logger.warning(
-            "Newsletter skipped — set RESEND_API_KEY or GMAIL_USER + GMAIL_APP_PASSWORD"
+            "Newsletter skipped — set BREVO_API_KEY + BREVO_FROM_EMAIL (or Resend / Gmail SMTP)"
         )
         return {"sent": 0, "failed": 0, "skipped": True, "error": "Email not configured"}
 
@@ -255,7 +305,12 @@ def send_article_to_subscribers(
     )
     text = f"{headline}\n\n{summary}\n\nRead: {article_url}\n"
 
-    transport = "resend" if resend_configured() else "smtp"
+    if brevo_configured():
+        transport = "brevo"
+    elif resend_configured():
+        transport = "resend"
+    else:
+        transport = "smtp"
     logger.info("Newsletter via %s to %d subscriber(s)", transport, len(emails))
 
     sent = 0

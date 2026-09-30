@@ -109,7 +109,7 @@ def approve_article(
         logger.info("Newsletter job started for article %s", article.id)
     else:
         logger.info(
-            "Approve ok; newsletter not sent (set RESEND_API_KEY or GMAIL_USER + GMAIL_APP_PASSWORD)"
+            "Approve ok; newsletter not sent (set BREVO_API_KEY + BREVO_FROM_EMAIL)"
         )
 
     return article

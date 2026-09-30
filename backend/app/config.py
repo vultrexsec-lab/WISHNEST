@@ -71,6 +71,10 @@ class Settings(BaseSettings):
         "RESEND_FROM",
         "WishNest <onboarding@resend.dev>",
     )
+    # Brevo (Sendinblue) — free tier, HTTPS; verify sender email in Brevo dashboard
+    brevo_api_key: str = os.environ.get("BREVO_API_KEY", "")
+    brevo_from_email: str = os.environ.get("BREVO_FROM_EMAIL", "")
+    brevo_from_name: str = os.environ.get("BREVO_FROM_NAME", "WishNest")
 
 
 
