@@ -47,6 +47,7 @@ def _sync_schema() -> None:
         ("abcde_overall",       "TEXT"),
         ("is_trash",            "BOOLEAN NOT NULL DEFAULT false"),
         ("place_id",            "TEXT"),
+        ("newsletter_sent_at",  "TIMESTAMPTZ"),
     ]
     log = logging.getLogger("wishnest.schema")
     try:

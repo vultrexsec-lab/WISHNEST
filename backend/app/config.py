@@ -51,6 +51,19 @@ class Settings(BaseSettings):
     # never tries to JSON-parse it). main.py splits on comma.
     cors_origins_raw: str = os.environ.get("CORS_ORIGINS", "")
 
+    # --- Newsletter via Gmail SMTP (App Password) ---
+    # GMAIL_USER = full Gmail address
+    # GMAIL_APP_PASSWORD = 16-char app password from Google Account → Security → App passwords
+    smtp_host: str = os.environ.get("SMTP_HOST", "smtp.gmail.com")
+    smtp_port: int = int(os.environ.get("SMTP_PORT", "587"))
+    gmail_user: str = os.environ.get("GMAIL_USER", "") or os.environ.get("SMTP_USER", "")
+    gmail_app_password: str = (
+        os.environ.get("GMAIL_APP_PASSWORD", "")
+        or os.environ.get("SMTP_PASSWORD", "")
+    )
+    smtp_from_name: str = os.environ.get("SMTP_FROM_NAME", "WishNest")
+
+
 
 @lru_cache
 def get_settings() -> Settings:
