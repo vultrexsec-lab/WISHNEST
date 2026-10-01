@@ -47,6 +47,7 @@ import {
   ExternalLink,
   Sparkles,
   Share2,
+  Inbox,
   FileText,
   BadgeCheck,
   Users,
@@ -2465,6 +2466,15 @@ export const ReviewDashboard = (): JSX.Element => {
                 >
                   <Share2 className="h-3.5 w-3.5" />
                   SOCIAL™
+                </a>
+              </Link>
+              <Link href="/submissions">
+                <a
+                  className="inline-flex items-center gap-2 rounded-full border border-amber-500/40 bg-amber-500/15 px-4 py-2 [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1px] text-amber-300 shadow-[0_0_20px_rgba(245,158,11,0.12)] transition hover:border-amber-400/60 hover:bg-amber-500/25 hover:text-amber-200"
+                  data-testid="btn-open-submissions"
+                >
+                  <Inbox className="h-3.5 w-3.5" />
+                  SUBMISSIONS
                 </a>
               </Link>
               <button
