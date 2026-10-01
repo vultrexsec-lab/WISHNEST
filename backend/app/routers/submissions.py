@@ -3,6 +3,8 @@ Public hospitality project submission + admin access to records/files.
 """
 from __future__ import annotations
 
+import csv
+import io
 import logging
 import re
 import secrets
@@ -12,13 +14,14 @@ from pathlib import Path
 import shutil
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import require_admin
 from app.models.submission import HospitalitySubmission, SubmissionFile
+from app.services.email_service import email_configured, send_email
 
 router = APIRouter(tags=["submissions"])
 logger = logging.getLogger("wishnest.submissions")
@@ -362,3 +365,298 @@ def delete_submission(
 
     logger.info("Submission %s deleted by admin", ref)
     return MessageResponse(message=f"Deleted {ref}")
+
+
+OUTREACH_TEMPLATES = {
+    "acknowledge": {
+        "label": "Application received",
+        "subject": "WishNest received your project — {reference}",
+        "body": (
+            "Hello {contact_name},\n\n"
+            "Thank you for submitting {property_name} to WishNest.\n"
+            "Your reference number is {reference}.\n\n"
+            "Our editorial team will review the materials. "
+            "We may follow up if we need additional information.\n\n"
+            "— WishNest\n"
+            "https://wishnest.info/get-reviewed"
+        ),
+    },
+    "follow_up": {
+        "label": "Follow-up",
+        "subject": "Following up — {property_name} ({reference})",
+        "body": (
+            "Hello {contact_name},\n\n"
+            "We are following up on your WishNest submission for {property_name} "
+            "(reference {reference}).\n\n"
+            "If you have updated drawings, brochures, or timelines, you can reply to this email "
+            "or submit additional context via our site.\n\n"
+            "— WishNest\n"
+            "https://wishnest.info/get-reviewed"
+        ),
+    },
+    "interested": {
+        "label": "Interest / next step",
+        "subject": "WishNest — next steps for {property_name}",
+        "body": (
+            "Hello {contact_name},\n\n"
+            "We reviewed {property_name} and would like to continue the conversation.\n"
+            "Reference: {reference}.\n\n"
+            "Please reply with a convenient time for a short call, or any additional materials "
+            "that would help our hospitality / architecture review.\n\n"
+            "— WishNest"
+        ),
+    },
+    "review_underway": {
+        "label": "Review underway",
+        "subject": "Review underway — {property_name} ({reference})",
+        "body": (
+            "Hello {contact_name},\n\n"
+            "This is a quick note that our review of {property_name} is underway "
+            "(reference {reference}).\n\n"
+            "We will be in touch if we need anything further.\n\n"
+            "— WishNest"
+        ),
+    },
+}
+
+
+class OutreachRequest(BaseModel):
+    template: str = "acknowledge"
+    subject: str | None = None
+    body: str | None = None
+
+
+class OutreachResponse(BaseModel):
+    message: str
+    to: str
+
+
+@router.get("/api/submissions-export")
+def export_submissions_csv(
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    rows = (
+        db.query(HospitalitySubmission)
+        .order_by(HospitalitySubmission.created_at.desc())
+        .limit(2000)
+        .all()
+    )
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(
+        [
+            "reference",
+            "property_name",
+            "project_stage",
+            "property_type",
+            "company_name",
+            "contact_name",
+            "contact_role",
+            "email",
+            "phone",
+            "whatsapp",
+            "location",
+            "website",
+            "unit_count",
+            "status",
+            "source",
+            "created_at",
+            "admin_notes",
+        ]
+    )
+    for r in rows:
+        writer.writerow(
+            [
+                r.reference,
+                r.property_name,
+                r.project_stage,
+                r.property_type or "",
+                r.company_name or "",
+                r.contact_name,
+                r.contact_role or "",
+                r.email,
+                r.phone or "",
+                r.whatsapp or "",
+                r.location or "",
+                r.website or "",
+                r.unit_count or "",
+                r.status,
+                r.source or "",
+                r.created_at.isoformat() if r.created_at else "",
+                (r.admin_notes or "").replace("\n", " "),
+            ]
+        )
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=wishnest-submissions.csv"},
+    )
+
+
+@router.post("/api/submissions-import")
+async def import_submissions_csv(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """
+    Import CRM rows from CSV. Expected headers (flexible):
+    property_name, contact_name, email, and optional fields matching export.
+    Creates records as status=identified when missing.
+    """
+    raw = await file.read()
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw.decode("latin-1")
+
+    reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames:
+        raise HTTPException(400, "CSV has no header row")
+
+    def col(*names: str) -> str | None:
+        lower = { (h or "").strip().lower(): h for h in reader.fieldnames or [] }
+        for n in names:
+            if n.lower() in lower:
+                return lower[n.lower()]
+        return None
+
+    c_prop = col("property_name", "property", "project", "name")
+    c_contact = col("contact_name", "contact", "name")
+    c_email = col("email", "e-mail")
+    if not c_prop or not c_email:
+        raise HTTPException(400, "CSV must include property_name and email columns")
+
+    created = 0
+    skipped = 0
+    for row in reader:
+        prop = (row.get(c_prop) or "").strip()
+        email = (row.get(c_email) or "").strip().lower()
+        contact = (row.get(c_contact) or "").strip() if c_contact else ""
+        if not prop or not email or "@" not in email:
+            skipped += 1
+            continue
+        if not contact:
+            contact = email.split("@")[0]
+
+        # Skip obvious duplicates by email + property
+        exists = (
+            db.query(HospitalitySubmission)
+            .filter(
+                HospitalitySubmission.email == email,
+                HospitalitySubmission.property_name == prop[:255],
+            )
+            .first()
+        )
+        if exists:
+            skipped += 1
+            continue
+
+        stage = (row.get(col("project_stage", "stage") or "") or "existing").strip().lower()
+        if stage not in ("existing", "upcoming", "under_development"):
+            stage = "existing"
+        status = (row.get(col("status") or "") or "identified").strip().lower().replace(" ", "_")
+        if status not in PIPELINE_STATUSES:
+            status = "identified"
+
+        ref = _ref_number()
+        for _ in range(5):
+            if not db.query(HospitalitySubmission).filter(HospitalitySubmission.reference == ref).first():
+                break
+            ref = _ref_number()
+
+        db.add(
+            HospitalitySubmission(
+                reference=ref,
+                property_name=prop[:255],
+                project_stage=stage,
+                property_type=(row.get(col("property_type", "type") or "") or "").strip()[:128] or None,
+                company_name=(row.get(col("company_name", "company") or "") or "").strip()[:255] or None,
+                contact_name=contact[:255],
+                contact_role=(row.get(col("contact_role", "role") or "") or "").strip()[:128] or None,
+                email=email[:255],
+                phone=(row.get(col("phone") or "") or "").strip()[:64] or None,
+                whatsapp=(row.get(col("whatsapp") or "") or "").strip()[:64] or None,
+                location=(row.get(col("location") or "") or "").strip()[:255] or None,
+                website=(row.get(col("website") or "") or "").strip()[:512] or None,
+                unit_count=(row.get(col("unit_count", "units") or "") or "").strip()[:64] or None,
+                status=status,
+                source="csv_import",
+                consent_contact=True,
+                consent_materials=True,
+            )
+        )
+        created += 1
+
+    db.commit()
+    return {"message": f"Imported {created} row(s), skipped {skipped}", "created": created, "skipped": skipped}
+
+
+@router.post("/api/submissions/{submission_id}/outreach", response_model=OutreachResponse)
+def send_outreach(
+    submission_id: uuid.UUID,
+    payload: OutreachRequest,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    if not email_configured():
+        raise HTTPException(
+            503,
+            "Email not configured. Set BREVO_API_KEY + BREVO_FROM_EMAIL on Render.",
+        )
+
+    row = db.query(HospitalitySubmission).filter(HospitalitySubmission.id == submission_id).first()
+    if not row:
+        raise HTTPException(404, "Submission not found")
+
+    tpl_key = (payload.template or "acknowledge").strip().lower()
+    tpl = OUTREACH_TEMPLATES.get(tpl_key)
+    if not tpl and not (payload.subject and payload.body):
+        raise HTTPException(400, f"Unknown template. Use: {', '.join(OUTREACH_TEMPLATES)}")
+
+    ctx = {
+        "reference": row.reference,
+        "property_name": row.property_name,
+        "contact_name": row.contact_name,
+        "location": row.location or "",
+    }
+    subject = (payload.subject or (tpl["subject"] if tpl else "WishNest")).format(**ctx)
+    body = (payload.body or (tpl["body"] if tpl else "")).format(**ctx)
+    html = (
+        "<pre style='font-family:Georgia,serif;font-size:15px;line-height:1.55;"
+        "white-space:pre-wrap;color:#1e1e1e'>"
+        + body.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        + "</pre>"
+    )
+
+    try:
+        send_email(
+            to_email=row.email,
+            subject=subject,
+            html_body=html,
+            text_body=body,
+        )
+    except Exception as exc:
+        logger.exception("Outreach failed for %s", row.reference)
+        raise HTTPException(502, f"Email send failed: {exc}") from exc
+
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    note = f"[{stamp}] Outreach ({tpl_key}) → {row.email}: {subject}"
+    row.admin_notes = (row.admin_notes + "\n" + note) if row.admin_notes else note
+    # Light-touch status nudge
+    if row.status in ("application_received", "identified") and tpl_key == "acknowledge":
+        pass
+    elif tpl_key == "follow_up" and row.status in ("application_received", "identified", "contacted"):
+        row.status = "follow_up"
+    elif tpl_key == "interested":
+        row.status = "interested"
+    elif tpl_key == "review_underway":
+        row.status = "review_underway"
+    elif row.status in ("application_received", "identified"):
+        row.status = "contacted"
+
+    db.commit()
+    logger.info("Outreach %s sent to %s for %s", tpl_key, row.email, row.reference)
+    return OutreachResponse(message="Email sent", to=row.email)

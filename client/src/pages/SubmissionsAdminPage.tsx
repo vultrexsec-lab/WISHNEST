@@ -15,6 +15,8 @@ import {
   MapPin,
   Phone,
   Trash2,
+  FileUp,
+  Send,
 } from "lucide-react";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
@@ -107,6 +109,9 @@ export function SubmissionsAdminPage(): JSX.Element {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [notesDraft, setNotesDraft] = useState<string | null>(null);
+  const [outreachTemplate, setOutreachTemplate] = useState("acknowledge");
+  const [sendingMail, setSendingMail] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const { data: submissions, isLoading, error } = useQuery<Submission[]>({
     queryKey: ["/api/submissions"],
@@ -203,6 +208,81 @@ export function SubmissionsAdminPage(): JSX.Element {
     }
   };
 
+  const sendOutreach = async () => {
+    if (!selected) return;
+    setSendingMail(true);
+    try {
+      const res = await apiRequest("POST", `/api/submissions/${selected.id}/outreach`, {
+        template: outreachTemplate,
+      });
+      const data = await res.json();
+      await queryClient.invalidateQueries({ queryKey: ["/api/submissions"] });
+      toast({ title: "Email sent", description: data.to || selected.email });
+    } catch (e) {
+      toast({
+        title: "Send failed",
+        description: e instanceof Error ? e.message : "Check Brevo config",
+        variant: "destructive",
+      });
+    } finally {
+      setSendingMail(false);
+    }
+  };
+
+  const exportCsv = async () => {
+    try {
+      const token = getStoredToken();
+      const res = await fetch(apiUrl("/api/submissions-export"), {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "wishnest-submissions.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+      toast({ title: "CSV exported" });
+    } catch (e) {
+      toast({
+        title: "Export failed",
+        description: e instanceof Error ? e.message : "Try again",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const onImportFile = async (file: File | null) => {
+    if (!file) return;
+    setImporting(true);
+    try {
+      const token = getStoredToken();
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(apiUrl("/api/submissions-import"), {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: fd,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || data.message || "Import failed");
+      await queryClient.invalidateQueries({ queryKey: ["/api/submissions"] });
+      toast({
+        title: "Import done",
+        description: data.message || `Created ${data.created}`,
+      });
+    } catch (e) {
+      toast({
+        title: "Import failed",
+        description: e instanceof Error ? e.message : "Check CSV headers",
+        variant: "destructive",
+      });
+    } finally {
+      setImporting(false);
+    }
+  };
+
   return (
     <main className="min-h-screen bg-[#0c1210] text-white">
       <header className="border-b border-white/10">
@@ -226,9 +306,29 @@ export function SubmissionsAdminPage(): JSX.Element {
               </h1>
             </div>
           </div>
-          <span className="[font-family:'Inter',Helvetica] text-[12px] text-white/40">
-            {list.length} application{list.length === 1 ? "" : "s"}
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => void exportCsv()}
+              className="h-8 border border-white/15 bg-white/5 text-[11px] text-white/70 hover:bg-white/10"
+            >
+              Export CSV
+            </Button>
+            <label className="inline-flex h-8 cursor-pointer items-center gap-1.5 border border-white/15 bg-white/5 px-3 text-[11px] text-white/70 hover:bg-white/10">
+              {importing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileUp className="h-3.5 w-3.5" />}
+              Import CSV
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={(e) => void onImportFile(e.target.files?.[0] || null)}
+              />
+            </label>
+            <span className="[font-family:'Inter',Helvetica] text-[12px] text-white/40">
+              {list.length} application{list.length === 1 ? "" : "s"}
+            </span>
+          </div>
         </div>
       </header>
 
@@ -355,7 +455,6 @@ export function SubmissionsAdminPage(): JSX.Element {
                           {p.label}
                         </option>
                       ))}
-                      {/* Keep unknown statuses visible */}
                       {!PIPELINE.some((p) => p.value === selected.status) && (
                         <option value={selected.status}>
                           {stageLabel(selected.status)}
@@ -365,6 +464,41 @@ export function SubmissionsAdminPage(): JSX.Element {
                     {saving && (
                       <Loader2 className="h-4 w-4 animate-spin text-white/40" />
                     )}
+                  </div>
+                </div>
+
+                {/* Email outreach */}
+                <div className="mt-4 rounded-xl border border-sky-500/20 bg-sky-500/5 p-4">
+                  <p className="text-[10px] tracking-[1.2px] text-sky-300/70">
+                    EMAIL OUTREACH
+                  </p>
+                  <p className="mt-1 text-[12px] text-white/40">
+                    Sends via Brevo to {selected.email}
+                  </p>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <select
+                      value={outreachTemplate}
+                      onChange={(e) => setOutreachTemplate(e.target.value)}
+                      className="h-10 min-w-[200px] rounded-md border border-white/15 bg-[#121816] px-3 text-[13px] text-white"
+                    >
+                      <option value="acknowledge">Application received</option>
+                      <option value="follow_up">Follow-up</option>
+                      <option value="interested">Interest / next step</option>
+                      <option value="review_underway">Review underway</option>
+                    </select>
+                    <Button
+                      type="button"
+                      disabled={sendingMail}
+                      onClick={() => void sendOutreach()}
+                      className="h-10 gap-1.5 bg-sky-600 px-4 text-[11px] tracking-[1px] text-white hover:bg-sky-500"
+                    >
+                      {sendingMail ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Send className="h-3.5 w-3.5" />
+                      )}
+                      Send email
+                    </Button>
                   </div>
                 </div>
 
