@@ -2,7 +2,8 @@ import { Link } from "wouter";
 import { SiteNav } from "@/components/SiteNav";
 import { SiteFooter } from "@/components/SiteFooter";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Building2, CheckCircle2 } from "lucide-react";
+import { ArrowRight, Building2, CheckCircle2, MessageCircle } from "lucide-react";
+import { publicWhatsAppCta } from "@/lib/whatsapp";
 
 const PROPERTY_TYPES = [
   "Resorts",
@@ -25,6 +26,7 @@ const WHAT_YOU_GET = [
 ];
 
 export function GetReviewedPage(): JSX.Element {
+  const wa = publicWhatsAppCta();
   return (
     <main className="min-h-screen bg-[#f8f7f4] text-[#1e1e1e]">
       <SiteNav />
@@ -57,6 +59,17 @@ export function GetReviewedPage(): JSX.Element {
                 SEE REIMAGINED™
               </Button>
             </Link>
+            {wa && (
+              <a href={wa} target="_blank" rel="noopener noreferrer">
+                <Button
+                  variant="outline"
+                  className="h-auto rounded-none border-emerald-400/40 bg-emerald-500/10 px-6 py-3.5 [font-family:'Inter',Helvetica] text-[11px] font-medium tracking-[1.4px] text-emerald-200 hover:bg-emerald-500/20"
+                >
+                  <MessageCircle className="mr-2 h-3.5 w-3.5" />
+                  WHATSAPP US
+                </Button>
+              </a>
+            )}
           </div>
         </div>
       </section>

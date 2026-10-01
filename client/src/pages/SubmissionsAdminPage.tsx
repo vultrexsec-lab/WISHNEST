@@ -17,6 +17,7 @@ import {
   Trash2,
   FileUp,
   Send,
+  MessageCircle,
 } from "lucide-react";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
@@ -115,6 +116,8 @@ export function SubmissionsAdminPage(): JSX.Element {
   const [outreachTemplate, setOutreachTemplate] = useState("acknowledge");
   const [sendingMail, setSendingMail] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [waTemplate, setWaTemplate] = useState("intro");
+  const [sendingWa, setSendingWa] = useState(false);
 
   const { data: submissions, isLoading, error } = useQuery<Submission[]>({
     queryKey: ["/api/submissions"],
@@ -229,6 +232,30 @@ export function SubmissionsAdminPage(): JSX.Element {
       });
     } finally {
       setSendingMail(false);
+    }
+  };
+
+  const openWhatsApp = async () => {
+    if (!selected) return;
+    setSendingWa(true);
+    try {
+      const res = await apiRequest(
+        "POST",
+        `/api/submissions/${selected.id}/whatsapp-outreach`,
+        { template: waTemplate },
+      );
+      const data = await res.json();
+      await queryClient.invalidateQueries({ queryKey: ["/api/submissions"] });
+      window.open(data.wa_url, "_blank", "noopener,noreferrer");
+      toast({ title: "WhatsApp opened", description: data.phone });
+    } catch (e) {
+      toast({
+        title: "WhatsApp failed",
+        description: e instanceof Error ? e.message : "Add phone/WhatsApp on submission",
+        variant: "destructive",
+      });
+    } finally {
+      setSendingWa(false);
     }
   };
 
@@ -503,6 +530,45 @@ export function SubmissionsAdminPage(): JSX.Element {
                       Send email
                     </Button>
                   </div>
+                </div>
+
+                <div className="mt-4 rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-4">
+                  <p className="text-[10px] tracking-[1.2px] text-emerald-300/80">
+                    WHATSAPP OUTREACH
+                  </p>
+                  <p className="mt-1 text-[12px] text-white/40">
+                    Opens WhatsApp with a pre-filled message (wa.me). Official Cloud API bulk-send needs Meta approval later.
+                  </p>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <select
+                      value={waTemplate}
+                      onChange={(e) => setWaTemplate(e.target.value)}
+                      className="h-10 min-w-[200px] rounded-md border border-white/15 bg-[#121816] px-3 text-[13px] text-white"
+                    >
+                      <option value="intro">Intro / received</option>
+                      <option value="follow_up">Follow-up</option>
+                      <option value="review_link">Get Reviewed link</option>
+                      <option value="reimagined">Reimagined portfolio</option>
+                    </select>
+                    <Button
+                      type="button"
+                      disabled={sendingWa || !(selected.whatsapp || selected.phone)}
+                      onClick={() => void openWhatsApp()}
+                      className="h-10 gap-1.5 bg-emerald-700 px-4 text-[11px] tracking-[1px] text-white hover:bg-emerald-600"
+                    >
+                      {sendingWa ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <MessageCircle className="h-3.5 w-3.5" />
+                      )}
+                      Open WhatsApp
+                    </Button>
+                  </div>
+                  {!(selected.whatsapp || selected.phone) && (
+                    <p className="mt-2 text-[11px] text-amber-200/70">
+                      No phone/WhatsApp on this record — add one via import or ask applicant to resubmit.
+                    </p>
+                  )}
                 </div>
 
                 <div className="mt-6 grid gap-4 sm:grid-cols-2">

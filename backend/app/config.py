@@ -75,6 +75,8 @@ class Settings(BaseSettings):
     brevo_api_key: str = os.environ.get("BREVO_API_KEY", "")
     brevo_from_email: str = os.environ.get("BREVO_FROM_EMAIL", "")
     brevo_from_name: str = os.environ.get("BREVO_FROM_NAME", "WishNest")
+    # Public WhatsApp Business number (E.164 digits, e.g. 9198XXXXXXXX)
+    whatsapp_business_number: str = os.environ.get("WHATSAPP_BUSINESS_NUMBER", "")
 
 
 

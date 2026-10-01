@@ -678,3 +678,87 @@ def send_outreach(
     db.commit()
     logger.info("Outreach %s sent to %s for %s", tpl_key, row.email, row.reference)
     return OutreachResponse(message="Email sent", to=row.email)
+
+
+def _digits_phone(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    d = "".join(ch for ch in raw if ch.isdigit())
+    return d if len(d) >= 8 else None
+
+
+WA_TEMPLATES = {
+    "intro": (
+        "Hello {contact_name}, this is WishNest regarding your hospitality project "
+        "*{property_name}* (ref {reference}). We received your submission and may follow up here. "
+        "Reply STOP to opt out."
+    ),
+    "follow_up": (
+        "Hi {contact_name}, following up on *{property_name}* (ref {reference}) with WishNest. "
+        "Do you have a few minutes this week for a quick update? Reply STOP to opt out."
+    ),
+    "review_link": (
+        "Hi {contact_name}, you can submit or update hospitality project materials here: "
+        "https://wishnest.info/get-reviewed/submit — WishNest (ref {reference}). Reply STOP to opt out."
+    ),
+    "reimagined": (
+        "Hi {contact_name}, explore WishNest Reimagined™ concepts: https://wishnest.info/reimagined "
+        "— related to *{property_name}* (ref {reference}). Reply STOP to opt out."
+    ),
+}
+
+
+class WhatsAppOutreachRequest(BaseModel):
+    template: str = "intro"
+    custom_message: str | None = None
+
+
+class WhatsAppOutreachResponse(BaseModel):
+    wa_url: str
+    phone: str
+    message: str
+
+
+@router.post(
+    "/api/submissions/{submission_id}/whatsapp-outreach",
+    response_model=WhatsAppOutreachResponse,
+)
+def whatsapp_outreach(
+    submission_id: uuid.UUID,
+    payload: WhatsAppOutreachRequest,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """
+    Build a wa.me deep link with a templated message and log outreach.
+    Official WhatsApp Cloud API bulk-send is not used here (Meta approval required).
+    """
+    row = db.query(HospitalitySubmission).filter(HospitalitySubmission.id == submission_id).first()
+    if not row:
+        raise HTTPException(404, "Submission not found")
+
+    phone = _digits_phone(row.whatsapp) or _digits_phone(row.phone)
+    if not phone:
+        raise HTTPException(400, "No WhatsApp/phone number on this submission")
+
+    tpl = WA_TEMPLATES.get((payload.template or "intro").strip().lower())
+    ctx = {
+        "contact_name": row.contact_name,
+        "property_name": row.property_name,
+        "reference": row.reference,
+    }
+    text = (payload.custom_message or (tpl or WA_TEMPLATES["intro"])).format(**ctx)
+
+    from urllib.parse import quote
+    wa_url = f"https://wa.me/{phone}?text={quote(text)}"
+
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    note = f"[{stamp}] WhatsApp ({payload.template}) → {phone}"
+    row.admin_notes = (row.admin_notes + "\n" + note) if row.admin_notes else note
+    if row.status in ("application_received", "identified"):
+        row.status = "contacted"
+    elif payload.template == "follow_up" and row.status in ("contacted", "application_received"):
+        row.status = "follow_up"
+    db.commit()
+
+    return WhatsAppOutreachResponse(wa_url=wa_url, phone=phone, message=text)
