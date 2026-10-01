@@ -12,6 +12,7 @@ const navLinks = [
   { label: "INTELLIGENCE", href: "/intelligence" },
   { label: "CONTRIBUTORS", href: "/contributors" },
   { label: "REIMAGINED™", href: "/reimagined" },
+  { label: "GET REVIEWED", href: "/get-reviewed" },
 ];
 
 export const SiteNav = () => {

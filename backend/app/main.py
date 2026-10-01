@@ -11,10 +11,11 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
-from app.routers import approve, articles, auth, image_proxy, newsletter, research, vision, reimaging
+from app.routers import approve, articles, auth, image_proxy, newsletter, research, vision, reimaging, submissions
 from app.routers import scheduler as scheduler_router
 from app.models import automation  # noqa: F401 ensures settings table metadata is loaded
 from app.models import media_blob  # noqa: F401 ensures media_blobs table metadata is loaded
+from app.models import submission  # noqa: F401 ensures hospitality_submissions tables are loaded
 
 logging.basicConfig(
     level=logging.INFO,
@@ -99,8 +100,60 @@ def _sync_schema() -> None:
                 )
                 """
             ))
+            conn.execute(text(
+                """
+                CREATE TABLE IF NOT EXISTS hospitality_submissions (
+                    id UUID PRIMARY KEY,
+                    reference VARCHAR(32) NOT NULL UNIQUE,
+                    property_name VARCHAR(255) NOT NULL,
+                    project_stage VARCHAR(64) NOT NULL,
+                    property_type VARCHAR(128),
+                    company_name VARCHAR(255),
+                    contact_name VARCHAR(255) NOT NULL,
+                    contact_role VARCHAR(128),
+                    email VARCHAR(255) NOT NULL,
+                    phone VARCHAR(64),
+                    whatsapp VARCHAR(64),
+                    location VARCHAR(255),
+                    website VARCHAR(512),
+                    social_links TEXT,
+                    unit_count VARCHAR(64),
+                    project_details TEXT,
+                    review_focus TEXT,
+                    consent_contact BOOLEAN NOT NULL DEFAULT false,
+                    consent_materials BOOLEAN NOT NULL DEFAULT false,
+                    status VARCHAR(64) NOT NULL DEFAULT 'application_received',
+                    source VARCHAR(64),
+                    admin_notes TEXT,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            ))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_hospitality_submissions_email ON hospitality_submissions (email)"
+            ))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_hospitality_submissions_status ON hospitality_submissions (status)"
+            ))
+            conn.execute(text(
+                """
+                CREATE TABLE IF NOT EXISTS submission_files (
+                    id UUID PRIMARY KEY,
+                    submission_id UUID NOT NULL REFERENCES hospitality_submissions(id) ON DELETE CASCADE,
+                    original_name VARCHAR(512) NOT NULL,
+                    stored_name VARCHAR(512) NOT NULL,
+                    content_type VARCHAR(128),
+                    size_bytes INTEGER,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            ))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_submission_files_submission_id ON submission_files (submission_id)"
+            ))
             conn.commit()
-        log.info("Schema sync: columns, place_id index, media_blobs present.")
+        log.info("Schema sync: media_blobs + hospitality_submissions present.")
     except Exception as exc:
         # Log but don't crash — the articles table may not exist yet on a
         # completely fresh DB; create_tables.py in start.sh handles that case.
@@ -158,6 +211,7 @@ app.include_router(articles.router)
 app.include_router(image_proxy.router)
 app.include_router(approve.router)
 app.include_router(newsletter.router)
+app.include_router(submissions.router)
 app.include_router(scheduler_router.router)
 app.include_router(vision.router)
 app.include_router(reimaging.router)

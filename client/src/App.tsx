@@ -20,6 +20,8 @@ import { ReimaginedPage } from "@/pages/ReimaginedPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { ReimagingPage } from "@/pages/ReimagingPage";
 import { SocialPage } from "@/pages/SocialPage";
+import { GetReviewedPage } from "@/pages/GetReviewedPage";
+import { SubmitProjectPage } from "@/pages/SubmitProjectPage";
 
 /** Redirects to /login when not authenticated. */
 function ProtectedDashboard() {
@@ -61,6 +63,8 @@ function Router() {
         <Route path="/dashboard" component={ProtectedDashboard} />
         <Route path="/reimaging" component={ReimagingPage} />
         <Route path="/social" component={SocialPage} />
+        <Route path="/get-reviewed" component={GetReviewedPage} />
+        <Route path="/get-reviewed/submit" component={SubmitProjectPage} />
         <Route component={NotFound} />
       </Switch>
     </>
