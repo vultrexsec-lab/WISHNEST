@@ -66,6 +66,9 @@ interface Submission {
   review_focus: string | null;
   status: string;
   source: string | null;
+  utm_source?: string | null;
+  utm_medium?: string | null;
+  utm_campaign?: string | null;
   admin_notes: string | null;
   created_at: string | null;
   files: SubFile[];
@@ -530,6 +533,10 @@ export function SubmissionsAdminPage(): JSX.Element {
                     href={selected.website || undefined}
                   />
                   <Info label="Social" value={selected.social_links} />
+                  <Info label="Source" value={selected.source} />
+                  <Info label="UTM source" value={selected.utm_source} />
+                  <Info label="UTM medium" value={selected.utm_medium} />
+                  <Info label="UTM campaign" value={selected.utm_campaign} />
                 </div>
 
                 {selected.project_details && (

@@ -73,6 +73,9 @@ class SubmissionOut(BaseModel):
     review_focus: str | None
     status: str
     source: str | None
+    utm_source: str | None = None
+    utm_medium: str | None = None
+    utm_campaign: str | None = None
     admin_notes: str | None = None
     created_at: str | None
     files: list[FileOut] = []
@@ -105,6 +108,9 @@ def _to_out(row: HospitalitySubmission) -> SubmissionOut:
         review_focus=row.review_focus,
         status=row.status,
         source=row.source,
+        utm_source=getattr(row, 'utm_source', None),
+        utm_medium=getattr(row, 'utm_medium', None),
+        utm_campaign=getattr(row, 'utm_campaign', None),
         admin_notes=row.admin_notes,
         created_at=row.created_at.isoformat() if row.created_at else None,
         files=[
@@ -140,6 +146,9 @@ async def create_submission(
     consent_contact: str = Form("false"),
     consent_materials: str = Form("false"),
     source: str | None = Form("website"),
+    utm_source: str | None = Form(None),
+    utm_medium: str | None = Form(None),
+    utm_campaign: str | None = Form(None),
     files: list[UploadFile] = File(default=[]),
     db: Session = Depends(get_db),
 ):
@@ -195,6 +204,9 @@ async def create_submission(
         consent_materials=consent_m,
         status="application_received",
         source=(source or "website")[:64],
+        utm_source=(utm_source or "").strip()[:128] or None,
+        utm_medium=(utm_medium or "").strip()[:128] or None,
+        utm_campaign=(utm_campaign or "").strip()[:128] or None,
     )
     db.add(row)
     db.flush()
@@ -461,6 +473,9 @@ def export_submissions_csv(
             "unit_count",
             "status",
             "source",
+            "utm_source",
+            "utm_medium",
+            "utm_campaign",
             "created_at",
             "admin_notes",
         ]
@@ -483,6 +498,9 @@ def export_submissions_csv(
                 r.unit_count or "",
                 r.status,
                 r.source or "",
+                getattr(r, "utm_source", None) or "",
+                getattr(r, "utm_medium", None) or "",
+                getattr(r, "utm_campaign", None) or "",
                 r.created_at.isoformat() if r.created_at else "",
                 (r.admin_notes or "").replace("\n", " "),
             ]

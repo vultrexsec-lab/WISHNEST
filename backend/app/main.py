@@ -153,6 +153,17 @@ def _sync_schema() -> None:
                 "CREATE INDEX IF NOT EXISTS ix_submission_files_submission_id ON submission_files (submission_id)"
             ))
             conn.commit()
+
+            for col, typ in (
+                ("utm_source", "VARCHAR(128)"),
+                ("utm_medium", "VARCHAR(128)"),
+                ("utm_campaign", "VARCHAR(128)"),
+            ):
+                conn.execute(text(
+                    f"ALTER TABLE hospitality_submissions ADD COLUMN IF NOT EXISTS {col} {typ}"
+                ))
+            conn.commit()
+
         log.info("Schema sync: media_blobs + hospitality_submissions present.")
     except Exception as exc:
         # Log but don't crash — the articles table may not exist yet on a

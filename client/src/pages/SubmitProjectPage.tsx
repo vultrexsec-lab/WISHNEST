@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Link } from "wouter";
 import { SiteNav } from "@/components/SiteNav";
 import { SiteFooter } from "@/components/SiteFooter";
@@ -7,6 +7,11 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { CheckCircle2, Loader2, Upload } from "lucide-react";
+import {
+  getStoredUtm,
+  resolveApplicationSource,
+  trackEvent,
+} from "@/lib/tracking";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
@@ -38,6 +43,10 @@ export function SubmitProjectPage(): JSX.Element {
   const [done, setDone] = useState<{ reference: string } | null>(null);
   const [files, setFiles] = useState<FileList | null>(null);
 
+  useEffect(() => {
+    setForm((prev) => ({ ...prev, source: resolveApplicationSource() }));
+  }, []);
+
   const [form, setForm] = useState({
     property_name: "",
     project_stage: "existing",
@@ -56,6 +65,7 @@ export function SubmitProjectPage(): JSX.Element {
     review_focus: "",
     consent_contact: false,
     consent_materials: false,
+    source: "website",
   });
 
   const set = (key: string, value: string | boolean) =>
@@ -78,7 +88,11 @@ export function SubmitProjectPage(): JSX.Element {
         if (typeof v === "boolean") fd.append(k, v ? "true" : "false");
         else if (v) fd.append(k, v);
       });
-      fd.append("source", "website");
+      fd.append("source", form.source || resolveApplicationSource());
+      const utm = getStoredUtm();
+      if (utm.utm_source) fd.append("utm_source", utm.utm_source);
+      if (utm.utm_medium) fd.append("utm_medium", utm.utm_medium);
+      if (utm.utm_campaign) fd.append("utm_campaign", utm.utm_campaign);
       if (files) {
         Array.from(files).forEach((f) => fd.append("files", f));
       }
@@ -91,6 +105,11 @@ export function SubmitProjectPage(): JSX.Element {
         throw new Error(data.detail || data.message || "Submission failed");
       }
       setDone({ reference: data.reference });
+      trackEvent("generate_lead", {
+        reference: data.reference,
+        source: form.source,
+      });
+      trackEvent("submit_application", { reference: data.reference });
       toast({ title: "Submitted", description: `Reference ${data.reference}` });
     } catch (err) {
       toast({
@@ -304,6 +323,25 @@ export function SubmitProjectPage(): JSX.Element {
                   onChange={(e) => setFiles(e.target.files)}
                 />
               </label>
+            </Field>
+
+            <Field label="How did you hear about WishNest?">
+              <select
+                value={form.source}
+                onChange={(e) => set("source", e.target.value)}
+                className="flex h-10 w-full border border-[#1e1e1e1a] bg-white px-3 text-sm"
+              >
+                <option value="website">Website / Organic</option>
+                <option value="email">Email</option>
+                <option value="whatsapp">WhatsApp</option>
+                <option value="instagram">Instagram</option>
+                <option value="facebook">Facebook</option>
+                <option value="linkedin">LinkedIn</option>
+                <option value="google">Google</option>
+                <option value="referral">Referral</option>
+                <option value="paid">Paid ads</option>
+                <option value="other">Other</option>
+              </select>
             </Field>
 
             <div className="space-y-3 border-t border-[#1e1e1e0f] pt-4">

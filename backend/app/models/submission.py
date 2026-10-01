@@ -40,6 +40,9 @@ class HospitalitySubmission(Base):
 
     status = Column(String(64), nullable=False, default="application_received", index=True)
     source = Column(String(64), nullable=True, default="website")
+    utm_source = Column(String(128), nullable=True)
+    utm_medium = Column(String(128), nullable=True)
+    utm_campaign = Column(String(128), nullable=True)
     admin_notes = Column(Text, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
