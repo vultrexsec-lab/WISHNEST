@@ -9,6 +9,7 @@ import secrets
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+import shutil
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -69,6 +70,7 @@ class SubmissionOut(BaseModel):
     review_focus: str | None
     status: str
     source: str | None
+    admin_notes: str | None = None
     created_at: str | None
     files: list[FileOut] = []
 
@@ -100,6 +102,7 @@ def _to_out(row: HospitalitySubmission) -> SubmissionOut:
         review_focus=row.review_focus,
         status=row.status,
         source=row.source,
+        admin_notes=row.admin_notes,
         created_at=row.created_at.isoformat() if row.created_at else None,
         files=[
             FileOut(
@@ -282,3 +285,80 @@ def download_file(
         filename=f.original_name,
         media_type=f.content_type or "application/octet-stream",
     )
+
+
+PIPELINE_STATUSES = [
+    "identified",
+    "contacted",
+    "follow_up",
+    "responded",
+    "interested",
+    "application_received",
+    "documents_received",
+    "review_underway",
+    "reimagined",
+    "published",
+]
+
+
+class UpdateSubmissionRequest(BaseModel):
+    status: str | None = None
+    admin_notes: str | None = None
+
+
+class MessageResponse(BaseModel):
+    message: str
+
+
+@router.patch("/api/submissions/{submission_id}", response_model=SubmissionOut)
+def update_submission(
+    submission_id: uuid.UUID,
+    payload: UpdateSubmissionRequest,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    row = db.query(HospitalitySubmission).filter(HospitalitySubmission.id == submission_id).first()
+    if not row:
+        raise HTTPException(404, "Submission not found")
+
+    if payload.status is not None:
+        status = payload.status.strip().lower().replace(" ", "_").replace("-", "_")
+        if status not in PIPELINE_STATUSES:
+            raise HTTPException(
+                400,
+                f"Invalid status. Allowed: {', '.join(PIPELINE_STATUSES)}",
+            )
+        row.status = status
+
+    if payload.admin_notes is not None:
+        row.admin_notes = payload.admin_notes
+
+    db.commit()
+    db.refresh(row)
+    logger.info("Submission %s updated by admin (status=%s)", row.reference, row.status)
+    return _to_out(row)
+
+
+@router.delete("/api/submissions/{submission_id}", response_model=MessageResponse)
+def delete_submission(
+    submission_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    row = db.query(HospitalitySubmission).filter(HospitalitySubmission.id == submission_id).first()
+    if not row:
+        raise HTTPException(404, "Submission not found")
+
+    ref = row.reference
+    folder = _UPLOAD_ROOT / str(row.id)
+    db.delete(row)
+    db.commit()
+
+    if folder.is_dir():
+        try:
+            shutil.rmtree(folder)
+        except OSError as exc:
+            logger.warning("Could not remove upload folder %s: %s", folder, exc)
+
+    logger.info("Submission %s deleted by admin", ref)
+    return MessageResponse(message=f"Deleted {ref}")

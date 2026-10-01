@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Link, Redirect } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth, getStoredToken } from "@/contexts/AuthContext";
+import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,6 +14,7 @@ import {
   Mail,
   MapPin,
   Phone,
+  Trash2,
 } from "lucide-react";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
@@ -20,6 +22,19 @@ const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 function apiUrl(path: string): string {
   return API_BASE ? `${API_BASE}${path}` : path;
 }
+
+const PIPELINE = [
+  { value: "identified", label: "Identified" },
+  { value: "contacted", label: "Contacted" },
+  { value: "follow_up", label: "Follow-up" },
+  { value: "responded", label: "Responded" },
+  { value: "interested", label: "Interested" },
+  { value: "application_received", label: "Application received" },
+  { value: "documents_received", label: "Documents received" },
+  { value: "review_underway", label: "Review underway" },
+  { value: "reimagined", label: "Reimagined" },
+  { value: "published", label: "Published" },
+] as const;
 
 interface SubFile {
   id: string;
@@ -49,6 +64,7 @@ interface Submission {
   review_focus: string | null;
   status: string;
   source: string | null;
+  admin_notes: string | null;
   created_at: string | null;
   files: SubFile[];
 }
@@ -68,9 +84,7 @@ async function downloadFile(submissionId: string, file: SubFile) {
   const token = getStoredToken();
   const res = await fetch(
     apiUrl(`/api/submissions/${submissionId}/files/${file.id}`),
-    {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    },
+    { headers: token ? { Authorization: `Bearer ${token}` } : {} },
   );
   if (!res.ok) throw new Error("Download failed");
   const blob = await res.blob();
@@ -87,8 +101,12 @@ async function downloadFile(submissionId: string, file: SubFile) {
 export function SubmissionsAdminPage(): JSX.Element {
   const { isAdmin } = useAuth();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [notesDraft, setNotesDraft] = useState<string | null>(null);
 
   const { data: submissions, isLoading, error } = useQuery<Submission[]>({
     queryKey: ["/api/submissions"],
@@ -99,6 +117,11 @@ export function SubmissionsAdminPage(): JSX.Element {
   const list = submissions || [];
   const selected =
     list.find((s) => s.id === selectedId) || list[0] || null;
+
+  const notesValue =
+    notesDraft !== null && selected
+      ? notesDraft
+      : selected?.admin_notes || "";
 
   const onDownload = async (file: SubFile) => {
     if (!selected) return;
@@ -114,6 +137,69 @@ export function SubmissionsAdminPage(): JSX.Element {
       });
     } finally {
       setDownloading(null);
+    }
+  };
+
+  const saveStatus = async (status: string) => {
+    if (!selected) return;
+    setSaving(true);
+    try {
+      await apiRequest("PATCH", `/api/submissions/${selected.id}`, { status });
+      await queryClient.invalidateQueries({ queryKey: ["/api/submissions"] });
+      toast({ title: "Status updated", description: stageLabel(status) });
+    } catch (e) {
+      toast({
+        title: "Update failed",
+        description: e instanceof Error ? e.message : "Try again",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveNotes = async () => {
+    if (!selected) return;
+    setSaving(true);
+    try {
+      await apiRequest("PATCH", `/api/submissions/${selected.id}`, {
+        admin_notes: notesValue,
+      });
+      setNotesDraft(null);
+      await queryClient.invalidateQueries({ queryKey: ["/api/submissions"] });
+      toast({ title: "Notes saved" });
+    } catch (e) {
+      toast({
+        title: "Save failed",
+        description: e instanceof Error ? e.message : "Try again",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const onDelete = async () => {
+    if (!selected) return;
+    const ok = window.confirm(
+      `Delete submission ${selected.reference}?\n\n${selected.property_name}\n\nThis removes the record and all uploaded files. Cannot be undone.`,
+    );
+    if (!ok) return;
+    setDeleting(true);
+    try {
+      await apiRequest("DELETE", `/api/submissions/${selected.id}`);
+      setSelectedId(null);
+      setNotesDraft(null);
+      await queryClient.invalidateQueries({ queryKey: ["/api/submissions"] });
+      toast({ title: "Deleted", description: selected.reference });
+    } catch (e) {
+      toast({
+        title: "Delete failed",
+        description: e instanceof Error ? e.message : "Try again",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -133,7 +219,7 @@ export function SubmissionsAdminPage(): JSX.Element {
             <div className="h-4 w-px bg-white/15" />
             <div>
               <p className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[2px] text-amber-400/90">
-                INTAKE
+                CRM / INTAKE
               </p>
               <h1 className="[font-family:'Playfair_Display',Helvetica] text-[20px] font-normal text-white">
                 Project Submissions
@@ -159,10 +245,10 @@ export function SubmissionsAdminPage(): JSX.Element {
               <p className="font-medium">Could not load submissions</p>
               <p className="mt-1 text-[12px] text-red-200/80">
                 {(error as Error)?.message?.includes("404")
-                  ? "Backend route missing — Manual Deploy the latest code on Render, then refresh."
+                  ? "Backend route missing — Manual Deploy on Render."
                   : (error as Error)?.message?.includes("401")
-                    ? "Session expired — log in again from /login."
-                    : "Check Render is on latest deploy. Open /api/submissions while logged in."}
+                    ? "Session expired — log in again."
+                    : "Redeploy backend if tables are new."}
               </p>
             </div>
           )}
@@ -182,7 +268,10 @@ export function SubmissionsAdminPage(): JSX.Element {
                 <button
                   key={s.id}
                   type="button"
-                  onClick={() => setSelectedId(s.id)}
+                  onClick={() => {
+                    setSelectedId(s.id);
+                    setNotesDraft(null);
+                  }}
                   className={`w-full rounded-xl border p-3 text-left transition ${
                     active
                       ? "border-amber-500/40 bg-amber-500/10"
@@ -196,7 +285,7 @@ export function SubmissionsAdminPage(): JSX.Element {
                     {s.reference}
                   </p>
                   <p className="mt-1 text-[11px] capitalize text-white/40">
-                    {stageLabel(s.project_stage)}
+                    {stageLabel(s.status)}
                     {s.location ? ` · ${s.location}` : ""}
                   </p>
                 </button>
@@ -224,14 +313,59 @@ export function SubmissionsAdminPage(): JSX.Element {
                     <p className="mt-2 text-[12px] capitalize text-white/45">
                       {stageLabel(selected.project_stage)}
                       {selected.property_type ? ` · ${selected.property_type}` : ""}
-                      {selected.status ? ` · ${selected.status.replace(/_/g, " ")}` : ""}
                     </p>
                   </div>
-                  {selected.created_at && (
-                    <p className="text-[12px] text-white/35">
-                      {new Date(selected.created_at).toLocaleString("en-IN")}
-                    </p>
-                  )}
+                  <div className="flex flex-col items-end gap-2">
+                    {selected.created_at && (
+                      <p className="text-[12px] text-white/35">
+                        {new Date(selected.created_at).toLocaleString("en-IN")}
+                      </p>
+                    )}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={deleting}
+                      onClick={() => void onDelete()}
+                      className="h-9 gap-1.5 border border-red-500/30 bg-red-500/10 text-[11px] text-red-300 hover:bg-red-500/20 hover:text-red-200"
+                    >
+                      {deleting ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5" />
+                      )}
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Pipeline status */}
+                <div className="mt-6 rounded-xl border border-white/10 bg-black/25 p-4">
+                  <p className="text-[10px] tracking-[1.2px] text-white/40">
+                    OUTREACH PIPELINE
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-3">
+                    <select
+                      value={selected.status}
+                      disabled={saving}
+                      onChange={(e) => void saveStatus(e.target.value)}
+                      className="h-10 min-w-[220px] rounded-md border border-white/15 bg-[#121816] px-3 text-[13px] text-white"
+                    >
+                      {PIPELINE.map((p) => (
+                        <option key={p.value} value={p.value}>
+                          {p.label}
+                        </option>
+                      ))}
+                      {/* Keep unknown statuses visible */}
+                      {!PIPELINE.some((p) => p.value === selected.status) && (
+                        <option value={selected.status}>
+                          {stageLabel(selected.status)}
+                        </option>
+                      )}
+                    </select>
+                    {saving && (
+                      <Loader2 className="h-4 w-4 animate-spin text-white/40" />
+                    )}
+                  </div>
                 </div>
 
                 <div className="mt-6 grid gap-4 sm:grid-cols-2">
@@ -256,7 +390,11 @@ export function SubmissionsAdminPage(): JSX.Element {
                   />
                   <Info label="Company" value={selected.company_name} />
                   <Info label="Units / keys" value={selected.unit_count} />
-                  <Info label="Website" value={selected.website} href={selected.website || undefined} />
+                  <Info
+                    label="Website"
+                    value={selected.website}
+                    href={selected.website || undefined}
+                  />
                   <Info label="Social" value={selected.social_links} />
                 </div>
 
@@ -266,6 +404,26 @@ export function SubmissionsAdminPage(): JSX.Element {
                 {selected.review_focus && (
                   <Block title="Review focus" body={selected.review_focus} />
                 )}
+
+                {/* Admin notes */}
+                <div className="mt-6 border-t border-white/10 pt-5">
+                  <p className="text-[10px] tracking-[1px] text-white/35">ADMIN NOTES</p>
+                  <textarea
+                    value={notesValue}
+                    onChange={(e) => setNotesDraft(e.target.value)}
+                    rows={4}
+                    placeholder="Internal notes, call logs, follow-up reminders…"
+                    className="mt-2 w-full rounded-md border border-white/15 bg-black/30 px-3 py-2 text-[13px] text-white/90 placeholder:text-white/25"
+                  />
+                  <Button
+                    type="button"
+                    disabled={saving}
+                    onClick={() => void saveNotes()}
+                    className="mt-2 h-9 rounded-md bg-white/10 px-4 text-[11px] tracking-[1px] text-white hover:bg-white/15"
+                  >
+                    Save notes
+                  </Button>
+                </div>
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
@@ -338,7 +496,11 @@ function Info({
       <p className="text-[10px] tracking-[1px] text-white/35">{label.toUpperCase()}</p>
       {href ? (
         <a
-          href={href.startsWith("http") || href.startsWith("mailto:") ? href : `https://${href}`}
+          href={
+            href.startsWith("http") || href.startsWith("mailto:")
+              ? href
+              : `https://${href}`
+          }
           target={href.startsWith("mailto:") ? undefined : "_blank"}
           rel="noopener noreferrer"
           className="mt-0.5 flex items-center gap-1.5 text-[14px] text-sky-300/90 hover:underline"
