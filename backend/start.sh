@@ -27,8 +27,7 @@ cd "$(dirname "$0")"
 # ── Step 1: ensure all tables exist (handles fresh databases) ─────────────
 echo "→ [1/3] Creating tables (idempotent)…"
 if ! uv run python create_tables.py; then
-    echo "ERROR: create_tables.py failed — check DATABASE_URL and connectivity."
-    exit 1
+    echo "WARNING: create_tables.py reported an error — continuing (lifespan schema sync may recover)."
 fi
 
 # ── Step 2: force-add any missing columns via raw SQL ─────────────────────
