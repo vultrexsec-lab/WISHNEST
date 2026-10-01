@@ -17,6 +17,7 @@ import { ReviewDashboard } from "@/pages/ReviewDashboard";
 import { ReviewsPage } from "@/pages/ReviewsPage";
 import { ContributorsPage } from "@/pages/ContributorsPage";
 import { ReimaginedPage } from "@/pages/ReimaginedPage";
+import { ReimaginedProjectPage } from "@/pages/ReimaginedProjectPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { ReimagingPage } from "@/pages/ReimagingPage";
 import { SocialPage } from "@/pages/SocialPage";
@@ -59,6 +60,7 @@ function Router() {
         <Route path="/best-of" component={BestOfPage} />
         <Route path="/intelligence" component={IntelligencePage} />
         <Route path="/contributors" component={ContributorsPage} />
+        <Route path="/reimagined/:id" component={ReimaginedProjectPage} />
         <Route path="/reimagined" component={ReimaginedPage} />
         <Route path="/login" component={LoginPage} />
         <Route path="/dashboard" component={ProtectedDashboard} />

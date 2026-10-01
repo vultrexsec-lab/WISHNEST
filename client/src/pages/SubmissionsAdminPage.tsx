@@ -155,11 +155,18 @@ export function SubmissionsAdminPage(): JSX.Element {
             </div>
           )}
           {error && (
-            <p className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-[13px] text-red-200">
-              Could not load submissions. Are you logged in as admin?
-            </p>
+            <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-[13px] text-red-200">
+              <p className="font-medium">Could not load submissions</p>
+              <p className="mt-1 text-[12px] text-red-200/80">
+                {(error as Error)?.message?.includes("404")
+                  ? "Backend route missing — Manual Deploy the latest code on Render, then refresh."
+                  : (error as Error)?.message?.includes("401")
+                    ? "Session expired — log in again from /login."
+                    : "Check Render is on latest deploy. Open /api/submissions while logged in."}
+              </p>
+            </div>
           )}
-          {!isLoading && list.length === 0 && (
+          {!isLoading && !error && list.length === 0 && (
             <div className="rounded-xl border border-dashed border-white/15 p-8 text-center">
               <Inbox className="mx-auto h-8 w-8 text-white/20" />
               <p className="mt-3 text-[13px] text-white/45">No submissions yet.</p>
