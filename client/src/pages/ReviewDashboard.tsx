@@ -704,16 +704,6 @@ function AutoSchedulePanel() {
   );
 }
 
-hCw className="h-3.5 w-3.5 shrink-0 text-white/20" />
-          <p className="[font-family:'Inter',Helvetica] text-[12px] text-white/30">
-            No runs yet. Click "Run All Now" to generate the first batch, or wait for the weekly schedule.
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Full Article Live Preview Modal
 // ---------------------------------------------------------------------------
