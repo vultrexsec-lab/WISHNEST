@@ -430,7 +430,34 @@ interface SchedulerStatus {
   started_at: string | null;
   categories: Array<{ category: string; label: string }>;
   history: SchedulerRun[];
-  afunction AutoSchedulePanel() {
+  automation?: {
+    enabled: boolean;
+    daily_time: string;
+    timezone: string;
+    notification_email: string | null;
+    public_app_url: string | null;
+    last_run_date: string | null;
+    last_run_status: string | null;
+    last_run_message: string | null;
+    last_run_at: string | null;
+  };
+}
+
+
+function formatNextRun(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function AutoSchedulePanel() {
   const { toast } = useToast();
   const [triggeringCategory, setTriggeringCategory] = useState<string | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
