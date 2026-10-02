@@ -3,6 +3,7 @@ import { ArrowUpRight, Clock3, Sparkles } from "lucide-react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import type { Article } from "@/lib/article-types";
+import { resolveMediaUrl, resolveMediaHtml } from "@/lib/mediaUrl";
 
 interface DailyEditorialStatus {
   enabled: boolean;
@@ -95,7 +96,7 @@ export function DailyEditionBanner({ latestArticle }: DailyEditionBannerProps): 
                 <div className="h-20 w-24 shrink-0 overflow-hidden bg-[#ffffff14]">
                   {article.hero_image_url ? (
                     <img
-                      src={article.hero_image_url}
+                      src={resolveMediaUrl(article.hero_image_url)}
                       alt=""
                       className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                     />

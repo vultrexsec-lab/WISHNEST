@@ -1,6 +1,7 @@
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { SiteNav } from "@/components/SiteNav";
+import { resolveMediaUrl, resolveMediaHtml } from "@/lib/mediaUrl";
 import { SiteFooter } from "@/components/SiteFooter";
 import type { Article } from "@/lib/article-types";
 import { overallGrade } from "@/lib/article-types";
@@ -47,7 +48,7 @@ function ReviewCard({ article }: { article: Article }) {
           {article.hero_image_url ? (
             <div
               className="h-full w-full bg-cover bg-center"
-              style={{ backgroundImage: `url(${article.hero_image_url})` }}
+              style={{ backgroundImage: `url(${resolveMediaUrl(article.hero_image_url)})` }}
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center">

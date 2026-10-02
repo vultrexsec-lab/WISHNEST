@@ -11,6 +11,7 @@ import {
   overallGrade,
   isDestinationArticle,
 } from "@/lib/article-types";
+import { resolveMediaUrl, resolveMediaHtml, isMediaUrl } from "@/lib/mediaUrl";
 
 /**
  * Safely convert any property_snapshot value to a display string.
@@ -107,15 +108,7 @@ function extractFigcaptions(html: string | null | undefined): string[] {
  * This predicate catches them (and empty strings) before they reach an <img>.
  */
 function isRenderable(url: string | null | undefined): boolean {
-  if (!url) return false;
-  // Accept HTTP(S), image-proxy paths, and data-URI images (reimaging studio)
-  return (
-    url.startsWith("http://") ||
-    url.startsWith("https://") ||
-    url.startsWith("/api/image-proxy?url=") ||
-    url.startsWith("/api/reimaging/media/") ||
-    url.startsWith("data:image/")
-  );
+  return isMediaUrl(url);
 }
 
 export const ArticleDetailPage = (): JSX.Element => {
@@ -260,7 +253,7 @@ export const ArticleDetailPage = (): JSX.Element => {
         style={
           article.hero_image_url
             ? {
-                backgroundImage: `url(${article.hero_image_url})`,
+                backgroundImage: `url(${resolveMediaUrl(article.hero_image_url)})`,
                 backgroundSize: "cover",
                 backgroundPosition: "center",
               }
@@ -362,7 +355,7 @@ export const ArticleDetailPage = (): JSX.Element => {
                         .map(({ url, caption }, i) => (
                           <div key={i}>
                             <img
-                              src={url!}
+                              src={resolveMediaUrl(url)}
                               alt={caption || `Section ${i + 1} — ${article.headline}`}
                               loading="lazy"
                               referrerPolicy="no-referrer"
@@ -409,7 +402,7 @@ export const ArticleDetailPage = (): JSX.Element => {
                   <div className="min-w-0 overflow-x-auto">
                     <div
                       className="min-w-0"
-                      dangerouslySetInnerHTML={{ __html: article.full_article }}
+                      dangerouslySetInnerHTML={{ __html: resolveMediaHtml(article.full_article) }}
                     />
                   </div>
                 </div>

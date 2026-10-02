@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Link, useRoute } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { SiteNav } from "@/components/SiteNav";
+import { resolveMediaUrl, resolveMediaHtml } from "@/lib/mediaUrl";
 import { SiteFooter } from "@/components/SiteFooter";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -28,7 +29,7 @@ function BASlider({ before, after }: { before: string; after: string }) {
   return (
     <div className="relative aspect-[16/10] w-full overflow-hidden bg-[#1a1a1a] select-none">
       <img
-        src={after}
+        src={resolveMediaUrl(after)}
         alt="After"
         className="absolute inset-0 h-full w-full object-cover"
         referrerPolicy="no-referrer"
@@ -36,7 +37,7 @@ function BASlider({ before, after }: { before: string; after: string }) {
       />
       <div className="absolute inset-0 overflow-hidden" style={{ width: `${pos}%` }}>
         <img
-          src={before}
+          src={resolveMediaUrl(before)}
           alt="Before"
           className="h-full max-w-none object-cover"
           style={{ width: "100vw", maxWidth: "1166px", height: "100%" }}
@@ -280,7 +281,7 @@ function AssetCard({ url, label }: { url: string; label: string }) {
       className="group relative block overflow-hidden border border-[#1e1e1e14] bg-[#e8e6e1]"
     >
       <img
-        src={url}
+        src={resolveMediaUrl(url)}
         alt={label}
         className="aspect-[4/3] w-full object-cover transition group-hover:opacity-90"
         referrerPolicy="no-referrer"
@@ -397,7 +398,7 @@ export function ReimaginedProjectPage(): JSX.Element {
             {article.full_article && (
               <div
                 className="prose prose-neutral mt-10 max-w-none text-[15px] leading-[28px] text-[#3a3a3a]"
-                dangerouslySetInnerHTML={{ __html: article.full_article }}
+                dangerouslySetInnerHTML={{ __html: resolveMediaHtml(article.full_article) }}
               />
             )}
 
@@ -408,7 +409,7 @@ export function ReimaginedProjectPage(): JSX.Element {
                   {[...afters.slice(1), ...originals.slice(1)].slice(0, 6).map((url, i) => (
                     <img
                       key={i}
-                      src={url}
+                      src={resolveMediaUrl(url)}
                       alt=""
                       className="aspect-[4/3] w-full object-cover"
                       referrerPolicy="no-referrer"

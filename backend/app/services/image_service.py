@@ -84,13 +84,34 @@ def _safe_image_url(url: str) -> str | None:
     return url
 
 
+
+def _api_public_base() -> str:
+    """Render/public API origin for absolute media URLs in stored articles."""
+    import os
+    for key in ("PUBLIC_API_BASE_URL", "RENDER_EXTERNAL_URL", "PUBLIC_APP_URL"):
+        val = (os.environ.get(key) or "").strip().rstrip("/")
+        if val.startswith("http"):
+            return val
+    return ""
+
+
+def _publicize_media_url(path: str) -> str:
+    if not path or path.startswith("http://") or path.startswith("https://") or path.startswith("data:"):
+        return path
+    base = _api_public_base()
+    if base and path.startswith("/"):
+        return f"{base}{path}"
+    return path
+
+
 def _proxied_url(original_url: str) -> str:
     """
     Rewrite a third-party image URL to go through our own backend proxy
     (`/api/image-proxy?url=...`) so published articles never break due to
     hotlink protection, CORS, or the origin host going down.
     """
-    return "/api/image-proxy?url=" + urllib.parse.quote(original_url, safe="")
+    path = "/api/image-proxy?url=" + urllib.parse.quote(original_url, safe="")
+    return _publicize_media_url(path)
 
 
 

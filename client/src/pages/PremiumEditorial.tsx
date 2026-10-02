@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Menu, X, Search } from "lucide-react";
 import { SearchModal } from "@/components/SearchModal";
+import { resolveMediaUrl, resolveMediaHtml } from "@/lib/mediaUrl";
 import { SiteFooter } from "@/components/SiteFooter";
 import { NewsletterModal } from "@/components/NewsletterModal";
 import { DailyEditionBanner } from "@/components/DailyEditionBanner";
@@ -763,7 +764,7 @@ export const PremiumEditorial = (): JSX.Element => {
                         {article.hero_image_url ? (
                           <div
                             className="h-full w-full bg-cover bg-center"
-                            style={{ backgroundImage: `url(${article.hero_image_url})` }}
+                            style={{ backgroundImage: `url(${resolveMediaUrl(article.hero_image_url)})` }}
                           />
                         ) : (
                           <div className="flex h-full w-full items-center justify-center">

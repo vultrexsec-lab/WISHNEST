@@ -198,7 +198,15 @@ def _persist_image_bytes(data: bytes, ext: str = "png") -> str:
         logger.warning("Disk cache write skipped: %s", disk_exc)
 
     logger.info("Persisted redesign image %s (%d bytes) to media_blobs", blob_id, len(data))
-    return f"{_MEDIA_URL_PREFIX}/{blob_id}"
+    path = f"{_MEDIA_URL_PREFIX}/{blob_id}"
+    import os
+    base = ""
+    for key in ("PUBLIC_API_BASE_URL", "RENDER_EXTERNAL_URL"):
+        val = (os.environ.get(key) or "").strip().rstrip("/")
+        if val.startswith("http"):
+            base = val
+            break
+    return f"{base}{path}" if base else path
 
 
 def _bytes_to_file(data: bytes, filename: str = "source.png"):

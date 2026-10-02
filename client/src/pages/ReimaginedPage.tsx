@@ -1,6 +1,7 @@
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { SiteNav } from "@/components/SiteNav";
+import { resolveMediaUrl, resolveMediaHtml } from "@/lib/mediaUrl";
 import { SiteFooter } from "@/components/SiteFooter";
 import { Button } from "@/components/ui/button";
 import type { Article } from "@/lib/article-types";
@@ -119,7 +120,7 @@ export const ReimaginedPage = (): JSX.Element => {
                   <div className="relative aspect-[4/3] overflow-hidden bg-[#e8e6e1]">
                     {img ? (
                       <img
-                        src={img}
+                        src={resolveMediaUrl(img)}
                         alt={a.headline}
                         className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
                         referrerPolicy="no-referrer"

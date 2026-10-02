@@ -16,6 +16,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { resolveMediaUrl, resolveMediaHtml } from "@/lib/mediaUrl";
 import { SiteNav } from "@/components/SiteNav";
 import { SiteFooter } from "@/components/SiteFooter";
 import { Button } from "@/components/ui/button";
@@ -1002,7 +1003,7 @@ function ArticlePreviewModal({
             style={
               article.hero_image_url
                 ? {
-                    backgroundImage: `url(${article.hero_image_url})`,
+                    backgroundImage: `url(${resolveMediaUrl(article.hero_image_url)})`,
                     backgroundSize: "cover",
                     backgroundPosition: "center",
                   }
@@ -1084,7 +1085,7 @@ function ArticlePreviewModal({
                     .map(({ url, caption }, i) => (
                     <div key={i}>
                       <img
-                        src={url}
+                        src={resolveMediaUrl(url)}
                         alt={caption || `Section ${i + 1} — ${article.headline}`}
                         className="h-[120px] w-full rounded-lg object-cover sm:h-[160px]"
                         onError={(event) => {
@@ -1135,7 +1136,7 @@ function ArticlePreviewModal({
                         [&_td]:border [&_td]:border-[#1e1e1e1a] [&_td]:px-4 [&_td]:py-3 [&_td]:align-top [&_td]:leading-[22px]
                         [&_tr:nth-child(even)_td]:bg-[#f8f7f4]
                         [&_br]:block [&_br]:mt-4"
-                      dangerouslySetInnerHTML={{ __html: article.full_article }}
+                      dangerouslySetInnerHTML={{ __html: resolveMediaHtml(article.full_article )}}
                     />
                   ) : (
                     <div className="rounded-lg border border-dashed border-[#1e1e1e20] py-10 text-center [font-family:'Inter',Helvetica] text-[13px] text-[#6b6b6b]">
@@ -1913,7 +1914,7 @@ function ArticleCard({
                             HERO
                           </div>
                           <img
-                            src={article.hero_image_url}
+                            src={resolveMediaUrl(article.hero_image_url)}
                             alt={`Hero image — ${article.headline}`}
                             className="h-[220px] w-full rounded-lg object-cover"
                             onError={(event) => {
@@ -1942,7 +1943,7 @@ function ArticleCard({
                               SECTION {i + 1}
                             </div>
                             <img
-                              src={url}
+                              src={resolveMediaUrl(url)}
                               alt={`Section image ${i + 1} — ${article.headline}`}
                               className="h-[150px] w-full rounded-lg object-cover"
                               onError={(event) => {
