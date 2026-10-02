@@ -125,6 +125,9 @@ def get_or_create_automation_settings(db) -> AutomationSettings:
         return settings
     settings = AutomationSettings(
         id=1,
+        enabled=True,
+        daily_time="08:00",
+        timezone="Asia/Kolkata",
         public_app_url=get_settings().public_app_url or None,
     )
     db.add(settings)
@@ -336,6 +339,38 @@ def _daily_auto_generate() -> None:
     created, run_status, run_message = _run_category(item)
     article_count = len(created)
 
+    # Auto-publish so the daily piece goes live without manual approve
+    if created and run_status == "success":
+        try:
+            pub_db = SessionLocal()
+            try:
+                from app.models.article import Article, ArticleStatus
+                import threading
+                from app.routers.approve import _send_newsletter_background
+                from app.services.email_service import email_configured
+
+                for art in created:
+                    row = pub_db.query(Article).filter(Article.id == art.id).first()
+                    if not row:
+                        continue
+                    row.status = ArticleStatus.approved
+                    if row.published_at is None:
+                        row.published_at = datetime.now(timezone.utc)
+                pub_db.commit()
+                run_message = (run_message or "") + " Auto-published."
+                if email_configured():
+                    for art in created:
+                        threading.Thread(
+                            target=_send_newsletter_background,
+                            args=(str(art.id),),
+                            daemon=True,
+                        ).start()
+            finally:
+                pub_db.close()
+        except Exception as pub_exc:  # noqa: BLE001
+            logger.exception("Scheduler: auto-publish failed: %s", pub_exc)
+            run_message = (run_message or "") + f" Auto-publish failed: {pub_exc}"
+
     notification_message = ""
     if created:
         try:
@@ -506,7 +541,7 @@ def get_scheduler_status() -> dict:
         running = _scheduler is not None and _scheduler.running
         # Refresh next_run from live job metadata while holding the lock
         if _scheduler:
-            job = _scheduler.get_job("weekly_auto_generate")
+            job = _scheduler.get_job("daily_auto_generate")
             next_run_val = job.next_run_time if job else _next_run
         else:
             next_run_val = _next_run

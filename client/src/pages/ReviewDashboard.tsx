@@ -430,16 +430,43 @@ interface SchedulerStatus {
   started_at: string | null;
   categories: Array<{ category: string; label: string }>;
   history: SchedulerRun[];
-}
-
-function AutoSchedulePanel() {
+  afunction AutoSchedulePanel() {
   const { toast } = useToast();
   const [triggeringCategory, setTriggeringCategory] = useState<string | null>(null);
+  const [savingSettings, setSavingSettings] = useState(false);
 
   const { data: schedulerData, refetch: refetchScheduler } = useQuery<SchedulerStatus>({
     queryKey: ["/api/scheduler/status"],
     refetchInterval: 30000,
   });
+
+  const automation = schedulerData?.automation;
+  const dailyEnabled = Boolean(automation?.enabled);
+
+  const saveAutomation = async (patch: Record<string, unknown>) => {
+    setSavingSettings(true);
+    try {
+      await apiRequest("PATCH", "/api/scheduler/settings", patch);
+      await refetchScheduler();
+      toast({
+        title: "Daily automation updated",
+        description:
+          patch.enabled === false
+            ? "Paused — no auto posts until re-enabled."
+            : patch.enabled === true
+              ? "Enabled — writes & publishes around the set time (IST)."
+              : "Settings saved.",
+      });
+    } catch (e) {
+      toast({
+        title: "Could not save",
+        description: e instanceof Error ? e.message : "Try again",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingSettings(false);
+    }
+  };
 
   const triggerMutation = useMutation({
     mutationFn: async (category: string | null) => {
@@ -450,7 +477,9 @@ function AutoSchedulePanel() {
       setTriggeringCategory(null);
       toast({
         title: "Auto-generation triggered",
-        description: data.message ?? "Pipeline started — articles will appear in Pending Review shortly.",
+        description:
+          data.message ??
+          "Pipeline started — articles will appear shortly.",
       });
       const pollTimer = setInterval(() => {
         refetchScheduler();
@@ -469,11 +498,6 @@ function AutoSchedulePanel() {
     triggerMutation.mutate(category);
   };
 
-  const formatNextRun = (iso: string | null) => {
-    if (!iso) return "—";
-    return new Date(iso).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
-  };
-
   const recentHistory = (schedulerData?.history ?? []).slice(0, 6);
 
   return (
@@ -485,63 +509,126 @@ function AutoSchedulePanel() {
           <div className="flex items-center gap-2">
             <Timer className="h-3.5 w-3.5 text-emerald-400" />
             <p className="[font-family:'Inter',Helvetica] text-[9px] font-semibold tracking-[2px] text-emerald-400">
-              WEEKLY AUTO-SCHEDULE
+              DAILY AUTO-POST
             </p>
-            <span className={`ml-1 rounded-full px-2 py-0.5 [font-family:'Inter',Helvetica] text-[9px] font-medium ${
-              schedulerData?.running
-                ? "bg-emerald-500/15 text-emerald-400"
-                : "bg-white/10 text-white/40"
-            }`}>
-              {schedulerData?.running ? "ACTIVE" : "—"}
+            <span
+              className={`ml-1 rounded-full px-2 py-0.5 [font-family:'Inter',Helvetica] text-[9px] font-medium ${
+                dailyEnabled && schedulerData?.running
+                  ? "bg-emerald-500/20 text-emerald-300"
+                  : "bg-white/10 text-white/40"
+              }`}
+            >
+              {dailyEnabled ? (schedulerData?.running ? "ON · SCHEDULER LIVE" : "ON") : "PAUSED"}
             </span>
           </div>
-          <h2 className="pt-2 [font-family:'Playfair_Display',Helvetica] text-[22px] font-medium text-white">
-            Automatic Weekly Generation
+          <h2 className="mt-3 [font-family:'Playfair_Display',Helvetica] text-[26px] font-normal text-white">
+            Every day at {automation?.daily_time || "08:00"}
           </h2>
-          <p className="mt-1 max-w-xl [font-family:'Inter',Helvetica] text-[13px] leading-[21px] text-white/50">
-            Every week the AI agent auto-generates articles for Hospitality, Destinations &amp; Villas.
-            Each one lands in Pending Review for your approval before going live.
+          <p className="mt-2 max-w-[520px] [font-family:'Inter',Helvetica] text-[13px] leading-[20px] text-white/45">
+            Writes one fresh article from live discovery, then{" "}
+            <span className="text-emerald-300/90">publishes it automatically</span> and
+            emails newsletter subscribers (Brevo). Timezone:{" "}
+            {automation?.timezone || "Asia/Kolkata"}.
           </p>
           {schedulerData?.next_run && (
             <p className="mt-3 [font-family:'Inter',Helvetica] text-[12px] text-white/40">
-              Next scheduled run:{" "}
+              Next run:{" "}
               <span className="text-emerald-300">{formatNextRun(schedulerData.next_run)}</span>
+            </p>
+          )}
+          {automation?.last_run_at && (
+            <p className="mt-1 [font-family:'Inter',Helvetica] text-[12px] text-white/35">
+              Last run:{" "}
+              <span className="text-white/55">
+                {new Date(automation.last_run_at).toLocaleString("en-IN")}
+              </span>
+              {automation.last_run_status ? ` · ${automation.last_run_status}` : ""}
+              {automation.last_run_message
+                ? ` — ${automation.last_run_message.slice(0, 120)}`
+                : ""}
             </p>
           )}
         </div>
 
-        {/* Trigger buttons */}
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-col items-stretch gap-2 sm:items-end">
           <Button
-            onClick={() => handleTrigger(null)}
-            disabled={triggerMutation.isPending}
-            className="h-auto rounded-xl bg-emerald-600 px-4 py-2.5 [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1px] text-white shadow-[0_6px_20px_rgba(16,185,129,0.3)] hover:bg-emerald-500 disabled:opacity-40 disabled:shadow-none"
+            type="button"
+            disabled={savingSettings}
+            onClick={() => void saveAutomation({ enabled: !dailyEnabled })}
+            className={`h-10 min-w-[140px] rounded-full text-[11px] font-semibold tracking-[1px] ${
+              dailyEnabled
+                ? "border border-emerald-500/40 bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30"
+                : "border border-white/15 bg-white/5 text-white/60 hover:bg-white/10"
+            }`}
           >
-            {triggeringCategory === "all" && triggerMutation.isPending ? (
-              <span className="flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" /> RUNNING…</span>
+            {savingSettings ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : dailyEnabled ? (
+              "ENABLED — click to pause"
             ) : (
-              <span className="flex items-center gap-1.5"><Zap className="h-3 w-3" /> RUN ALL NOW</span>
+              "PAUSED — click to enable"
             )}
           </Button>
+          <Button
+            type="button"
+            disabled={triggeringCategory !== null}
+            onClick={() => handleTrigger(null)}
+            className="h-10 gap-1.5 rounded-full border border-white/15 bg-white/5 px-4 text-[11px] tracking-[1px] text-white/70 hover:bg-white/10"
+          >
+            {triggeringCategory === "all" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Play className="h-3.5 w-3.5" />
+            )}
+            Run all now
+          </Button>
+        </div>
+      </div>
+
+      {/* Time control */}
+      <div className="mt-6 flex flex-wrap items-center gap-3 rounded-xl border border-white/10 bg-black/20 p-4">
+        <span className="text-[10px] tracking-[1.2px] text-white/40">DAILY TIME</span>
+        <input
+          type="time"
+          defaultValue={automation?.daily_time || "08:00"}
+          key={automation?.daily_time || "08:00"}
+          className="h-9 rounded-md border border-white/15 bg-[#121816] px-2 text-[13px] text-white"
+          onBlur={(e) => {
+            const v = e.target.value;
+            if (v && v !== automation?.daily_time) {
+              void saveAutomation({ daily_time: v, timezone: "Asia/Kolkata" });
+            }
+          }}
+        />
+        <span className="text-[12px] text-white/35">Asia/Kolkata (IST)</span>
+      </div>
+
+      {/* Category quick triggers */}
+      <div className="mt-6">
+        <p className="mb-3 [font-family:'Inter',Helvetica] text-[9px] font-semibold tracking-[1.8px] text-white/30">
+          MANUAL CATEGORY RUN
+        </p>
+        <div className="flex flex-wrap gap-2">
           {(schedulerData?.categories ?? []).map((cat) => (
             <Button
               key={cat.category}
+              type="button"
+              disabled={triggeringCategory !== null}
               onClick={() => handleTrigger(cat.category)}
-              disabled={triggerMutation.isPending}
-              variant="outline"
-              className="h-auto rounded-xl border-white/10 bg-white/[0.03] px-3.5 py-2 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[0.5px] text-white/60 hover:border-emerald-500/40 hover:text-emerald-300 disabled:opacity-40"
+              className="h-9 rounded-full border border-white/10 bg-white/[0.04] px-3 text-[10px] tracking-[1px] text-white/60 hover:border-emerald-500/30 hover:text-emerald-200"
             >
-              {triggeringCategory === cat.category && triggerMutation.isPending ? (
-                <span className="flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" /> RUNNING…</span>
+              {triggeringCategory === cat.category ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
               ) : (
-                <span className="flex items-center gap-1.5"><Play className="h-3 w-3" /> {cat.label.split(" &")[0].toUpperCase()}</span>
+                <span className="flex items-center gap-1.5">
+                  <Play className="h-3 w-3" /> {cat.label.split(" &")[0].toUpperCase()}
+                </span>
               )}
             </Button>
           ))}
         </div>
       </div>
 
-      {/* Run history */}
       {recentHistory.length > 0 && (
         <div className="mt-7 border-t border-white/10 pt-5">
           <p className="mb-3 [font-family:'Inter',Helvetica] text-[9px] font-semibold tracking-[1.8px] text-white/30">
@@ -558,16 +645,20 @@ function AutoSchedulePanel() {
                 }`}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className={`[font-family:'Inter',Helvetica] text-[9px] font-semibold tracking-[1px] ${
-                    run.status === "success" ? "text-emerald-400" : "text-red-400"
-                  }`}>
+                  <span
+                    className={`[font-family:'Inter',Helvetica] text-[9px] font-semibold tracking-[1px] ${
+                      run.status === "success" ? "text-emerald-400" : "text-red-400"
+                    }`}
+                  >
                     {run.status === "success" ? "✓" : "✕"} {run.label}
                   </span>
                   <span className="shrink-0 [font-family:'Inter',Helvetica] text-[9px] text-white/25">
                     {new Date(run.ran_at).toLocaleDateString("en-IN")}
                   </span>
                 </div>
-                <p className="mt-0.5 [font-family:'Inter',Helvetica] text-[11px] text-white/50 line-clamp-1">{run.message}</p>
+                <p className="mt-0.5 line-clamp-1 [font-family:'Inter',Helvetica] text-[11px] text-white/50">
+                  {run.message}
+                </p>
               </div>
             ))}
           </div>
@@ -577,6 +668,16 @@ function AutoSchedulePanel() {
       {recentHistory.length === 0 && (
         <div className="mt-6 flex items-center gap-2 rounded-lg border border-dashed border-white/10 px-4 py-3">
           <RefreshCw className="h-3.5 w-3.5 shrink-0 text-white/20" />
+          <p className="[font-family:'Inter',Helvetica] text-[12px] text-white/30">
+            No runs yet. Enable daily auto-post, or click &quot;Run all now&quot;.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+hCw className="h-3.5 w-3.5 shrink-0 text-white/20" />
           <p className="[font-family:'Inter',Helvetica] text-[12px] text-white/30">
             No runs yet. Click "Run All Now" to generate the first batch, or wait for the weekly schedule.
           </p>
