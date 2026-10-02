@@ -123,6 +123,21 @@ export function SubmissionsAdminPage(): JSX.Element {
     queryKey: ["/api/submissions"],
   });
 
+  const { data: stats } = useQuery<{
+    total: number;
+    by_status: Record<string, number>;
+    with_files: number;
+    contacted: number;
+    interested: number;
+    applications: number;
+    in_review: number;
+  }>({
+    queryKey: ["/api/submissions-stats"],
+  });
+
+  const [bulkTemplate, setBulkTemplate] = useState("follow_up");
+  const [bulkRunning, setBulkRunning] = useState(false);
+
   if (!isAdmin) return <Redirect to="/login" />;
 
   const list = submissions || [];
@@ -232,6 +247,36 @@ export function SubmissionsAdminPage(): JSX.Element {
       });
     } finally {
       setSendingMail(false);
+    }
+  };
+
+  const runBulkOutreach = async () => {
+    const ok = window.confirm(
+      "Send bulk email to matching pipeline statuses (max 50)?\n\nUses Brevo. Only run when ready.",
+    );
+    if (!ok) return;
+    setBulkRunning(true);
+    try {
+      const res = await apiRequest("POST", "/api/submissions-bulk-outreach", {
+        template: bulkTemplate,
+        statuses: ["application_received", "contacted", "identified", "follow_up"],
+        limit: 50,
+      });
+      const data = await res.json();
+      await queryClient.invalidateQueries({ queryKey: ["/api/submissions"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/submissions-stats"] });
+      toast({
+        title: "Bulk send done",
+        description: `Sent ${data.sent}/${data.attempted} (failed ${data.failed})`,
+      });
+    } catch (e) {
+      toast({
+        title: "Bulk send failed",
+        description: e instanceof Error ? e.message : "Check Brevo",
+        variant: "destructive",
+      });
+    } finally {
+      setBulkRunning(false);
     }
   };
 
@@ -361,6 +406,54 @@ export function SubmissionsAdminPage(): JSX.Element {
           </div>
         </div>
       </header>
+
+      {stats && (
+        <div className="mx-auto max-w-6xl px-6 pt-6">
+          <p className="mb-3 text-[10px] tracking-[1.4px] text-white/35">PIPELINE METRICS</p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+            {[
+              { label: "Total", value: stats.total },
+              { label: "Applications", value: stats.applications },
+              { label: "Contacted", value: stats.contacted },
+              { label: "Interested", value: stats.interested },
+              { label: "In review", value: stats.in_review },
+              { label: "With files", value: stats.with_files },
+            ].map((c) => (
+              <div
+                key={c.label}
+                className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-3"
+              >
+                <p className="text-[10px] tracking-[1px] text-white/40">{c.label.toUpperCase()}</p>
+                <p className="mt-1 [font-family:'Playfair_Display',Helvetica] text-[22px] text-white">
+                  {c.value}
+                </p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+            <span className="text-[10px] tracking-[1px] text-white/40">BULK EMAIL</span>
+            <select
+              value={bulkTemplate}
+              onChange={(e) => setBulkTemplate(e.target.value)}
+              className="h-9 rounded-md border border-white/15 bg-[#121816] px-2 text-[12px] text-white"
+            >
+              <option value="acknowledge">Application received</option>
+              <option value="follow_up">Follow-up</option>
+              <option value="interested">Interest / next step</option>
+              <option value="review_underway">Review underway</option>
+            </select>
+            <Button
+              type="button"
+              disabled={bulkRunning}
+              onClick={() => void runBulkOutreach()}
+              className="h-9 gap-1.5 bg-sky-700 px-3 text-[11px] text-white hover:bg-sky-600"
+            >
+              {bulkRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+              Send to pipeline (max 50)
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className="mx-auto grid max-w-6xl gap-6 px-6 py-8 lg:grid-cols-[340px_1fr]">
         <aside className="space-y-2">

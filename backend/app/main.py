@@ -164,7 +164,11 @@ def _sync_schema() -> None:
                 ))
             conn.commit()
 
-        log.info("Schema sync: media_blobs + hospitality_submissions present.")
+        conn.execute(text(
+                "ALTER TABLE newsletter_subscribers ADD COLUMN IF NOT EXISTS interests VARCHAR(512)"
+            ))
+            conn.commit()
+        log.info("Schema sync: media_blobs + hospitality_submissions + newsletter interests present.")
     except Exception as exc:
         # Log but don't crash — the articles table may not exist yet on a
         # completely fresh DB; create_tables.py in start.sh handles that case.

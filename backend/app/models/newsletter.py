@@ -16,6 +16,8 @@ class NewsletterSubscriber(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email = Column(String, unique=True, nullable=False, index=True)
+    # Comma-separated interest tags e.g. "architecture,hotels,second-homes"
+    interests = Column(String(512), nullable=True)
     created_at = Column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

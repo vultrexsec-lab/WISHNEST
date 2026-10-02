@@ -762,3 +762,130 @@ def whatsapp_outreach(
     db.commit()
 
     return WhatsAppOutreachResponse(wa_url=wa_url, phone=phone, message=text)
+
+
+class PipelineStatsResponse(BaseModel):
+    total: int
+    by_status: dict[str, int]
+    with_files: int
+    contacted: int
+    interested: int
+    applications: int
+    in_review: int
+
+
+@router.get("/api/submissions-stats", response_model=PipelineStatsResponse)
+def submission_stats(
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    rows = db.query(HospitalitySubmission).all()
+    by_status: dict[str, int] = {}
+    with_files = 0
+    for r in rows:
+        by_status[r.status] = by_status.get(r.status, 0) + 1
+        if r.files:
+            with_files += 1
+
+    def sum_statuses(*keys: str) -> int:
+        return sum(by_status.get(k, 0) for k in keys)
+
+    return PipelineStatsResponse(
+        total=len(rows),
+        by_status=by_status,
+        with_files=with_files,
+        contacted=sum_statuses("contacted", "follow_up", "responded"),
+        interested=sum_statuses("interested"),
+        applications=sum_statuses("application_received", "documents_received"),
+        in_review=sum_statuses("review_underway", "reimagined", "published"),
+    )
+
+
+class BulkOutreachRequest(BaseModel):
+    template: str = "follow_up"
+    statuses: list[str] | None = None  # default: application_received, contacted
+    limit: int = 50
+
+
+class BulkOutreachResponse(BaseModel):
+    attempted: int
+    sent: int
+    failed: int
+    errors: list[str] = []
+
+
+@router.post("/api/submissions-bulk-outreach", response_model=BulkOutreachResponse)
+def bulk_outreach(
+    payload: BulkOutreachRequest,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """Send one email template to all submissions matching status filters (max 50)."""
+    if not email_configured():
+        raise HTTPException(
+            503,
+            "Email not configured. Set BREVO_API_KEY + BREVO_FROM_EMAIL on Render.",
+        )
+
+    statuses = payload.statuses or ["application_received", "contacted", "identified"]
+    statuses = [s.strip().lower().replace(" ", "_") for s in statuses]
+    limit = max(1, min(int(payload.limit or 50), 50))
+
+    tpl_key = (payload.template or "follow_up").strip().lower()
+    tpl = OUTREACH_TEMPLATES.get(tpl_key)
+    if not tpl:
+        raise HTTPException(400, f"Unknown template. Use: {', '.join(OUTREACH_TEMPLATES)}")
+
+    rows = (
+        db.query(HospitalitySubmission)
+        .filter(HospitalitySubmission.status.in_(statuses))
+        .order_by(HospitalitySubmission.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+    sent = 0
+    failed = 0
+    errors: list[str] = []
+    for row in rows:
+        ctx = {
+            "reference": row.reference,
+            "property_name": row.property_name,
+            "contact_name": row.contact_name,
+            "location": row.location or "",
+        }
+        subject = tpl["subject"].format(**ctx)
+        body = tpl["body"].format(**ctx)
+        html = (
+            "<pre style='font-family:Georgia,serif;font-size:15px;line-height:1.55;"
+            "white-space:pre-wrap;color:#1e1e1e'>"
+            + body.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            + "</pre>"
+        )
+        try:
+            send_email(
+                to_email=row.email,
+                subject=subject,
+                html_body=html,
+                text_body=body,
+            )
+            stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+            note = f"[{stamp}] Bulk outreach ({tpl_key}) → {row.email}"
+            row.admin_notes = (row.admin_notes + "\n" + note) if row.admin_notes else note
+            if row.status in ("application_received", "identified"):
+                row.status = "contacted"
+            elif tpl_key == "follow_up":
+                row.status = "follow_up"
+            sent += 1
+        except Exception as exc:
+            failed += 1
+            errors.append(f"{row.reference}: {exc}")
+            logger.error("Bulk outreach failed %s: %s", row.reference, exc)
+
+    db.commit()
+    return BulkOutreachResponse(
+        attempted=len(rows),
+        sent=sent,
+        failed=failed,
+        errors=errors[:10],
+    )
