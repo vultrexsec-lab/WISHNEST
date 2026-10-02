@@ -164,7 +164,7 @@ def _sync_schema() -> None:
                 ))
             conn.commit()
 
-        conn.execute(text(
+            conn.execute(text(
                 "ALTER TABLE newsletter_subscribers ADD COLUMN IF NOT EXISTS interests VARCHAR(512)"
             ))
             conn.commit()
