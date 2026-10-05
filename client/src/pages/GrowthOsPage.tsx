@@ -618,6 +618,37 @@ export function GrowthOsPage(): JSX.Element {
                       Approve
                     </Button>
                   )}
+                  <Button
+                    type="button"
+                    className="h-8 rounded-full border border-sky-500/40 bg-sky-500/15 px-3 text-[11px] text-sky-200"
+                    onClick={async () => {
+                      try {
+                        const res = await apiRequest(
+                          "POST",
+                          `/api/growth/campaigns/${selectedCamp.id}/push-email-mautic`,
+                          {},
+                        );
+                        const data = await res.json();
+                        setSelectedCamp(data.campaign as Campaign);
+                        await refetchCampaigns();
+                        const m = data.mautic || {};
+                        toast({
+                          title: m.mautic_configured
+                            ? "Email drafts pushed to Mautic"
+                            : "Mautic stub (not configured)",
+                          description: `Drafts: ${m.drafts_created ?? 0}. No bulk send.`,
+                        });
+                      } catch (e) {
+                        toast({
+                          title: "Mautic push failed",
+                          description: e instanceof Error ? e.message : "Error",
+                          variant: "destructive",
+                        });
+                      }
+                    }}
+                  >
+                    Push email → Mautic
+                  </Button>
                 </div>
               </div>
               {(selectedCamp.pack.email?.subjects || []).length > 0 && (
@@ -656,6 +687,18 @@ export function GrowthOsPage(): JSX.Element {
                   {post}
                 </pre>
               ))}
+              {(selectedCamp.pack as { mautic_email_push?: { status?: string; drafts_created?: number; mautic_configured?: boolean } }).mautic_email_push && (
+                <p className="text-[11px] text-sky-200/80">
+                  Mautic push:{" "}
+                  {(selectedCamp.pack as { mautic_email_push?: { status?: string; drafts_created?: number; mautic_configured?: boolean } }).mautic_email_push?.status}
+                  {" · "}
+                  drafts{" "}
+                  {(selectedCamp.pack as { mautic_email_push?: { drafts_created?: number } }).mautic_email_push?.drafts_created ?? 0}
+                  {(selectedCamp.pack as { mautic_email_push?: { mautic_configured?: boolean } }).mautic_email_push?.mautic_configured
+                    ? ""
+                    : " (stub — set MAUTIC_* env)"}
+                </p>
+              )}
               {selectedCamp.pack.notes && (
                 <p className="text-[11px] text-white/40">{selectedCamp.pack.notes}</p>
               )}

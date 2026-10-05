@@ -23,7 +23,11 @@ from app.services.campaign_service import generate_campaign_pack
 from app.models.newsletter import NewsletterSubscriber
 from app.services.agentreach_service import agentreach_configured, create_cold_sequence_draft
 from app.services.email_service import email_configured
-from app.services.mautic_service import mautic_configured, upsert_contact
+from app.services.mautic_service import (
+    mautic_configured,
+    push_campaign_email_pack,
+    upsert_contact,
+)
 from app.services.postiz_service import postiz_configured
 
 router = APIRouter(tags=["growth-os"])
@@ -801,6 +805,55 @@ def approve_campaign(
     db.commit()
     db.refresh(row)
     return _campaign_out(row)
+
+
+@router.post("/api/growth/campaigns/{campaign_id}/push-email-mautic")
+def push_email_to_mautic(
+    campaign_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """
+    Step 5 — Email path: take approved (or ready) AI email pack → Mautic email drafts.
+    Never bulk-sends. Cold outreach must use AgentReach, not this endpoint.
+    """
+    row = db.query(GrowthCampaign).filter(GrowthCampaign.id == campaign_id).first()
+    if not row:
+        raise HTTPException(404, "Campaign not found")
+    channels = [str(c).lower() for c in (row.channels or [])]
+    if channels and "email" not in channels:
+        raise HTTPException(400, "Campaign has no email channel")
+    pack = row.pack or {}
+    email_pack = pack.get("email") or {}
+    subjects = list(email_pack.get("subjects") or [])
+    bodies = list(email_pack.get("bodies") or [])
+    follow_ups = list(email_pack.get("follow_ups") or [])
+    if not bodies and not follow_ups:
+        raise HTTPException(400, "No email bodies in campaign pack — regenerate first")
+
+    result = push_campaign_email_pack(
+        campaign_name=row.name,
+        subjects=subjects,
+        bodies=bodies,
+        follow_ups=follow_ups,
+    )
+
+    # Persist execution metadata on pack
+    meta = dict(pack) if isinstance(pack, dict) else {}
+    meta["mautic_email_push"] = {
+        "status": result.get("status"),
+        "drafts_created": result.get("drafts_created"),
+        "mautic_configured": result.get("mautic_configured"),
+        "drafts": result.get("drafts"),
+    }
+    row.pack = meta
+    if result.get("status") == "ok":
+        # Stay approved; note that drafts live in Mautic
+        if row.status == "draft":
+            row.status = "ready_for_review"
+    db.commit()
+    db.refresh(row)
+    return {"campaign": _campaign_out(row), "mautic": result}
 
 
 class ColdDraftIn(BaseModel):
