@@ -12,7 +12,14 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import require_admin
-from app.models.growth import ArrowxOpportunity, AudienceSegment, GrowthContact, SeoGeoRun
+from app.models.growth import (
+    ArrowxOpportunity,
+    AudienceSegment,
+    GrowthCampaign,
+    GrowthContact,
+    SeoGeoRun,
+)
+from app.services.campaign_service import generate_campaign_pack
 from app.models.newsletter import NewsletterSubscriber
 from app.services.agentreach_service import agentreach_configured, create_cold_sequence_draft
 from app.services.email_service import email_configured
@@ -103,6 +110,7 @@ def growth_status(
             "seo_geo_runs": db.query(SeoGeoRun).count(),
             "newsletter_subscribers": db.query(NewsletterSubscriber).count(),
             "segments_saved": db.query(AudienceSegment).count(),
+            "campaigns": db.query(GrowthCampaign).count(),
             "by_type": by_type,
         },
     )
@@ -611,6 +619,188 @@ def refresh_segment_count(
     row.contact_count = query.count()
     db.commit()
     return {"id": str(row.id), "contact_count": row.contact_count}
+
+
+
+
+class CampaignCreate(BaseModel):
+    name: str
+    campaign_type: str = "lead_generation"
+    classification: str = "commercial"
+    objective: str | None = None
+    audience_filters: dict[str, Any] = Field(default_factory=dict)
+    channels: list[str] = Field(default_factory=lambda: ["email"])
+    cta_label: str | None = "Get Your Project Reviewed"
+    cta_url: str | None = "https://wishnest.info/get-reviewed"
+    notes: str | None = None
+    generate_pack: bool = True
+
+
+def _campaign_out(r: GrowthCampaign) -> dict[str, Any]:
+    return {
+        "id": str(r.id),
+        "name": r.name,
+        "campaign_type": r.campaign_type,
+        "classification": r.classification,
+        "objective": r.objective,
+        "audience_filters": r.audience_filters or {},
+        "audience_count": r.audience_count or 0,
+        "channels": r.channels or [],
+        "cta_label": r.cta_label,
+        "cta_url": r.cta_url,
+        "status": r.status,
+        "pack": r.pack,
+        "notes": r.notes,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+        "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+    }
+
+
+def _audience_count(db: Session, filters: dict[str, Any] | None) -> int:
+    filters = filters or {}
+    types = filters.get("contact_types") or filters.get("contact_type")
+    type_param = ",".join(types) if isinstance(types, list) else types
+    query = db.query(GrowthContact)
+    query = _apply_contact_filters(
+        query,
+        contact_type=type_param,
+        state=filters.get("state"),
+        city=filters.get("city"),
+        destination=filters.get("destination"),
+        email_permission=True if filters.get("email_permission_only") else None,
+        exclude_suppressed=filters.get("exclude_suppressed", True),
+    )
+    return query.count()
+
+
+@router.get("/api/growth/campaigns")
+def list_campaigns(
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+    limit: int = 30,
+):
+    rows = (
+        db.query(GrowthCampaign)
+        .order_by(GrowthCampaign.created_at.desc())
+        .limit(min(limit, 50))
+        .all()
+    )
+    return [_campaign_out(r) for r in rows]
+
+
+@router.post("/api/growth/campaigns")
+def create_campaign(
+    body: CampaignCreate,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(400, "name required")
+    classification = (body.classification or "commercial").strip().lower()
+    if classification not in ("editorial", "research", "commercial", "sponsored"):
+        classification = "commercial"
+    channels = body.channels or ["email"]
+    filters = body.audience_filters or {}
+    count = _audience_count(db, filters)
+    row = GrowthCampaign(
+        name=name,
+        campaign_type=(body.campaign_type or "lead_generation")[:64],
+        classification=classification,
+        objective=(body.objective or "")[:128] or None,
+        audience_filters=filters,
+        audience_count=count,
+        channels=channels,
+        cta_label=body.cta_label,
+        cta_url=body.cta_url,
+        status="draft",
+        notes=body.notes,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+
+    if body.generate_pack:
+        row.status = "ai_generating"
+        db.commit()
+        types = filters.get("contact_types") or []
+        audience_summary = (
+            f"types={types}; count≈{count}; "
+            f"geo={filters.get('destination') or filters.get('city') or filters.get('state') or 'India'}"
+        )
+        pack = generate_campaign_pack(
+            name=name,
+            campaign_type=row.campaign_type,
+            classification=classification,
+            objective=row.objective,
+            audience_summary=audience_summary,
+            channels=list(channels),
+            cta_label=row.cta_label,
+            cta_url=row.cta_url,
+        )
+        row.pack = pack
+        row.status = "ready_for_review"
+        db.commit()
+        db.refresh(row)
+
+    return _campaign_out(row)
+
+
+@router.get("/api/growth/campaigns/{campaign_id}")
+def get_campaign(
+    campaign_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    row = db.query(GrowthCampaign).filter(GrowthCampaign.id == campaign_id).first()
+    if not row:
+        raise HTTPException(404, "Campaign not found")
+    return _campaign_out(row)
+
+
+@router.post("/api/growth/campaigns/{campaign_id}/regenerate-pack")
+def regenerate_pack(
+    campaign_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    row = db.query(GrowthCampaign).filter(GrowthCampaign.id == campaign_id).first()
+    if not row:
+        raise HTTPException(404, "Campaign not found")
+    filters = row.audience_filters or {}
+    types = filters.get("contact_types") or []
+    audience_summary = f"types={types}; count≈{row.audience_count}"
+    pack = generate_campaign_pack(
+        name=row.name,
+        campaign_type=row.campaign_type,
+        classification=row.classification,
+        objective=row.objective,
+        audience_summary=audience_summary,
+        channels=list(row.channels or ["email"]),
+        cta_label=row.cta_label,
+        cta_url=row.cta_url,
+    )
+    row.pack = pack
+    row.status = "ready_for_review"
+    db.commit()
+    db.refresh(row)
+    return _campaign_out(row)
+
+
+@router.post("/api/growth/campaigns/{campaign_id}/approve")
+def approve_campaign(
+    campaign_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """Human approval gate — does not send; marks approved for later execution."""
+    row = db.query(GrowthCampaign).filter(GrowthCampaign.id == campaign_id).first()
+    if not row:
+        raise HTTPException(404, "Campaign not found")
+    row.status = "approved"
+    db.commit()
+    db.refresh(row)
+    return _campaign_out(row)
 
 
 class ColdDraftIn(BaseModel):

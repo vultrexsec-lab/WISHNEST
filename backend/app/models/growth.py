@@ -106,3 +106,26 @@ class AudienceSegment(Base):
     contact_count = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class GrowthCampaign(Base):
+    """Campaign Manager draft/live campaign (control module)."""
+
+    __tablename__ = "growth_campaigns"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(255), nullable=False)
+    campaign_type = Column(String(64), nullable=False, default="lead_generation")
+    classification = Column(String(64), nullable=False, default="commercial")  # editorial|research|commercial|sponsored
+    objective = Column(String(128), nullable=True)
+    audience_filters = Column(JSONB, nullable=True)  # contact_types, geo, segment_id
+    audience_count = Column(Integer, default=0)
+    channels = Column(JSONB, nullable=True)  # email, whatsapp, linkedin, ...
+    cta_label = Column(String(255), nullable=True)
+    cta_url = Column(String(512), nullable=True)
+    status = Column(String(64), nullable=False, default="draft")
+    # draft | ai_generating | ready_for_review | approved | scheduled | live | paused | completed
+    pack = Column(JSONB, nullable=True)  # AI-generated campaign pack
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

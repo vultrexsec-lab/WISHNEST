@@ -24,6 +24,26 @@ type SeoRow = {
   created_at: string | null;
 };
 
+type Campaign = {
+  id: string;
+  name: string;
+  campaign_type: string;
+  classification: string;
+  objective: string | null;
+  audience_count: number;
+  channels: string[];
+  cta_label: string | null;
+  cta_url: string | null;
+  status: string;
+  pack: {
+    email?: { subjects?: string[]; bodies?: string[]; follow_ups?: string[] };
+    whatsapp?: { messages?: string[] };
+    linkedin?: { posts?: string[] };
+    social?: { captions?: string[] };
+    notes?: string;
+  } | null;
+};
+
 type Contact = {
   id: string;
   name: string | null;
@@ -84,6 +104,18 @@ export function GrowthOsPage(): JSX.Element {
   });
   const contacts = contactsResp?.contacts ?? [];
   const contactsTotal = contactsResp?.total ?? 0;
+
+  const { data: campaigns = [], refetch: refetchCampaigns } = useQuery<Campaign[]>({
+    queryKey: ["/api/growth/campaigns"],
+  });
+  const [campName, setCampName] = useState("Get Your Hospitality Project Reviewed");
+  const [campObjective, setCampObjective] = useState("Generate property submissions");
+  const [campType, setCampType] = useState("lead_generation");
+  const [campClass, setCampClass] = useState("commercial");
+  const [campChannels, setCampChannels] = useState("email");
+  const [creatingCamp, setCreatingCamp] = useState(false);
+  const [selectedCamp, setSelectedCamp] = useState<Campaign | null>(null);
+
 
   const importNewsletter = async () => {
     setImporting(true);
@@ -411,6 +443,222 @@ export function GrowthOsPage(): JSX.Element {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+        </section>
+
+        {/* Step 4: Campaign builder */}
+        <section className="mt-12 border-t border-white/10 pt-10">
+          <p className="text-[10px] tracking-[1.4px] text-white/35">CAMPAIGN BUILDER</p>
+          <p className="mt-1 text-[12px] text-white/40">
+            Objective → audience segment → channels → CTA → AI pack. Drafts only — approve before any send.
+          </p>
+          <div className="mt-4 grid gap-3 rounded-2xl border border-white/10 bg-white/[0.02] p-5 sm:grid-cols-2">
+            <label className="block text-[11px] text-white/45">
+              Name
+              <input
+                value={campName}
+                onChange={(e) => setCampName(e.target.value)}
+                className="mt-1 h-10 w-full rounded-md border border-white/15 bg-[#121816] px-3 text-[13px] text-white"
+              />
+            </label>
+            <label className="block text-[11px] text-white/45">
+              Objective
+              <input
+                value={campObjective}
+                onChange={(e) => setCampObjective(e.target.value)}
+                className="mt-1 h-10 w-full rounded-md border border-white/15 bg-[#121816] px-3 text-[13px] text-white"
+              />
+            </label>
+            <label className="block text-[11px] text-white/45">
+              Type
+              <select
+                value={campType}
+                onChange={(e) => setCampType(e.target.value)}
+                className="mt-1 h-10 w-full rounded-md border border-white/15 bg-[#121816] px-3 text-[13px] text-white"
+              >
+                <option value="lead_generation">Lead generation</option>
+                <option value="review">Review applications</option>
+                <option value="survey">Survey</option>
+                <option value="reimagined">Reimagined™</option>
+                <option value="editorial_distribution">Editorial distribution</option>
+                <option value="developer_outreach">Developer outreach</option>
+              </select>
+            </label>
+            <label className="block text-[11px] text-white/45">
+              Classification
+              <select
+                value={campClass}
+                onChange={(e) => setCampClass(e.target.value)}
+                className="mt-1 h-10 w-full rounded-md border border-white/15 bg-[#121816] px-3 text-[13px] text-white"
+              >
+                <option value="commercial">Commercial</option>
+                <option value="editorial">Editorial</option>
+                <option value="research">Research</option>
+                <option value="sponsored">Sponsored</option>
+              </select>
+            </label>
+            <label className="block text-[11px] text-white/45 sm:col-span-2">
+              Channels (comma: email, whatsapp, linkedin, social)
+              <input
+                value={campChannels}
+                onChange={(e) => setCampChannels(e.target.value)}
+                className="mt-1 h-10 w-full rounded-md border border-white/15 bg-[#121816] px-3 text-[13px] text-white"
+              />
+            </label>
+            <p className="text-[12px] text-white/40 sm:col-span-2">
+              Audience: {segmentFilter ? segmentFilter : "all contacts"} (uses current segment filter)
+              {contactsTotal ? ` · ~${contactsTotal} visible` : ""}
+            </p>
+            <Button
+              type="button"
+              disabled={creatingCamp || !campName.trim()}
+              className="h-10 rounded-full bg-emerald-700 px-5 text-[12px] text-white hover:bg-emerald-600 sm:col-span-2"
+              onClick={async () => {
+                setCreatingCamp(true);
+                try {
+                  const types = segmentFilter
+                    ? segmentFilter.split(",").filter(Boolean)
+                    : [];
+                  const res = await apiRequest("POST", "/api/growth/campaigns", {
+                    name: campName.trim(),
+                    campaign_type: campType,
+                    classification: campClass,
+                    objective: campObjective,
+                    audience_filters: {
+                      contact_types: types,
+                      email_permission_only: true,
+                      exclude_suppressed: true,
+                    },
+                    channels: campChannels.split(",").map((s) => s.trim()).filter(Boolean),
+                    cta_label: "Get Your Project Reviewed",
+                    cta_url: "https://wishnest.info/get-reviewed",
+                    generate_pack: true,
+                  });
+                  const data = (await res.json()) as Campaign;
+                  setSelectedCamp(data);
+                  await refetchCampaigns();
+                  toast({ title: "Campaign ready for review", description: data.status });
+                } catch (e) {
+                  toast({
+                    title: "Create failed",
+                    description: e instanceof Error ? e.message : "Error",
+                    variant: "destructive",
+                  });
+                } finally {
+                  setCreatingCamp(false);
+                }
+              }}
+            >
+              {creatingCamp ? (
+                <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+              ) : null}
+              Generate campaign pack
+            </Button>
+          </div>
+
+          {campaigns.length > 0 && (
+            <ul className="mt-6 space-y-2">
+              {campaigns.map((c) => (
+                <li key={c.id}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCamp(c)}
+                    className="flex w-full items-center justify-between rounded-lg border border-white/10 bg-white/[0.02] px-4 py-3 text-left text-[13px] hover:border-emerald-500/30"
+                  >
+                    <span className="text-white/80">{c.name}</span>
+                    <span className="text-[11px] text-white/40">
+                      {c.status} · ~{c.audience_count} · {(c.channels || []).join(", ")}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {selectedCamp?.pack && (
+            <div className="mt-6 space-y-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[12px] font-medium text-emerald-200">
+                  Pack: {selectedCamp.name} ({selectedCamp.status})
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    className="h-8 rounded-full border border-white/20 bg-transparent px-3 text-[11px] text-white/70"
+                    onClick={async () => {
+                      const res = await apiRequest(
+                        "POST",
+                        `/api/growth/campaigns/${selectedCamp.id}/regenerate-pack`,
+                        {},
+                      );
+                      const data = (await res.json()) as Campaign;
+                      setSelectedCamp(data);
+                      await refetchCampaigns();
+                    }}
+                  >
+                    Regenerate
+                  </Button>
+                  {selectedCamp.status !== "approved" && (
+                    <Button
+                      type="button"
+                      className="h-8 rounded-full bg-emerald-700 px-3 text-[11px] text-white"
+                      onClick={async () => {
+                        const res = await apiRequest(
+                          "POST",
+                          `/api/growth/campaigns/${selectedCamp.id}/approve`,
+                          {},
+                        );
+                        const data = (await res.json()) as Campaign;
+                        setSelectedCamp(data);
+                        await refetchCampaigns();
+                        toast({ title: "Campaign approved", description: "No auto-send — execution later" });
+                      }}
+                    >
+                      Approve
+                    </Button>
+                  )}
+                </div>
+              </div>
+              {(selectedCamp.pack.email?.subjects || []).length > 0 && (
+                <div>
+                  <p className="text-[10px] tracking-[1px] text-white/40">EMAIL SUBJECTS</p>
+                  <ul className="mt-1 list-inside list-disc text-[12px] text-white/70">
+                    {selectedCamp.pack.email!.subjects!.map((s, i) => (
+                      <li key={i}>{s}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {(selectedCamp.pack.email?.bodies || []).map((b, i) => (
+                <pre
+                  key={i}
+                  className="whitespace-pre-wrap rounded-lg border border-white/10 bg-black/30 p-3 text-[12px] text-white/65"
+                >
+                  {b}
+                </pre>
+              ))}
+              {(selectedCamp.pack.whatsapp?.messages || []).length > 0 && (
+                <div>
+                  <p className="text-[10px] tracking-[1px] text-white/40">WHATSAPP</p>
+                  <ul className="mt-1 space-y-1 text-[12px] text-white/65">
+                    {selectedCamp.pack.whatsapp!.messages!.map((m, i) => (
+                      <li key={i}>{m}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {(selectedCamp.pack.linkedin?.posts || []).map((post, i) => (
+                <pre
+                  key={i}
+                  className="whitespace-pre-wrap rounded-lg border border-white/10 bg-black/30 p-3 text-[12px] text-white/65"
+                >
+                  {post}
+                </pre>
+              ))}
+              {selectedCamp.pack.notes && (
+                <p className="text-[11px] text-white/40">{selectedCamp.pack.notes}</p>
+              )}
             </div>
           )}
         </section>

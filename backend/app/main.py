@@ -246,6 +246,25 @@ def _sync_schema() -> None:
                     updated_at TIMESTAMPTZ DEFAULT now()
                 )
                 """,
+                """
+                CREATE TABLE IF NOT EXISTS growth_campaigns (
+                    id UUID PRIMARY KEY,
+                    name VARCHAR(255) NOT NULL,
+                    campaign_type VARCHAR(64) NOT NULL DEFAULT 'lead_generation',
+                    classification VARCHAR(64) NOT NULL DEFAULT 'commercial',
+                    objective VARCHAR(128),
+                    audience_filters JSONB,
+                    audience_count INTEGER DEFAULT 0,
+                    channels JSONB,
+                    cta_label VARCHAR(255),
+                    cta_url VARCHAR(512),
+                    status VARCHAR(64) NOT NULL DEFAULT 'draft',
+                    pack JSONB,
+                    notes TEXT,
+                    created_at TIMESTAMPTZ DEFAULT now(),
+                    updated_at TIMESTAMPTZ DEFAULT now()
+                )
+                """,
             ):
                 try:
                     conn.execute(text(tbl_sql))
