@@ -235,6 +235,17 @@ def _sync_schema() -> None:
                     created_at TIMESTAMPTZ DEFAULT now()
                 )
                 """,
+                """
+                CREATE TABLE IF NOT EXISTS audience_segments (
+                    id UUID PRIMARY KEY,
+                    name VARCHAR(255) NOT NULL,
+                    description TEXT,
+                    filters JSONB NOT NULL DEFAULT '{}',
+                    contact_count INTEGER DEFAULT 0,
+                    created_at TIMESTAMPTZ DEFAULT now(),
+                    updated_at TIMESTAMPTZ DEFAULT now()
+                )
+                """,
             ):
                 try:
                     conn.execute(text(tbl_sql))

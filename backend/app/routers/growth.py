@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import require_admin
-from app.models.growth import ArrowxOpportunity, GrowthContact, SeoGeoRun
+from app.models.growth import ArrowxOpportunity, AudienceSegment, GrowthContact, SeoGeoRun
 from app.models.newsletter import NewsletterSubscriber
 from app.services.agentreach_service import agentreach_configured, create_cold_sequence_draft
 from app.services.email_service import email_configured
@@ -39,7 +39,7 @@ class GrowthStatusOut(BaseModel):
     product: str
     pipeline: str
     integrations: dict[str, bool]
-    counts: dict[str, int]
+    counts: dict[str, Any]
 
 
 def _contact_out(r: GrowthContact) -> dict[str, Any]:
@@ -75,6 +75,13 @@ def growth_status(
     db: Session = Depends(get_db),
     admin: str = Depends(require_admin),
 ):
+    by_type: dict[str, int] = {}
+    for ctype in CONTACT_TYPES:
+        by_type[ctype] = (
+            db.query(GrowthContact)
+            .filter(GrowthContact.contact_type == ctype)
+            .count()
+        )
     return GrowthStatusOut(
         product="WishNest Growth & Intelligence OS",
         pipeline=(
@@ -95,22 +102,41 @@ def growth_status(
             "arrowx_opportunities": db.query(ArrowxOpportunity).count(),
             "seo_geo_runs": db.query(SeoGeoRun).count(),
             "newsletter_subscribers": db.query(NewsletterSubscriber).count(),
+            "segments_saved": db.query(AudienceSegment).count(),
+            "by_type": by_type,
         },
     )
 
 
-@router.get("/api/growth/contacts")
-def list_contacts(
-    db: Session = Depends(get_db),
-    admin: str = Depends(require_admin),
+def _apply_contact_filters(
+    query,
+    *,
     contact_type: str | None = None,
+    state: str | None = None,
+    city: str | None = None,
+    destination: str | None = None,
+    email_permission: bool | None = None,
+    exclude_suppressed: bool = True,
     q: str | None = None,
-    limit: int = 100,
-    offset: int = 0,
 ):
-    query = db.query(GrowthContact).order_by(GrowthContact.created_at.desc())
     if contact_type:
-        query = query.filter(GrowthContact.contact_type == contact_type.strip().lower())
+        # support comma-separated types
+        types = [x.strip().lower().replace(" ", "_") for x in contact_type.split(",") if x.strip()]
+        if len(types) == 1:
+            query = query.filter(GrowthContact.contact_type == types[0])
+        elif types:
+            query = query.filter(GrowthContact.contact_type.in_(types))
+    if state:
+        query = query.filter(GrowthContact.state.ilike(state.strip()))
+    if city:
+        query = query.filter(GrowthContact.city.ilike(city.strip()))
+    if destination:
+        query = query.filter(GrowthContact.destination.ilike(f"%{destination.strip()}%"))
+    if email_permission is True:
+        query = query.filter(GrowthContact.email_permission.is_(True))
+    if exclude_suppressed:
+        query = query.filter(GrowthContact.unsubscribed.is_(False))
+        query = query.filter(GrowthContact.do_not_contact.is_(False))
     if q:
         like = f"%{q.strip()}%"
         query = query.filter(
@@ -118,9 +144,39 @@ def list_contacts(
             | (GrowthContact.name.ilike(like))
             | (GrowthContact.company.ilike(like))
             | (GrowthContact.city.ilike(like))
+            | (GrowthContact.destination.ilike(like))
         )
+    return query
+
+
+@router.get("/api/growth/contacts")
+def list_contacts(
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+    contact_type: str | None = None,
+    state: str | None = None,
+    city: str | None = None,
+    destination: str | None = None,
+    email_permission: bool | None = None,
+    exclude_suppressed: bool = True,
+    q: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+):
+    query = db.query(GrowthContact).order_by(GrowthContact.created_at.desc())
+    query = _apply_contact_filters(
+        query,
+        contact_type=contact_type,
+        state=state,
+        city=city,
+        destination=destination,
+        email_permission=email_permission,
+        exclude_suppressed=exclude_suppressed,
+        q=q,
+    )
+    total = query.count()
     rows = query.offset(max(0, offset)).limit(min(limit, 200)).all()
-    return [_contact_out(r) for r in rows]
+    return {"total": total, "contacts": [_contact_out(r) for r in rows]}
 
 
 class ContactCreate(BaseModel):
@@ -407,6 +463,154 @@ def list_arrowx(
         }
         for r in rows
     ]
+
+
+
+
+@router.get("/api/growth/segments/stats")
+def segment_stats(
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """Built-in segment counts for Campaign Manager audience step."""
+    buckets = [
+        ("resorts_hotels", ["resort_owner", "hotel_owner"]),
+        ("brokers", ["broker"]),
+        ("landowners", ["landowner"]),
+        ("developers", ["developer"]),
+        ("investors", ["investor"]),
+        ("architects", ["architect"]),
+        ("subscribers", ["subscriber"]),
+        ("consumers", ["consumer"]),
+    ]
+    out = []
+    for key, types in buckets:
+        n = (
+            db.query(GrowthContact)
+            .filter(GrowthContact.contact_type.in_(types))
+            .filter(GrowthContact.do_not_contact.is_(False))
+            .count()
+        )
+        out.append({"id": key, "label": key.replace("_", " ").title(), "types": types, "count": n})
+    # geo rollups
+    from sqlalchemy import func as sqla_func
+    cities = (
+        db.query(GrowthContact.city, sqla_func.count(GrowthContact.id))
+        .filter(GrowthContact.city.isnot(None), GrowthContact.city != "")
+        .group_by(GrowthContact.city)
+        .order_by(sqla_func.count(GrowthContact.id).desc())
+        .limit(15)
+        .all()
+    )
+    destinations = (
+        db.query(GrowthContact.destination, sqla_func.count(GrowthContact.id))
+        .filter(GrowthContact.destination.isnot(None), GrowthContact.destination != "")
+        .group_by(GrowthContact.destination)
+        .order_by(sqla_func.count(GrowthContact.id).desc())
+        .limit(15)
+        .all()
+    )
+    return {
+        "segments": out,
+        "top_cities": [{"name": c, "count": n} for c, n in cities if c],
+        "top_destinations": [{"name": d, "count": n} for d, n in destinations if d],
+    }
+
+
+class SegmentCreate(BaseModel):
+    name: str
+    description: str | None = None
+    filters: dict[str, Any] = Field(default_factory=dict)
+
+
+@router.get("/api/growth/segments")
+def list_saved_segments(
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    rows = db.query(AudienceSegment).order_by(AudienceSegment.created_at.desc()).limit(50).all()
+    return [
+        {
+            "id": str(r.id),
+            "name": r.name,
+            "description": r.description,
+            "filters": r.filters or {},
+            "contact_count": r.contact_count or 0,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
+
+
+@router.post("/api/growth/segments")
+def create_segment(
+    body: SegmentCreate,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(400, "name required")
+    filters = body.filters or {}
+    types = filters.get("contact_types") or filters.get("contact_type")
+    type_param = None
+    if isinstance(types, list):
+        type_param = ",".join(str(x) for x in types)
+    elif isinstance(types, str):
+        type_param = types
+    query = db.query(GrowthContact)
+    query = _apply_contact_filters(
+        query,
+        contact_type=type_param,
+        state=filters.get("state"),
+        city=filters.get("city"),
+        destination=filters.get("destination"),
+        email_permission=True if filters.get("email_permission_only") else None,
+        exclude_suppressed=filters.get("exclude_suppressed", True),
+    )
+    count = query.count()
+    row = AudienceSegment(
+        name=name,
+        description=(body.description or "").strip() or None,
+        filters=filters,
+        contact_count=count,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {
+        "id": str(row.id),
+        "name": row.name,
+        "filters": row.filters,
+        "contact_count": row.contact_count,
+    }
+
+
+@router.post("/api/growth/segments/{segment_id}/refresh-count")
+def refresh_segment_count(
+    segment_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    row = db.query(AudienceSegment).filter(AudienceSegment.id == segment_id).first()
+    if not row:
+        raise HTTPException(404, "Segment not found")
+    filters = row.filters or {}
+    types = filters.get("contact_types") or filters.get("contact_type")
+    type_param = ",".join(types) if isinstance(types, list) else types
+    query = db.query(GrowthContact)
+    query = _apply_contact_filters(
+        query,
+        contact_type=type_param,
+        state=filters.get("state"),
+        city=filters.get("city"),
+        destination=filters.get("destination"),
+        email_permission=True if filters.get("email_permission_only") else None,
+        exclude_suppressed=filters.get("exclude_suppressed", True),
+    )
+    row.contact_count = query.count()
+    db.commit()
+    return {"id": str(row.id), "contact_count": row.contact_count}
 
 
 class ColdDraftIn(BaseModel):

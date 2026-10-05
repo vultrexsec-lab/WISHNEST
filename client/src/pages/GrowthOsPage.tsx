@@ -51,14 +51,39 @@ export function GrowthOsPage(): JSX.Element {
   const { data: seoRuns = [] } = useQuery<SeoRow[]>({
     queryKey: ["/api/growth/seo-geo/recent"],
   });
-  const { data: contacts = [], isLoading: contactsLoading } = useQuery<Contact[]>({
-    queryKey: ["/api/growth/contacts", search],
+  const [segmentFilter, setSegmentFilter] = useState<string>("");
+  const [savingSeg, setSavingSeg] = useState(false);
+
+  const { data: segmentStats } = useQuery<{
+    segments: Array<{ id: string; label: string; types: string[]; count: number }>;
+    top_cities: Array<{ name: string; count: number }>;
+    top_destinations: Array<{ name: string; count: number }>;
+  }>({
+    queryKey: ["/api/growth/segments/stats"],
+  });
+
+  const { data: savedSegments = [] } = useQuery<
+    Array<{ id: string; name: string; contact_count: number; filters: Record<string, unknown> }>
+  >({
+    queryKey: ["/api/growth/segments"],
+  });
+
+  const { data: contactsResp, isLoading: contactsLoading } = useQuery<{
+    total: number;
+    contacts: Contact[];
+  }>({
+    queryKey: ["/api/growth/contacts", search, segmentFilter],
     queryFn: async () => {
-      const q = search.trim() ? `?q=${encodeURIComponent(search.trim())}&limit=50` : "?limit=50";
-      const res = await apiRequest("GET", `/api/growth/contacts${q}`);
+      const params = new URLSearchParams();
+      params.set("limit", "50");
+      if (search.trim()) params.set("q", search.trim());
+      if (segmentFilter) params.set("contact_type", segmentFilter);
+      const res = await apiRequest("GET", `/api/growth/contacts?${params}`);
       return res.json();
     },
   });
+  const contacts = contactsResp?.contacts ?? [];
+  const contactsTotal = contactsResp?.total ?? 0;
 
   const importNewsletter = async () => {
     setImporting(true);
@@ -204,12 +229,117 @@ export function GrowthOsPage(): JSX.Element {
           </>
         )}
 
+        {/* Step 3: Segmentation */}
+        <section className="mt-12 border-t border-white/10 pt-10">
+          <p className="text-[10px] tracking-[1.4px] text-white/35">AUDIENCE SEGMENTS</p>
+          <p className="mt-1 text-[12px] text-white/40">
+            Built-in buckets for campaigns. Click to filter the contact list. Save a named audience for reuse.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setSegmentFilter("")}
+              className={`rounded-full border px-3 py-1.5 text-[11px] tracking-[0.6px] ${
+                !segmentFilter
+                  ? "border-emerald-500/50 bg-emerald-500/20 text-emerald-200"
+                  : "border-white/15 text-white/50 hover:border-white/30"
+              }`}
+            >
+              All ({status?.counts?.contacts ?? 0})
+            </button>
+            {(segmentStats?.segments ?? []).map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => setSegmentFilter(s.types.join(","))}
+                className={`rounded-full border px-3 py-1.5 text-[11px] tracking-[0.6px] ${
+                  segmentFilter === s.types.join(",")
+                    ? "border-emerald-500/50 bg-emerald-500/20 text-emerald-200"
+                    : "border-white/15 text-white/50 hover:border-white/30"
+                }`}
+              >
+                {s.label} ({s.count})
+              </button>
+            ))}
+          </div>
+          {(segmentStats?.top_destinations?.length || segmentStats?.top_cities?.length) ? (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-lg border border-white/10 p-3 text-[12px] text-white/50">
+                <p className="text-[10px] tracking-[1px] text-white/35">TOP DESTINATIONS</p>
+                <ul className="mt-2 space-y-1">
+                  {(segmentStats?.top_destinations ?? []).slice(0, 6).map((d) => (
+                    <li key={d.name} className="flex justify-between">
+                      <span>{d.name}</span>
+                      <span className="text-white/30">{d.count}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="rounded-lg border border-white/10 p-3 text-[12px] text-white/50">
+                <p className="text-[10px] tracking-[1px] text-white/35">TOP CITIES</p>
+                <ul className="mt-2 space-y-1">
+                  {(segmentStats?.top_cities ?? []).slice(0, 6).map((d) => (
+                    <li key={d.name} className="flex justify-between">
+                      <span>{d.name}</span>
+                      <span className="text-white/30">{d.count}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          ) : null}
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              disabled={savingSeg || !segmentFilter}
+              className="h-9 rounded-full border border-white/15 bg-white/5 px-4 text-[11px] text-white/70"
+              onClick={async () => {
+                setSavingSeg(true);
+                try {
+                  const types = segmentFilter.split(",").filter(Boolean);
+                  const label =
+                    segmentStats?.segments.find((s) => s.types.join(",") === segmentFilter)
+                      ?.label || types.join("+");
+                  await apiRequest("POST", "/api/growth/segments", {
+                    name: `${label} audience`,
+                    filters: {
+                      contact_types: types,
+                      email_permission_only: true,
+                      exclude_suppressed: true,
+                    },
+                  });
+                  await qc.invalidateQueries({ queryKey: ["/api/growth/segments"] });
+                  toast({ title: "Audience saved", description: label });
+                } catch (e) {
+                  toast({
+                    title: "Save failed",
+                    description: e instanceof Error ? e.message : "Error",
+                    variant: "destructive",
+                  });
+                } finally {
+                  setSavingSeg(false);
+                }
+              }}
+            >
+              {savingSeg ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              Save current segment
+            </Button>
+            {savedSegments.length > 0 && (
+              <span className="text-[11px] text-white/35">
+                Saved: {savedSegments.map((s) => `${s.name} (${s.contact_count})`).join(" · ")}
+              </span>
+            )}
+          </div>
+        </section>
+
         {/* Step 2: Contacts */}
         <section className="mt-12 border-t border-white/10 pt-10">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Users className="h-4 w-4 text-white/40" />
-              <p className="text-[10px] tracking-[1.4px] text-white/35">MASTER CONTACTS</p>
+              <p className="text-[10px] tracking-[1.4px] text-white/35">
+                MASTER CONTACTS{contactsTotal ? ` · ${contactsTotal}` : ""}
+              </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button

@@ -90,3 +90,19 @@ class SeoGeoRun(Base):
     postiz_payload = Column(JSONB, nullable=True)
     raw = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class AudienceSegment(Base):
+    """Named, reusable audience definition for campaigns."""
+
+    __tablename__ = "audience_segments"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    # Filters stored as JSON: contact_types[], states[], cities[], destinations[],
+    # email_permission_only, exclude_suppressed
+    filters = Column(JSONB, nullable=False, default=dict)
+    contact_count = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
