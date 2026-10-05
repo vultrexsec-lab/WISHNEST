@@ -28,7 +28,11 @@ from app.services.mautic_service import (
     push_campaign_email_pack,
     upsert_contact,
 )
-from app.services.postiz_service import postiz_configured
+from app.services.postiz_service import (
+    postiz_configured,
+    queue_article_distribution,
+    queue_social_posts,
+)
 
 router = APIRouter(tags=["growth-os"])
 
@@ -854,6 +858,95 @@ def push_email_to_mautic(
     db.commit()
     db.refresh(row)
     return {"campaign": _campaign_out(row), "mautic": result}
+
+
+@router.post("/api/growth/campaigns/{campaign_id}/push-social-postiz")
+def push_social_to_postiz(
+    campaign_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """
+    Step 6 — Social path: LinkedIn/IG/FB captions from AI pack → Postiz (draft/queue).
+    Magazine continuous articles use approve → SEO/GEO → Postiz separately.
+    """
+    row = db.query(GrowthCampaign).filter(GrowthCampaign.id == campaign_id).first()
+    if not row:
+        raise HTTPException(404, "Campaign not found")
+    pack = row.pack or {}
+    posts: list[str] = []
+    linkedin = (pack.get("linkedin") or {}).get("posts") or []
+    captions = (pack.get("social") or {}).get("captions") or []
+    posts.extend([str(x) for x in linkedin if x])
+    posts.extend([str(x) for x in captions if x])
+    if not posts:
+        raise HTTPException(400, "No LinkedIn/social captions in pack — regenerate first")
+
+    channels = [str(c).lower() for c in (row.channels or [])]
+    social_channels = [c for c in channels if c in ("linkedin", "instagram", "facebook", "social", "threads")]
+    if not social_channels:
+        social_channels = ["linkedin", "instagram", "facebook"]
+    # normalize "social" bucket
+    social_channels = ["instagram" if c == "social" else c for c in social_channels]
+
+    result = queue_social_posts(
+        campaign_id=str(row.id),
+        campaign_name=row.name,
+        posts=posts,
+        channels=social_channels,
+        cta_url=row.cta_url,
+    )
+    meta = dict(pack) if isinstance(pack, dict) else {}
+    meta["postiz_social_push"] = {
+        "status": result.get("status"),
+        "posts_queued": result.get("posts_queued"),
+        "postiz_configured": result.get("postiz_configured"),
+        "results": result.get("results"),
+    }
+    row.pack = meta
+    db.commit()
+    db.refresh(row)
+    return {"campaign": _campaign_out(row), "postiz": result}
+
+
+@router.post("/api/growth/seo-geo/{run_id}/requeue-postiz")
+def requeue_seo_geo_postiz(
+    run_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """Re-send magazine article distribution job for an existing SEO/GEO run."""
+    run = db.query(SeoGeoRun).filter(SeoGeoRun.id == run_id).first()
+    if not run:
+        raise HTTPException(404, "SEO/GEO run not found")
+    article = None
+    try:
+        from app.models.article import Article
+        article = db.query(Article).filter(Article.id == run.article_id).first()
+    except Exception:  # noqa: BLE001
+        article = None
+    headline = (run.meta_title or run.primary_keyword or run.article_id) or "WishNest"
+    summary = run.direct_answer or ""
+    url = f"https://wishnest.info/article/{run.article_id}"
+    if article is not None:
+        headline = article.headline or headline
+        summary = (article.executive_summary or article.subtitle or summary)[:500]
+    dist = queue_article_distribution(
+        article_id=str(run.article_id),
+        headline=str(headline),
+        summary=str(summary or ""),
+        url=url,
+    )
+    run.postiz_status = dist.get("status") or "queued"
+    run.postiz_payload = dist
+    db.commit()
+    db.refresh(run)
+    return {
+        "id": str(run.id),
+        "article_id": run.article_id,
+        "postiz_status": run.postiz_status,
+        "postiz": dist,
+    }
 
 
 class ColdDraftIn(BaseModel):

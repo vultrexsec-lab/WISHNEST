@@ -649,6 +649,37 @@ export function GrowthOsPage(): JSX.Element {
                   >
                     Push email → Mautic
                   </Button>
+                  <Button
+                    type="button"
+                    className="h-8 rounded-full border border-violet-500/40 bg-violet-500/15 px-3 text-[11px] text-violet-200"
+                    onClick={async () => {
+                      try {
+                        const res = await apiRequest(
+                          "POST",
+                          `/api/growth/campaigns/${selectedCamp.id}/push-social-postiz`,
+                          {},
+                        );
+                        const data = await res.json();
+                        setSelectedCamp(data.campaign as Campaign);
+                        await refetchCampaigns();
+                        const pz = data.postiz || {};
+                        toast({
+                          title: pz.postiz_configured
+                            ? "Social queued to Postiz"
+                            : "Postiz stub (not configured)",
+                          description: `Posts: ${pz.posts_queued ?? 0}. Campaign drafts prefer draft mode.`,
+                        });
+                      } catch (e) {
+                        toast({
+                          title: "Postiz push failed",
+                          description: e instanceof Error ? e.message : "Error",
+                          variant: "destructive",
+                        });
+                      }
+                    }}
+                  >
+                    Push social → Postiz
+                  </Button>
                 </div>
               </div>
               {(selectedCamp.pack.email?.subjects || []).length > 0 && (
@@ -720,13 +751,42 @@ export function GrowthOsPage(): JSX.Element {
               {seoRuns.map((r) => (
                 <li
                   key={r.id}
-                  className="rounded-lg border border-white/10 bg-white/[0.02] px-4 py-3 text-[13px]"
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/[0.02] px-4 py-3 text-[13px]"
                 >
-                  <p className="text-white/80">{r.meta_title || r.primary_keyword || r.article_id}</p>
-                  <p className="mt-1 text-[11px] text-white/40">
-                    SEO {r.seo_score ?? "—"} · GEO {r.geo_score ?? "—"} · Postiz{" "}
-                    {r.postiz_status || "—"}
-                  </p>
+                  <div>
+                    <p className="text-white/80">{r.meta_title || r.primary_keyword || r.article_id}</p>
+                    <p className="mt-1 text-[11px] text-white/40">
+                      SEO {r.seo_score ?? "—"} · GEO {r.geo_score ?? "—"} · Postiz{" "}
+                      {r.postiz_status || "—"}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    className="h-8 rounded-full border border-white/15 bg-white/5 px-3 text-[10px] text-white/60"
+                    onClick={async () => {
+                      try {
+                        const res = await apiRequest(
+                          "POST",
+                          `/api/growth/seo-geo/${r.id}/requeue-postiz`,
+                          {},
+                        );
+                        const data = await res.json();
+                        await qc.invalidateQueries({ queryKey: ["/api/growth/seo-geo/recent"] });
+                        toast({
+                          title: "Postiz requeue",
+                          description: data.postiz_status || data.postiz?.status || "done",
+                        });
+                      } catch (e) {
+                        toast({
+                          title: "Requeue failed",
+                          description: e instanceof Error ? e.message : "Error",
+                          variant: "destructive",
+                        });
+                      }
+                    }}
+                  >
+                    Requeue Postiz
+                  </Button>
                 </li>
               ))}
             </ul>
