@@ -265,6 +265,29 @@ def _sync_schema() -> None:
                     updated_at TIMESTAMPTZ DEFAULT now()
                 )
                 """,
+                """
+                CREATE TABLE IF NOT EXISTS growth_surveys (
+                    id UUID PRIMARY KEY,
+                    title VARCHAR(255) NOT NULL,
+                    destination VARCHAR(128),
+                    topic VARCHAR(128),
+                    status VARCHAR(64) NOT NULL DEFAULT 'active',
+                    questions JSONB,
+                    created_at TIMESTAMPTZ DEFAULT now(),
+                    updated_at TIMESTAMPTZ DEFAULT now()
+                )
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS growth_survey_responses (
+                    id UUID PRIMARY KEY,
+                    survey_id UUID NOT NULL,
+                    contact_id UUID,
+                    email VARCHAR(255),
+                    answers JSONB NOT NULL DEFAULT '{}',
+                    consent_commercial BOOLEAN DEFAULT false,
+                    created_at TIMESTAMPTZ DEFAULT now()
+                )
+                """,
             ):
                 try:
                     conn.execute(text(tbl_sql))

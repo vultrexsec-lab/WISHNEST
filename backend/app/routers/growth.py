@@ -17,12 +17,19 @@ from app.models.growth import (
     AudienceSegment,
     GrowthCampaign,
     GrowthContact,
+    GrowthSurvey,
+    GrowthSurveyResponse,
     SeoGeoRun,
 )
 from app.services.campaign_service import generate_campaign_pack
+from app.services.email_service import email_configured, send_email
+from app.services.survey_intelligence_service import (
+    aggregate_demand_signals,
+    opportunity_summary,
+    opportunity_title,
+)
 from app.models.newsletter import NewsletterSubscriber
 from app.services.agentreach_service import agentreach_configured, create_cold_sequence_draft
-from app.services.email_service import email_configured
 from app.services.mautic_service import (
     mautic_configured,
     push_campaign_email_pack,
@@ -119,6 +126,8 @@ def growth_status(
             "newsletter_subscribers": db.query(NewsletterSubscriber).count(),
             "segments_saved": db.query(AudienceSegment).count(),
             "campaigns": db.query(GrowthCampaign).count(),
+            "surveys": db.query(GrowthSurvey).count(),
+            "survey_responses": db.query(GrowthSurveyResponse).count(),
             "by_type": by_type,
         },
     )
@@ -946,6 +955,242 @@ def requeue_seo_geo_postiz(
         "article_id": run.article_id,
         "postiz_status": run.postiz_status,
         "postiz": dist,
+    }
+
+
+
+
+# ── Surveys → ArrowX (Step 7) ──────────────────────────────────────────────
+
+DEFAULT_SURVEY_QUESTIONS = [
+    {"id": "budget", "label": "Budget range", "type": "choice", "options": ["< ₹1 Cr", "₹1–2 Cr", "₹2–3 Cr", "₹3–5 Cr", "₹5 Cr+"]},
+    {"id": "property_type", "label": "Preferred property", "type": "choice", "options": ["Villa", "Apartment", "Managed Villa", "Resort room / fractional"]},
+    {"id": "location", "label": "Preferred location / destination", "type": "text"},
+    {"id": "intent", "label": "Primary intent", "type": "choice", "options": ["Self-use", "Managed rental", "Investment", "Hospitality project"]},
+]
+
+
+class SurveyCreate(BaseModel):
+    title: str
+    destination: str | None = None
+    topic: str | None = "second_home"
+    questions: list[dict[str, Any]] | None = None
+
+
+@router.get("/api/growth/surveys")
+def list_surveys(
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    rows = db.query(GrowthSurvey).order_by(GrowthSurvey.created_at.desc()).limit(40).all()
+    out = []
+    for r in rows:
+        n = db.query(GrowthSurveyResponse).filter(GrowthSurveyResponse.survey_id == r.id).count()
+        out.append({
+            "id": str(r.id),
+            "title": r.title,
+            "destination": r.destination,
+            "topic": r.topic,
+            "status": r.status,
+            "questions": r.questions,
+            "response_count": n,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        })
+    return out
+
+
+@router.post("/api/growth/surveys")
+def create_survey(
+    body: SurveyCreate,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    title = (body.title or "").strip()
+    if not title:
+        raise HTTPException(400, "title required")
+    row = GrowthSurvey(
+        title=title,
+        destination=(body.destination or "").strip() or None,
+        topic=(body.topic or "second_home")[:128],
+        status="active",
+        questions=body.questions or DEFAULT_SURVEY_QUESTIONS,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {
+        "id": str(row.id),
+        "title": row.title,
+        "destination": row.destination,
+        "topic": row.topic,
+        "status": row.status,
+        "questions": row.questions,
+        "response_count": 0,
+    }
+
+
+class SurveyResponseIn(BaseModel):
+    email: str | None = None
+    answers: dict[str, Any] = Field(default_factory=dict)
+    consent_commercial: bool = False
+    contact_id: str | None = None
+
+
+@router.post("/api/growth/surveys/{survey_id}/responses")
+def add_survey_response(
+    survey_id: uuid.UUID,
+    body: SurveyResponseIn,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    survey = db.query(GrowthSurvey).filter(GrowthSurvey.id == survey_id).first()
+    if not survey:
+        raise HTTPException(404, "Survey not found")
+    contact_uuid = None
+    if body.contact_id:
+        try:
+            contact_uuid = uuid.UUID(body.contact_id)
+        except ValueError:
+            contact_uuid = None
+    row = GrowthSurveyResponse(
+        survey_id=survey.id,
+        contact_id=contact_uuid,
+        email=(body.email or "").strip().lower() or None,
+        answers=body.answers or {},
+        consent_commercial=bool(body.consent_commercial),
+    )
+    db.add(row)
+    # Optionally upsert growth contact from email
+    if row.email:
+        existing = db.query(GrowthContact).filter(GrowthContact.email == row.email).first()
+        if not existing:
+            db.add(
+                GrowthContact(
+                    email=row.email,
+                    contact_type="consumer",
+                    destination=survey.destination,
+                    email_permission=True,
+                    source="survey",
+                    tags="survey_response",
+                )
+            )
+    db.commit()
+    db.refresh(row)
+    return {
+        "id": str(row.id),
+        "survey_id": str(survey.id),
+        "email": row.email,
+        "answers": row.answers,
+        "consent_commercial": row.consent_commercial,
+    }
+
+
+@router.get("/api/growth/surveys/{survey_id}/insights")
+def survey_insights(
+    survey_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    survey = db.query(GrowthSurvey).filter(GrowthSurvey.id == survey_id).first()
+    if not survey:
+        raise HTTPException(404, "Survey not found")
+    rows = db.query(GrowthSurveyResponse).filter(GrowthSurveyResponse.survey_id == survey_id).all()
+    answers = [r.answers for r in rows if r.answers]
+    signals = aggregate_demand_signals(answers)
+    return {
+        "survey_id": str(survey.id),
+        "title": survey.title,
+        "destination": survey.destination,
+        **signals,
+    }
+
+
+@router.post("/api/growth/surveys/{survey_id}/to-arrowx")
+def survey_to_arrowx(
+    survey_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """
+    Convert aggregated survey demand into an ArrowX opportunity record.
+    Only marks consent_commercial on the opportunity if any response opted in;
+    does not expose individual respondent data to ArrowX payload beyond aggregates.
+    """
+    survey = db.query(GrowthSurvey).filter(GrowthSurvey.id == survey_id).first()
+    if not survey:
+        raise HTTPException(404, "Survey not found")
+    rows = db.query(GrowthSurveyResponse).filter(GrowthSurveyResponse.survey_id == survey_id).all()
+    if not rows:
+        raise HTTPException(400, "No responses to aggregate")
+    signals = aggregate_demand_signals([r.answers for r in rows if r.answers])
+    any_consent = any(bool(r.consent_commercial) for r in rows)
+    opp = ArrowxOpportunity(
+        source_type="survey",
+        source_id=str(survey.id),
+        title=opportunity_title(survey.title, survey.destination, signals)[:512],
+        summary=opportunity_summary(signals),
+        destination=survey.destination,
+        demand_signals=signals,
+        status="new",
+        consent_commercial=any_consent,
+    )
+    db.add(opp)
+    db.commit()
+    db.refresh(opp)
+    return {
+        "id": str(opp.id),
+        "title": opp.title,
+        "summary": opp.summary,
+        "destination": opp.destination,
+        "status": opp.status,
+        "consent_commercial": opp.consent_commercial,
+        "demand_signals": opp.demand_signals,
+    }
+
+
+class TestEmailIn(BaseModel):
+    to_email: str
+    subject: str | None = None
+
+
+@router.post("/api/growth/campaigns/{campaign_id}/send-test-email")
+def send_campaign_test_email(
+    campaign_id: uuid.UUID,
+    body: TestEmailIn,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """Send ONE test email of the first pack body to a single address (Brevo/SMTP)."""
+    if not email_configured():
+        raise HTTPException(
+            400,
+            "Email not configured. Set BREVO_API_KEY + BREVO_FROM_EMAIL on Render.",
+        )
+    to_email = (body.to_email or "").strip().lower()
+    if not to_email or "@" not in to_email:
+        raise HTTPException(400, "Valid to_email required")
+    row = db.query(GrowthCampaign).filter(GrowthCampaign.id == campaign_id).first()
+    if not row:
+        raise HTTPException(404, "Campaign not found")
+    pack = row.pack or {}
+    email_pack = pack.get("email") or {}
+    subjects = list(email_pack.get("subjects") or [])
+    bodies = list(email_pack.get("bodies") or [])
+    if not bodies:
+        raise HTTPException(400, "No email body in pack")
+    subject = (body.subject or (subjects[0] if subjects else row.name)).strip()
+    subject = f"[TEST] {subject}"[:200]
+    text = bodies[0]
+    html = text if "<" in text else f"<html><body><pre style='font-family:sans-serif;white-space:pre-wrap'>{text}</pre></body></html>"
+    try:
+        send_email(to_email=to_email, subject=subject, html_body=html, text_body=text)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, f"Send failed: {exc}") from exc
+    return {
+        "status": "sent",
+        "to_email": to_email,
+        "subject": subject,
+        "campaign_id": str(row.id),
     }
 
 

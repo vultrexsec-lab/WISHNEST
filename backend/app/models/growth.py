@@ -129,3 +129,30 @@ class GrowthCampaign(Base):
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class GrowthSurvey(Base):
+    """Lightweight survey for demand intelligence → ArrowX."""
+
+    __tablename__ = "growth_surveys"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title = Column(String(255), nullable=False)
+    destination = Column(String(128), nullable=True)
+    topic = Column(String(128), nullable=True)  # second_home, hospitality, villa, ...
+    status = Column(String(64), nullable=False, default="active")  # active, closed
+    questions = Column(JSONB, nullable=True)  # [{id, label, type, options?}]
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class GrowthSurveyResponse(Base):
+    __tablename__ = "growth_survey_responses"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    survey_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    contact_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    email = Column(String(255), nullable=True)
+    answers = Column(JSONB, nullable=False, default=dict)
+    consent_commercial = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

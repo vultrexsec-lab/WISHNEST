@@ -680,6 +680,34 @@ export function GrowthOsPage(): JSX.Element {
                   >
                     Push social → Postiz
                   </Button>
+                  <Button
+                    type="button"
+                    className="h-8 rounded-full border border-amber-500/40 bg-amber-500/10 px-3 text-[11px] text-amber-100"
+                    onClick={async () => {
+                      const to = window.prompt("Send TEST email to (your address only):");
+                      if (!to || !to.includes("@")) return;
+                      try {
+                        const res = await apiRequest(
+                          "POST",
+                          `/api/growth/campaigns/${selectedCamp.id}/send-test-email`,
+                          { to_email: to.trim() },
+                        );
+                        const data = await res.json();
+                        toast({
+                          title: "Test email sent",
+                          description: `To ${data.to_email}: ${data.subject}`,
+                        });
+                      } catch (e) {
+                        toast({
+                          title: "Test email failed",
+                          description: e instanceof Error ? e.message : "Configure BREVO on Render",
+                          variant: "destructive",
+                        });
+                      }
+                    }}
+                  >
+                    Send test email
+                  </Button>
                 </div>
               </div>
               {(selectedCamp.pack.email?.subjects || []).length > 0 && (
@@ -736,6 +764,9 @@ export function GrowthOsPage(): JSX.Element {
             </div>
           )}
         </section>
+
+        {/* Step 7: Surveys → ArrowX */}
+        <SurveyIntelligencePanel />
 
         <section className="mt-12">
           <div className="flex items-center gap-2">
@@ -794,5 +825,251 @@ export function GrowthOsPage(): JSX.Element {
         </section>
       </main>
     </div>
+  );
+}
+
+
+function SurveyIntelligencePanel(): JSX.Element {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [title, setTitle] = useState("Second Home Demand — Sample");
+  const [destination, setDestination] = useState("Lonavala");
+  const [busy, setBusy] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [sampleEmail, setSampleEmail] = useState("");
+  const [budget, setBudget] = useState("₹2–3 Cr");
+  const [propertyType, setPropertyType] = useState("Villa");
+  const [intent, setIntent] = useState("Managed rental");
+
+  const { data: surveys = [] } = useQuery<
+    Array<{
+      id: string;
+      title: string;
+      destination: string | null;
+      response_count: number;
+    }>
+  >({ queryKey: ["/api/growth/surveys"] });
+
+  const { data: insights } = useQuery<{
+    response_count: number;
+    signals: Record<string, Array<{ value: string; count: number }>>;
+  }>({
+    queryKey: ["/api/growth/surveys", selectedId, "insights"],
+    enabled: Boolean(selectedId),
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/growth/surveys/${selectedId}/insights`);
+      return res.json();
+    },
+  });
+
+  const { data: arrowx = [] } = useQuery<
+    Array<{ id: string; title: string; summary: string | null; status: string }>
+  >({ queryKey: ["/api/growth/arrowx/opportunities"] });
+
+  return (
+    <section className="mt-12 border-t border-white/10 pt-10">
+      <p className="text-[10px] tracking-[1.4px] text-white/35">SURVEYS → ARROWX</p>
+      <p className="mt-1 text-[12px] text-white/40">
+        Responses aggregate into demand signals (not individual charts only), then qualified
+        opportunities for ArrowX.
+      </p>
+      <div className="mt-4 grid gap-3 rounded-2xl border border-white/10 bg-white/[0.02] p-5 sm:grid-cols-2">
+        <label className="block text-[11px] text-white/45">
+          Survey title
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="mt-1 h-10 w-full rounded-md border border-white/15 bg-[#121816] px-3 text-[13px] text-white"
+          />
+        </label>
+        <label className="block text-[11px] text-white/45">
+          Destination
+          <input
+            value={destination}
+            onChange={(e) => setDestination(e.target.value)}
+            className="mt-1 h-10 w-full rounded-md border border-white/15 bg-[#121816] px-3 text-[13px] text-white"
+          />
+        </label>
+        <Button
+          type="button"
+          disabled={busy || !title.trim()}
+          className="h-10 rounded-full bg-emerald-800 px-4 text-[12px] text-white sm:col-span-2"
+          onClick={async () => {
+            setBusy(true);
+            try {
+              const res = await apiRequest("POST", "/api/growth/surveys", {
+                title: title.trim(),
+                destination: destination.trim() || null,
+                topic: "second_home",
+              });
+              const data = await res.json();
+              setSelectedId(data.id);
+              await qc.invalidateQueries({ queryKey: ["/api/growth/surveys"] });
+              toast({ title: "Survey created", description: data.title });
+            } catch (e) {
+              toast({
+                title: "Failed",
+                description: e instanceof Error ? e.message : "Error",
+                variant: "destructive",
+              });
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          Create survey
+        </Button>
+      </div>
+
+      {surveys.length > 0 && (
+        <ul className="mt-4 space-y-1">
+          {surveys.map((s) => (
+            <li key={s.id}>
+              <button
+                type="button"
+                onClick={() => setSelectedId(s.id)}
+                className={`flex w-full justify-between rounded-lg border px-3 py-2 text-left text-[12px] ${
+                  selectedId === s.id
+                    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-100"
+                    : "border-white/10 text-white/60"
+                }`}
+              >
+                <span>
+                  {s.title}
+                  {s.destination ? ` · ${s.destination}` : ""}
+                </span>
+                <span className="text-white/35">{s.response_count} responses</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {selectedId && (
+        <div className="mt-4 grid gap-3 rounded-xl border border-white/10 p-4 sm:grid-cols-2">
+          <p className="text-[11px] text-white/40 sm:col-span-2">Add sample response (admin test)</p>
+          <input
+            placeholder="Email (optional)"
+            value={sampleEmail}
+            onChange={(e) => setSampleEmail(e.target.value)}
+            className="h-9 rounded-md border border-white/15 bg-[#121816] px-3 text-[12px] text-white"
+          />
+          <select
+            value={budget}
+            onChange={(e) => setBudget(e.target.value)}
+            className="h-9 rounded-md border border-white/15 bg-[#121816] px-3 text-[12px] text-white"
+          >
+            {["< ₹1 Cr", "₹1–2 Cr", "₹2–3 Cr", "₹3–5 Cr", "₹5 Cr+"].map((x) => (
+              <option key={x}>{x}</option>
+            ))}
+          </select>
+          <select
+            value={propertyType}
+            onChange={(e) => setPropertyType(e.target.value)}
+            className="h-9 rounded-md border border-white/15 bg-[#121816] px-3 text-[12px] text-white"
+          >
+            {["Villa", "Apartment", "Managed Villa"].map((x) => (
+              <option key={x}>{x}</option>
+            ))}
+          </select>
+          <select
+            value={intent}
+            onChange={(e) => setIntent(e.target.value)}
+            className="h-9 rounded-md border border-white/15 bg-[#121816] px-3 text-[12px] text-white"
+          >
+            {["Self-use", "Managed rental", "Investment", "Hospitality project"].map((x) => (
+              <option key={x}>{x}</option>
+            ))}
+          </select>
+          <Button
+            type="button"
+            className="h-9 rounded-full border border-white/15 bg-white/5 text-[11px] text-white/70 sm:col-span-2"
+            onClick={async () => {
+              try {
+                await apiRequest("POST", `/api/growth/surveys/${selectedId}/responses`, {
+                  email: sampleEmail || null,
+                  consent_commercial: true,
+                  answers: {
+                    budget,
+                    property_type: propertyType,
+                    location: destination || "India",
+                    intent,
+                  },
+                });
+                await qc.invalidateQueries({ queryKey: ["/api/growth/surveys"] });
+                await qc.invalidateQueries({
+                  queryKey: ["/api/growth/surveys", selectedId, "insights"],
+                });
+                toast({ title: "Response saved" });
+              } catch (e) {
+                toast({
+                  title: "Failed",
+                  description: e instanceof Error ? e.message : "Error",
+                  variant: "destructive",
+                });
+              }
+            }}
+          >
+            Add sample response
+          </Button>
+          <Button
+            type="button"
+            className="h-9 rounded-full bg-violet-800/80 text-[11px] text-white sm:col-span-2"
+            onClick={async () => {
+              try {
+                const res = await apiRequest(
+                  "POST",
+                  `/api/growth/surveys/${selectedId}/to-arrowx`,
+                  {},
+                );
+                const data = await res.json();
+                await qc.invalidateQueries({ queryKey: ["/api/growth/arrowx/opportunities"] });
+                toast({ title: "ArrowX opportunity created", description: data.title });
+              } catch (e) {
+                toast({
+                  title: "ArrowX failed",
+                  description: e instanceof Error ? e.message : "Need responses first",
+                  variant: "destructive",
+                });
+              }
+            }}
+          >
+            Aggregate → ArrowX opportunity
+          </Button>
+          {insights && (
+            <div className="sm:col-span-2 text-[12px] text-white/55">
+              <p className="text-[10px] tracking-[1px] text-white/35">
+                DEMAND SIGNALS · {insights.response_count} responses
+              </p>
+              {(["budget", "property_type", "location", "intent"] as const).map((k) => (
+                <p key={k} className="mt-1">
+                  <span className="text-white/35">{k}: </span>
+                  {(insights.signals?.[k] || [])
+                    .map((x) => `${x.value} (${x.count})`)
+                    .join(", ") || "—"}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {arrowx.length > 0 && (
+        <div className="mt-6">
+          <p className="text-[10px] tracking-[1px] text-white/35">ARROWX OPPORTUNITIES</p>
+          <ul className="mt-2 space-y-2">
+            {arrowx.slice(0, 8).map((o) => (
+              <li
+                key={o.id}
+                className="rounded-lg border border-violet-500/20 bg-violet-500/5 px-3 py-2 text-[12px]"
+              >
+                <p className="text-violet-100">{o.title}</p>
+                <p className="mt-0.5 text-white/40">{o.summary}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
   );
 }
