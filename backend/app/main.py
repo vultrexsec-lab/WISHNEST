@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
-from app.routers import approve, articles, auth, image_proxy, newsletter, research, vision, reimaging, submissions
+from app.routers import approve, articles, auth, image_proxy, newsletter, research, vision, reimaging, submissions, growth
 from app.routers import scheduler as scheduler_router
 from app.models import automation  # noqa: F401 ensures settings table metadata is loaded
 from app.models import media_blob  # noqa: F401 ensures media_blobs table metadata is loaded
@@ -168,6 +168,80 @@ def _sync_schema() -> None:
                 "ALTER TABLE newsletter_subscribers ADD COLUMN IF NOT EXISTS interests VARCHAR(512)"
             ))
             conn.commit()
+        
+            # Growth & Intelligence OS tables
+            for tbl_sql in (
+                """
+                CREATE TABLE IF NOT EXISTS growth_contacts (
+                    id UUID PRIMARY KEY,
+                    external_mautic_id VARCHAR(64),
+                    name VARCHAR(255),
+                    email VARCHAR(255),
+                    phone VARCHAR(64),
+                    company VARCHAR(255),
+                    contact_type VARCHAR(64),
+                    country VARCHAR(64),
+                    state VARCHAR(128),
+                    city VARCHAR(128),
+                    destination VARCHAR(128),
+                    email_permission BOOLEAN DEFAULT false,
+                    whatsapp_permission BOOLEAN DEFAULT false,
+                    phone_permission BOOLEAN DEFAULT false,
+                    unsubscribed BOOLEAN DEFAULT false,
+                    do_not_contact BOOLEAN DEFAULT false,
+                    tags TEXT,
+                    interests TEXT,
+                    intelligence_score INTEGER DEFAULT 0,
+                    commercial_score INTEGER DEFAULT 0,
+                    source VARCHAR(128),
+                    notes TEXT,
+                    meta JSONB,
+                    created_at TIMESTAMPTZ DEFAULT now(),
+                    updated_at TIMESTAMPTZ DEFAULT now()
+                )
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS arrowx_opportunities (
+                    id UUID PRIMARY KEY,
+                    contact_id UUID,
+                    source_type VARCHAR(64) NOT NULL,
+                    source_id VARCHAR(128),
+                    title VARCHAR(512) NOT NULL,
+                    summary TEXT,
+                    destination VARCHAR(128),
+                    demand_signals JSONB,
+                    status VARCHAR(64) NOT NULL DEFAULT 'new',
+                    consent_commercial BOOLEAN DEFAULT false,
+                    created_at TIMESTAMPTZ DEFAULT now(),
+                    updated_at TIMESTAMPTZ DEFAULT now()
+                )
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS seo_geo_runs (
+                    id UUID PRIMARY KEY,
+                    article_id VARCHAR(64) NOT NULL,
+                    seo_score FLOAT,
+                    geo_score FLOAT,
+                    primary_keyword VARCHAR(255),
+                    meta_title VARCHAR(512),
+                    meta_description VARCHAR(1024),
+                    direct_answer TEXT,
+                    faq_json JSONB,
+                    schema_json JSONB,
+                    internal_links JSONB,
+                    postiz_status VARCHAR(64),
+                    postiz_payload JSONB,
+                    raw JSONB,
+                    created_at TIMESTAMPTZ DEFAULT now()
+                )
+                """,
+            ):
+                try:
+                    conn.execute(text(tbl_sql))
+                except Exception as te:
+                    log.warning("Growth table create skipped: %s", te)
+            conn.commit()
+
         log.info("Schema sync: media_blobs + hospitality_submissions + newsletter interests present.")
     except Exception as exc:
         # Log but don't crash — the articles table may not exist yet on a
@@ -230,6 +304,7 @@ app.include_router(submissions.router)
 app.include_router(scheduler_router.router)
 app.include_router(vision.router)
 app.include_router(reimaging.router)
+app.include_router(growth.router)
 
 
 @app.get("/api/health")

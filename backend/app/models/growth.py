@@ -1,0 +1,92 @@
+"""Growth & Intelligence OS — shared records (contacts, opportunities, SEO runs)."""
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    Integer,
+    String,
+    Text,
+    func,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+
+from app.database import Base
+
+
+class GrowthContact(Base):
+    """Universal contact — synced later with Mautic; WishNest source of truth for enrichment."""
+
+    __tablename__ = "growth_contacts"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    external_mautic_id = Column(String(64), nullable=True, index=True)
+    name = Column(String(255), nullable=True)
+    email = Column(String(255), nullable=True, index=True)
+    phone = Column(String(64), nullable=True, index=True)
+    company = Column(String(255), nullable=True)
+    contact_type = Column(String(64), nullable=True, index=True)  # resort_owner, broker, ...
+    country = Column(String(64), nullable=True)
+    state = Column(String(128), nullable=True)
+    city = Column(String(128), nullable=True)
+    destination = Column(String(128), nullable=True)
+    email_permission = Column(Boolean, default=False)
+    whatsapp_permission = Column(Boolean, default=False)
+    phone_permission = Column(Boolean, default=False)
+    unsubscribed = Column(Boolean, default=False)
+    do_not_contact = Column(Boolean, default=False)
+    tags = Column(Text, nullable=True)
+    interests = Column(Text, nullable=True)
+    intelligence_score = Column(Integer, default=0)
+    commercial_score = Column(Integer, default=0)
+    source = Column(String(128), nullable=True)
+    notes = Column(Text, nullable=True)
+    meta = Column(JSONB, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ArrowxOpportunity(Base):
+    """Qualified commercial opportunity routed toward ArrowX (not merged into editorial)."""
+
+    __tablename__ = "arrowx_opportunities"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    contact_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    source_type = Column(String(64), nullable=False)  # survey, campaign, submission, telecaller
+    source_id = Column(String(128), nullable=True)
+    title = Column(String(512), nullable=False)
+    summary = Column(Text, nullable=True)
+    destination = Column(String(128), nullable=True)
+    demand_signals = Column(JSONB, nullable=True)
+    status = Column(String(64), nullable=False, default="new")  # new, reviewing, routed, closed
+    consent_commercial = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class SeoGeoRun(Base):
+    """SEO + GEO optimization result attached to an article before/at publish."""
+
+    __tablename__ = "seo_geo_runs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    article_id = Column(String(64), nullable=False, index=True)
+    seo_score = Column(Float, nullable=True)
+    geo_score = Column(Float, nullable=True)
+    primary_keyword = Column(String(255), nullable=True)
+    meta_title = Column(String(512), nullable=True)
+    meta_description = Column(String(1024), nullable=True)
+    direct_answer = Column(Text, nullable=True)
+    faq_json = Column(JSONB, nullable=True)
+    schema_json = Column(JSONB, nullable=True)
+    internal_links = Column(JSONB, nullable=True)
+    postiz_status = Column(String(64), nullable=True)  # pending, queued, published, skipped, error
+    postiz_payload = Column(JSONB, nullable=True)
+    raw = Column(JSONB, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

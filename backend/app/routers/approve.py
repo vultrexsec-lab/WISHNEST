@@ -22,6 +22,8 @@ from app.models.article import Article, ArticleStatus
 from app.models.newsletter import NewsletterSubscriber
 from app.schemas.article import ApproveArticleRequest, ApproveArticleResponse
 from app.services.email_service import send_article_to_subscribers, email_configured
+from app.services.seo_geo_service import run_seo_geo_for_article
+from app.services.postiz_service import queue_article_distribution
 
 router = APIRouter(tags=["approval"])
 logger = logging.getLogger("wishnest.approve")
@@ -98,6 +100,22 @@ def approve_article(
 
     db.commit()
     db.refresh(article)
+
+    # Magazine continuous path: SEO/GEO then Postiz social distribution
+    try:
+        seo_run = run_seo_geo_for_article(db, article)
+        dist = queue_article_distribution(
+            article_id=str(article.id),
+            headline=article.headline or "WishNest",
+            summary=(article.executive_summary or article.subtitle or "")[:500],
+            url=f"https://wishnest.info/article/{article.id}",
+        )
+        seo_run.postiz_status = dist.get("status") or "queued"
+        seo_run.postiz_payload = dist
+        db.add(seo_run)
+        db.commit()
+    except Exception as seo_exc:  # noqa: BLE001
+        logger.warning("SEO/GEO or Postiz queue failed for %s: %s", article.id, seo_exc)
 
     # Fire-and-forget newsletter (does not block the approve response)
     if email_configured():
