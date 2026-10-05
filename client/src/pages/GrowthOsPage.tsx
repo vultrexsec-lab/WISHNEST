@@ -1,7 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { Loader2, ArrowLeft, Network, Share2, Mail, Phone } from "lucide-react";
+import { Loader2, ArrowLeft, Network, Share2, Mail, Phone, Users, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 type GrowthStatus = {
   product: string;
@@ -21,13 +24,88 @@ type SeoRow = {
   created_at: string | null;
 };
 
+type Contact = {
+  id: string;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  company: string | null;
+  contact_type: string | null;
+  city: string | null;
+  email_permission: boolean;
+  unsubscribed: boolean;
+  do_not_contact: boolean;
+  external_mautic_id: string | null;
+  source: string | null;
+};
+
 export function GrowthOsPage(): JSX.Element {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [importing, setImporting] = useState(false);
+  const [search, setSearch] = useState("");
+
   const { data: status, isLoading, error } = useQuery<GrowthStatus>({
     queryKey: ["/api/growth/status"],
   });
   const { data: seoRuns = [] } = useQuery<SeoRow[]>({
     queryKey: ["/api/growth/seo-geo/recent"],
   });
+  const { data: contacts = [], isLoading: contactsLoading } = useQuery<Contact[]>({
+    queryKey: ["/api/growth/contacts", search],
+    queryFn: async () => {
+      const q = search.trim() ? `?q=${encodeURIComponent(search.trim())}&limit=50` : "?limit=50";
+      const res = await apiRequest("GET", `/api/growth/contacts${q}`);
+      return res.json();
+    },
+  });
+
+  const importNewsletter = async () => {
+    setImporting(true);
+    try {
+      const res = await apiRequest("POST", "/api/growth/contacts/import-newsletter", {});
+      const data = await res.json();
+      await qc.invalidateQueries({ queryKey: ["/api/growth/contacts"] });
+      await qc.invalidateQueries({ queryKey: ["/api/growth/status"] });
+      toast({
+        title: "Newsletter imported",
+        description: `Created ${data.created}, skipped ${data.skipped}`,
+      });
+    } catch (e) {
+      toast({
+        title: "Import failed",
+        description: e instanceof Error ? e.message : "Error",
+        variant: "destructive",
+      });
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const onCsv = async (file: File | null) => {
+    if (!file) return;
+    setImporting(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await apiRequest("POST", "/api/growth/contacts/import-csv", fd);
+      const data = await res.json();
+      await qc.invalidateQueries({ queryKey: ["/api/growth/contacts"] });
+      await qc.invalidateQueries({ queryKey: ["/api/growth/status"] });
+      toast({
+        title: "CSV imported",
+        description: `Created ${data.created}, skipped ${data.skipped}`,
+      });
+    } catch (e) {
+      toast({
+        title: "CSV failed",
+        description: e instanceof Error ? e.message : "Error",
+        variant: "destructive",
+      });
+    } finally {
+      setImporting(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#0a0f0d] text-white">
@@ -39,8 +117,7 @@ export function GrowthOsPage(): JSX.Element {
               Campaign Manager
             </h1>
             <p className="mt-1 max-w-xl text-[13px] text-white/45">
-              Control module — not the whole product. Magazine path uses SEO/GEO → Postiz;
-              cold outreach uses AgentReach; opted-in nurture uses Mautic (Phase B).
+              Control module. Step 2: master contacts + Mautic sync for opted-in nurture.
             </p>
           </div>
           <Link href="/dashboard">
@@ -74,6 +151,7 @@ export function GrowthOsPage(): JSX.Element {
               <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
                 {[
                   ["Contacts", status.counts.contacts],
+                  ["Newsletter", status.counts.newsletter_subscribers ?? 0],
                   ["SEO/GEO runs", status.counts.seo_geo_runs],
                   ["ArrowX opps", status.counts.arrowx_opportunities],
                 ].map(([label, val]) => (
@@ -106,27 +184,106 @@ export function GrowthOsPage(): JSX.Element {
               <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
                 <Share2 className="h-4 w-4 text-emerald-400" />
                 <p className="mt-2 text-[12px] font-medium text-emerald-200">Magazine continuous</p>
-                <p className="mt-1 text-[12px] text-white/45">
-                  Approve article → SEO/GEO → Postiz social → traffic &amp; subscribers
-                </p>
+                <p className="mt-1 text-[12px] text-white/45">SEO/GEO → Postiz</p>
               </div>
               <div className="rounded-xl border border-white/10 p-4">
                 <Mail className="h-4 w-4 text-white/50" />
                 <p className="mt-2 text-[12px] font-medium text-white/80">Opted-in (Mautic)</p>
                 <p className="mt-1 text-[12px] text-white/45">
-                  Nurture, forms, scoring — Phase B connect
+                  {status.integrations.mautic
+                    ? "API credentials detected"
+                    : "Set MAUTIC_BASE_URL + user/token on Render"}
                 </p>
               </div>
               <div className="rounded-xl border border-white/10 p-4">
                 <Phone className="h-4 w-4 text-white/50" />
                 <p className="mt-2 text-[12px] font-medium text-white/80">Cold (AgentReach)</p>
-                <p className="mt-1 text-[12px] text-white/45">
-                  First-contact resort sequences — separate from Mautic
-                </p>
+                <p className="mt-1 text-[12px] text-white/45">Separate from Mautic</p>
               </div>
             </section>
           </>
         )}
+
+        {/* Step 2: Contacts */}
+        <section className="mt-12 border-t border-white/10 pt-10">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Users className="h-4 w-4 text-white/40" />
+              <p className="text-[10px] tracking-[1.4px] text-white/35">MASTER CONTACTS</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                disabled={importing}
+                onClick={() => void importNewsletter()}
+                className="h-9 gap-1.5 rounded-full bg-emerald-800/80 px-4 text-[11px] text-white hover:bg-emerald-700"
+              >
+                {importing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
+                Import newsletter
+              </Button>
+              <label className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-full border border-white/15 px-4 text-[11px] text-white/70 hover:bg-white/5">
+                <Upload className="h-3.5 w-3.5" />
+                CSV import
+                <input
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="hidden"
+                  onChange={(e) => void onCsv(e.target.files?.[0] ?? null)}
+                />
+              </label>
+            </div>
+          </div>
+          <p className="mt-2 text-[12px] text-white/40">
+            Universal contact record. Mautic sync only when email permission is set and not suppressed.
+          </p>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search name, email, company, city…"
+            className="mt-4 h-10 w-full max-w-md rounded-md border border-white/15 bg-[#121816] px-3 text-[13px] text-white placeholder:text-white/30"
+          />
+
+          {contactsLoading ? (
+            <p className="mt-4 text-white/40">Loading contacts…</p>
+          ) : contacts.length === 0 ? (
+            <p className="mt-4 text-[13px] text-white/40">
+              No contacts yet. Import newsletter subscribers or upload a CSV.
+            </p>
+          ) : (
+            <div className="mt-4 overflow-x-auto rounded-xl border border-white/10">
+              <table className="w-full min-w-[640px] text-left text-[12px]">
+                <thead className="border-b border-white/10 text-[10px] tracking-[1px] text-white/40">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">NAME</th>
+                    <th className="px-3 py-2 font-medium">EMAIL</th>
+                    <th className="px-3 py-2 font-medium">TYPE</th>
+                    <th className="px-3 py-2 font-medium">PERMISSION</th>
+                    <th className="px-3 py-2 font-medium">MAUTIC</th>
+                    <th className="px-3 py-2 font-medium">SOURCE</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {contacts.map((c) => (
+                    <tr key={c.id} className="border-b border-white/5 text-white/75">
+                      <td className="px-3 py-2">{c.name || "—"}</td>
+                      <td className="px-3 py-2">{c.email || c.phone || "—"}</td>
+                      <td className="px-3 py-2">{c.contact_type || "—"}</td>
+                      <td className="px-3 py-2">
+                        {c.do_not_contact || c.unsubscribed
+                          ? "suppressed"
+                          : c.email_permission
+                            ? "email ok"
+                            : "no email opt-in"}
+                      </td>
+                      <td className="px-3 py-2">{c.external_mautic_id ? "linked" : "—"}</td>
+                      <td className="px-3 py-2">{c.source || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
 
         <section className="mt-12">
           <div className="flex items-center gap-2">

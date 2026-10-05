@@ -46,10 +46,13 @@ export async function apiRequest(
   url: string,
   data?: unknown,
 ): Promise<Response> {
+  const isForm = typeof FormData !== "undefined" && data instanceof FormData;
   const res = await fetchWithTimeout(apiUrl(url), {
     method,
-    headers: authHeaders(data ? { "Content-Type": "application/json" } : {}),
-    body: data ? JSON.stringify(data) : undefined,
+    headers: authHeaders(
+      data && !isForm ? { "Content-Type": "application/json" } : {},
+    ),
+    body: data ? (isForm ? (data as FormData) : JSON.stringify(data)) : undefined,
     credentials: "include",
     // Never let the browser's HTTP cache serve a stale mutation response —
     // approvals/deletes/trash actions must always hit the live database.
