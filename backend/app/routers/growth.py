@@ -19,6 +19,7 @@ from app.models.growth import (
     GrowthContact,
     GrowthSurvey,
     GrowthSurveyResponse,
+    OutreachJob,
     SeoGeoRun,
 )
 from app.services.campaign_service import generate_campaign_pack
@@ -29,7 +30,13 @@ from app.services.survey_intelligence_service import (
     opportunity_title,
 )
 from app.models.newsletter import NewsletterSubscriber
-from app.services.agentreach_service import agentreach_configured, create_cold_sequence_draft
+from app.services.agentreach_service import (
+    agentreach_configured,
+    create_cold_sequence_draft,
+    submit_approved_sequence,
+)
+from app.services.whatsapp_service import whatsapp_configured, send_whatsapp_text
+from app.services.telecaller_service import telecaller_configured, enqueue_call
 from app.services.mautic_service import (
     mautic_configured,
     push_campaign_email_pack,
@@ -116,8 +123,8 @@ def growth_status(
             "postiz": postiz_configured(),
             "agentreach_cold": agentreach_configured(),
             "mautic": mautic_configured(),
-            "whatsapp_business": False,
-            "telecaller": False,
+            "whatsapp_business": whatsapp_configured(),
+            "telecaller": telecaller_configured(),
         },
         counts={
             "contacts": db.query(GrowthContact).count(),
@@ -128,6 +135,7 @@ def growth_status(
             "campaigns": db.query(GrowthCampaign).count(),
             "surveys": db.query(GrowthSurvey).count(),
             "survey_responses": db.query(GrowthSurveyResponse).count(),
+            "outreach_jobs": db.query(OutreachJob).count(),
             "by_type": by_type,
         },
     )
@@ -1200,11 +1208,13 @@ class ColdDraftIn(BaseModel):
     geography: str = "India"
     offer: str = "Complimentary WishNest hospitality review"
     messages: list[str] = Field(default_factory=list)
+    contact_ids: list[str] = Field(default_factory=list)
 
 
 @router.post("/api/growth/agentreach/draft")
 def agentreach_draft(
     body: ColdDraftIn,
+    db: Session = Depends(get_db),
     admin: str = Depends(require_admin),
 ):
     """Cold outreach draft only — never auto-sends. Separate from Mautic nurture."""
@@ -1212,10 +1222,167 @@ def agentreach_draft(
         f"Introducing WishNest — independent hospitality intelligence. {body.offer}.",
         "Follow-up: would a structured property review be useful for your team?",
     ]
-    return create_cold_sequence_draft(
+    result = create_cold_sequence_draft(
         campaign_name=body.campaign_name,
         audience_label=body.audience_label,
         geography=body.geography,
         offer=body.offer,
         messages=msgs,
+        contact_ids=body.contact_ids,
     )
+    job = OutreachJob(
+        channel="agentreach",
+        status="draft" if result.get("status") in ("draft", "stub_draft") else "error",
+        title=body.campaign_name[:255],
+        payload=result.get("draft"),
+        result=result,
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return {"job_id": str(job.id), "status": job.status, **result}
+
+
+@router.post("/api/growth/agentreach/jobs/{job_id}/approve-submit")
+def agentreach_approve_submit(
+    job_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """Human gate: approve cold sequence then submit to AgentReach (or stub)."""
+    job = db.query(OutreachJob).filter(OutreachJob.id == job_id, OutreachJob.channel == "agentreach").first()
+    if not job:
+        raise HTTPException(404, "AgentReach job not found")
+    payload = job.payload or {}
+    result = submit_approved_sequence(payload if isinstance(payload, dict) else {"raw": payload})
+    job.status = "submitted" if result.get("status") in ("submitted", "stub_submitted") else "error"
+    job.result = result
+    db.commit()
+    db.refresh(job)
+    return {"job_id": str(job.id), "status": job.status, "result": result}
+
+
+class WhatsAppTestIn(BaseModel):
+    phone: str
+    message: str
+    contact_id: str | None = None
+    dry_run: bool = False
+
+
+@router.post("/api/growth/whatsapp/send")
+def whatsapp_send(
+    body: WhatsAppTestIn,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """
+    Single WhatsApp message — requires contact whatsapp_permission when contact_id given.
+    """
+    if body.contact_id:
+        try:
+            cid = uuid.UUID(body.contact_id)
+        except ValueError as e:
+            raise HTTPException(400, "invalid contact_id") from e
+        contact = db.query(GrowthContact).filter(GrowthContact.id == cid).first()
+        if not contact:
+            raise HTTPException(404, "Contact not found")
+        if contact.do_not_contact or contact.unsubscribed:
+            raise HTTPException(400, "Contact suppressed")
+        if not contact.whatsapp_permission:
+            raise HTTPException(400, "No WhatsApp permission on contact")
+        phone = body.phone or contact.phone
+    else:
+        phone = body.phone
+    if not phone:
+        raise HTTPException(400, "phone required")
+    result = send_whatsapp_text(to_phone=phone, body=body.message, dry_run=body.dry_run)
+    job = OutreachJob(
+        channel="whatsapp",
+        status=result.get("status") or "error",
+        title=f"WA {phone}"[:255],
+        payload={"phone": phone, "message": body.message[:500]},
+        result=result,
+    )
+    db.add(job)
+    db.commit()
+    return {"job_id": str(job.id), **result}
+
+
+class TelecallerIn(BaseModel):
+    contact_id: str | None = None
+    phone: str | None = None
+    name: str | None = None
+    script_summary: str = "WishNest hospitality review introduction call."
+    opportunity_id: str | None = None
+
+
+@router.post("/api/growth/telecaller/enqueue")
+def telecaller_enqueue(
+    body: TelecallerIn,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """Queue AI telecaller job — phone_permission required when contact linked."""
+    phone = body.phone
+    name = body.name
+    meta: dict = {}
+    if body.contact_id:
+        try:
+            cid = uuid.UUID(body.contact_id)
+        except ValueError as e:
+            raise HTTPException(400, "invalid contact_id") from e
+        contact = db.query(GrowthContact).filter(GrowthContact.id == cid).first()
+        if not contact:
+            raise HTTPException(404, "Contact not found")
+        if contact.do_not_contact:
+            raise HTTPException(400, "Contact is DNC")
+        if not contact.phone_permission:
+            raise HTTPException(400, "No phone/call permission")
+        phone = phone or contact.phone
+        name = name or contact.name
+        meta["contact_id"] = str(contact.id)
+    if body.opportunity_id:
+        meta["opportunity_id"] = body.opportunity_id
+    if not phone:
+        raise HTTPException(400, "phone required")
+    result = enqueue_call(
+        phone=phone,
+        name=name,
+        script_summary=body.script_summary,
+        metadata=meta,
+    )
+    job = OutreachJob(
+        channel="telecaller",
+        status=result.get("status") or "error",
+        title=f"Call {name or phone}"[:255],
+        payload={"phone": phone, "name": name, "script": body.script_summary, "meta": meta},
+        result=result,
+    )
+    db.add(job)
+    db.commit()
+    return {"job_id": str(job.id), **result}
+
+
+@router.get("/api/growth/outreach/jobs")
+def list_outreach_jobs(
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+    channel: str | None = None,
+    limit: int = 30,
+):
+    q = db.query(OutreachJob).order_by(OutreachJob.created_at.desc())
+    if channel:
+        q = q.filter(OutreachJob.channel == channel.strip().lower())
+    rows = q.limit(min(limit, 50)).all()
+    return [
+        {
+            "id": str(r.id),
+            "channel": r.channel,
+            "status": r.status,
+            "title": r.title,
+            "payload": r.payload,
+            "result": r.result,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]

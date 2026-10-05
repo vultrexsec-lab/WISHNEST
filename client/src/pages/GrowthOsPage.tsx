@@ -768,6 +768,9 @@ export function GrowthOsPage(): JSX.Element {
         {/* Step 7: Surveys → ArrowX */}
         <SurveyIntelligencePanel />
 
+        {/* Step 8: Cold / WA / Telecaller */}
+        <OutreachPanel />
+
         <section className="mt-12">
           <div className="flex items-center gap-2">
             <Network className="h-4 w-4 text-white/40" />
@@ -1069,6 +1072,212 @@ function SurveyIntelligencePanel(): JSX.Element {
             ))}
           </ul>
         </div>
+      )}
+    </section>
+  );
+}
+
+
+function OutreachPanel(): JSX.Element {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [campName, setCampName] = useState("Resort owner cold intro");
+  const [geography, setGeography] = useState("Uttarakhand");
+  const [offer, setOffer] = useState("Complimentary WishNest hospitality review");
+  const [busy, setBusy] = useState(false);
+  const [waPhone, setWaPhone] = useState("");
+  const [waMsg, setWaMsg] = useState("Hi — WishNest independent hospitality intelligence. Happy to share a review option if useful.");
+  const [callPhone, setCallPhone] = useState("");
+  const [callName, setCallName] = useState("");
+  const [lastJobId, setLastJobId] = useState<string | null>(null);
+
+  const { data: jobs = [] } = useQuery<
+    Array<{ id: string; channel: string; status: string; title: string; created_at: string | null }>
+  >({ queryKey: ["/api/growth/outreach/jobs"] });
+
+  return (
+    <section className="mt-12 border-t border-white/10 pt-10">
+      <p className="text-[10px] tracking-[1.4px] text-white/35">OUTREACH · AGENTREACH · WHATSAPP · TELECALLER</p>
+      <p className="mt-1 text-[12px] text-white/40">
+        Cold sequences stay on AgentReach (not Mautic). WhatsApp/calls need permission flags. No silent bulk send.
+      </p>
+
+      <div className="mt-4 grid gap-3 rounded-2xl border border-white/10 bg-white/[0.02] p-5 sm:grid-cols-2">
+        <p className="text-[11px] font-medium text-white/60 sm:col-span-2">AgentReach cold draft</p>
+        <input
+          value={campName}
+          onChange={(e) => setCampName(e.target.value)}
+          className="h-9 rounded-md border border-white/15 bg-[#121816] px-3 text-[12px] text-white"
+          placeholder="Sequence name"
+        />
+        <input
+          value={geography}
+          onChange={(e) => setGeography(e.target.value)}
+          className="h-9 rounded-md border border-white/15 bg-[#121816] px-3 text-[12px] text-white"
+          placeholder="Geography"
+        />
+        <input
+          value={offer}
+          onChange={(e) => setOffer(e.target.value)}
+          className="h-9 rounded-md border border-white/15 bg-[#121816] px-3 text-[12px] text-white sm:col-span-2"
+          placeholder="Offer"
+        />
+        <Button
+          type="button"
+          disabled={busy}
+          className="h-9 rounded-full bg-emerald-800 text-[11px] text-white sm:col-span-2"
+          onClick={async () => {
+            setBusy(true);
+            try {
+              const res = await apiRequest("POST", "/api/growth/agentreach/draft", {
+                campaign_name: campName,
+                audience_label: "Independent resort owners",
+                geography,
+                offer,
+                messages: [],
+              });
+              const data = await res.json();
+              setLastJobId(data.job_id || null);
+              await qc.invalidateQueries({ queryKey: ["/api/growth/outreach/jobs"] });
+              toast({
+                title: "Cold draft created",
+                description: data.status || "draft",
+              });
+            } catch (e) {
+              toast({
+                title: "Failed",
+                description: e instanceof Error ? e.message : "Error",
+                variant: "destructive",
+              });
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          Create AgentReach draft
+        </Button>
+        {lastJobId && (
+          <Button
+            type="button"
+            className="h-9 rounded-full border border-emerald-500/40 bg-emerald-500/10 text-[11px] text-emerald-100 sm:col-span-2"
+            onClick={async () => {
+              try {
+                const res = await apiRequest(
+                  "POST",
+                  `/api/growth/agentreach/jobs/${lastJobId}/approve-submit`,
+                  {},
+                );
+                const data = await res.json();
+                await qc.invalidateQueries({ queryKey: ["/api/growth/outreach/jobs"] });
+                toast({ title: "Submitted", description: data.status });
+              } catch (e) {
+                toast({
+                  title: "Submit failed",
+                  description: e instanceof Error ? e.message : "Error",
+                  variant: "destructive",
+                });
+              }
+            }}
+          >
+            Approve &amp; submit last AgentReach job
+          </Button>
+        )}
+      </div>
+
+      <div className="mt-4 grid gap-3 rounded-2xl border border-white/10 p-5 sm:grid-cols-2">
+        <p className="text-[11px] font-medium text-white/60 sm:col-span-2">WhatsApp (single, permission-aware)</p>
+        <input
+          value={waPhone}
+          onChange={(e) => setWaPhone(e.target.value)}
+          placeholder="Phone +91…"
+          className="h-9 rounded-md border border-white/15 bg-[#121816] px-3 text-[12px] text-white"
+        />
+        <input
+          value={waMsg}
+          onChange={(e) => setWaMsg(e.target.value)}
+          className="h-9 rounded-md border border-white/15 bg-[#121816] px-3 text-[12px] text-white"
+        />
+        <Button
+          type="button"
+          className="h-9 rounded-full border border-sky-500/30 bg-sky-500/10 text-[11px] text-sky-100 sm:col-span-2"
+          onClick={async () => {
+            try {
+              const res = await apiRequest("POST", "/api/growth/whatsapp/send", {
+                phone: waPhone,
+                message: waMsg,
+                dry_run: false,
+              });
+              const data = await res.json();
+              await qc.invalidateQueries({ queryKey: ["/api/growth/outreach/jobs"] });
+              toast({ title: "WhatsApp", description: data.status });
+            } catch (e) {
+              toast({
+                title: "WA failed",
+                description: e instanceof Error ? e.message : "Error",
+                variant: "destructive",
+              });
+            }
+          }}
+        >
+          Send / stub WhatsApp
+        </Button>
+      </div>
+
+      <div className="mt-4 grid gap-3 rounded-2xl border border-white/10 p-5 sm:grid-cols-2">
+        <p className="text-[11px] font-medium text-white/60 sm:col-span-2">AI telecaller queue</p>
+        <input
+          value={callName}
+          onChange={(e) => setCallName(e.target.value)}
+          placeholder="Name"
+          className="h-9 rounded-md border border-white/15 bg-[#121816] px-3 text-[12px] text-white"
+        />
+        <input
+          value={callPhone}
+          onChange={(e) => setCallPhone(e.target.value)}
+          placeholder="Phone"
+          className="h-9 rounded-md border border-white/15 bg-[#121816] px-3 text-[12px] text-white"
+        />
+        <Button
+          type="button"
+          className="h-9 rounded-full border border-violet-500/30 bg-violet-500/10 text-[11px] text-violet-100 sm:col-span-2"
+          onClick={async () => {
+            try {
+              const res = await apiRequest("POST", "/api/growth/telecaller/enqueue", {
+                phone: callPhone,
+                name: callName || null,
+                script_summary: "WishNest hospitality review introduction.",
+              });
+              const data = await res.json();
+              await qc.invalidateQueries({ queryKey: ["/api/growth/outreach/jobs"] });
+              toast({ title: "Telecaller", description: data.status });
+            } catch (e) {
+              toast({
+                title: "Queue failed",
+                description: e instanceof Error ? e.message : "Error",
+                variant: "destructive",
+              });
+            }
+          }}
+        >
+          Enqueue call (stub if not configured)
+        </Button>
+      </div>
+
+      {jobs.length > 0 && (
+        <ul className="mt-6 space-y-1">
+          <p className="text-[10px] tracking-[1px] text-white/35">RECENT OUTREACH JOBS</p>
+          {jobs.slice(0, 12).map((j) => (
+            <li
+              key={j.id}
+              className="flex justify-between rounded-lg border border-white/10 px-3 py-2 text-[12px] text-white/60"
+            >
+              <span>
+                {j.channel} · {j.title}
+              </span>
+              <span className="text-white/35">{j.status}</span>
+            </li>
+          ))}
+        </ul>
       )}
     </section>
   );

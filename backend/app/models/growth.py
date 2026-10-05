@@ -156,3 +156,19 @@ class GrowthSurveyResponse(Base):
     answers = Column(JSONB, nullable=False, default=dict)
     consent_commercial = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class OutreachJob(Base):
+    """Tracks cold / WhatsApp / telecaller jobs (audit, no silent bulk)."""
+
+    __tablename__ = "outreach_jobs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    channel = Column(String(64), nullable=False)  # agentreach, whatsapp, telecaller
+    status = Column(String(64), nullable=False, default="draft")
+    # draft | approved | submitted | stub | error
+    title = Column(String(255), nullable=False)
+    payload = Column(JSONB, nullable=True)
+    result = Column(JSONB, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

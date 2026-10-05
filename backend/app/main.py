@@ -288,6 +288,18 @@ def _sync_schema() -> None:
                     created_at TIMESTAMPTZ DEFAULT now()
                 )
                 """,
+                """
+                CREATE TABLE IF NOT EXISTS outreach_jobs (
+                    id UUID PRIMARY KEY,
+                    channel VARCHAR(64) NOT NULL,
+                    status VARCHAR(64) NOT NULL DEFAULT 'draft',
+                    title VARCHAR(255) NOT NULL,
+                    payload JSONB,
+                    result JSONB,
+                    created_at TIMESTAMPTZ DEFAULT now(),
+                    updated_at TIMESTAMPTZ DEFAULT now()
+                )
+                """,
             ):
                 try:
                     conn.execute(text(tbl_sql))
