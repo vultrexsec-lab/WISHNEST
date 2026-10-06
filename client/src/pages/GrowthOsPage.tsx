@@ -195,9 +195,16 @@ export function GrowthOsPage(): JSX.Element {
           </div>
         )}
         {error && (
-          <p className="text-red-300/90">
-            Could not load Growth OS status. Deploy backend and ensure you are logged in.
-          </p>
+          <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-[13px] text-red-200/90">
+            <p className="font-medium">Could not load Growth OS status.</p>
+            <p className="mt-1 text-red-200/70">
+              {(error as Error)?.message || "Network or auth error"}
+            </p>
+            <p className="mt-2 text-[12px] text-red-200/50">
+              Check: (1) Render service Live + /api/health (2) logged in on dashboard (3)
+              Vercel VITE_API_BASE_URL = your Render URL.
+            </p>
+          </div>
         )}
 
         {status && (

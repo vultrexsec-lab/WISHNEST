@@ -107,6 +107,18 @@ def _contact_out(r: GrowthContact) -> dict[str, Any]:
     }
 
 
+def _safe_count(db: Session, model) -> int:
+    """Never let a missing table take down Growth OS status."""
+    try:
+        return db.query(model).count()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return 0
+
+
 @router.get("/api/growth/status", response_model=GrowthStatusOut)
 def growth_status(
     db: Session = Depends(get_db),
@@ -114,11 +126,18 @@ def growth_status(
 ):
     by_type: dict[str, int] = {}
     for ctype in CONTACT_TYPES:
-        by_type[ctype] = (
-            db.query(GrowthContact)
-            .filter(GrowthContact.contact_type == ctype)
-            .count()
-        )
+        try:
+            by_type[ctype] = (
+                db.query(GrowthContact)
+                .filter(GrowthContact.contact_type == ctype)
+                .count()
+            )
+        except Exception:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            by_type[ctype] = 0
     return GrowthStatusOut(
         product="WishNest Growth & Intelligence OS",
         pipeline=(
@@ -136,17 +155,17 @@ def growth_status(
             "arrowx_webhook": arrowx_webhook_configured(),
         },
         counts={
-            "contacts": db.query(GrowthContact).count(),
-            "arrowx_opportunities": db.query(ArrowxOpportunity).count(),
-            "seo_geo_runs": db.query(SeoGeoRun).count(),
-            "newsletter_subscribers": db.query(NewsletterSubscriber).count(),
-            "segments_saved": db.query(AudienceSegment).count(),
-            "campaigns": db.query(GrowthCampaign).count(),
-            "surveys": db.query(GrowthSurvey).count(),
-            "survey_responses": db.query(GrowthSurveyResponse).count(),
-            "outreach_jobs": db.query(OutreachJob).count(),
-            "market_pulses": db.query(MarketNetworkPulse).count(),
-            "analytics_events": db.query(CampaignAnalyticsEvent).count(),
+            "contacts": _safe_count(db, GrowthContact),
+            "arrowx_opportunities": _safe_count(db, ArrowxOpportunity),
+            "seo_geo_runs": _safe_count(db, SeoGeoRun),
+            "newsletter_subscribers": _safe_count(db, NewsletterSubscriber),
+            "segments_saved": _safe_count(db, AudienceSegment),
+            "campaigns": _safe_count(db, GrowthCampaign),
+            "surveys": _safe_count(db, GrowthSurvey),
+            "survey_responses": _safe_count(db, GrowthSurveyResponse),
+            "outreach_jobs": _safe_count(db, OutreachJob),
+            "market_pulses": _safe_count(db, MarketNetworkPulse),
+            "analytics_events": _safe_count(db, CampaignAnalyticsEvent),
             "by_type": by_type,
         },
     )
