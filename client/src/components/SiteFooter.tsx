@@ -8,6 +8,8 @@ const footerLinks = [
   { label: "Intelligence", href: "/intelligence" },
   { label: "Contributors", href: "/contributors" },
   { label: "Reimagined", href: "/reimagined" },
+  { label: "ABCDE™", href: "/entity/abcde" },
+  { label: "WishNest", href: "/entity/wishnest" },
   { label: "Get Reviewed", href: "/get-reviewed" },
   { label: "Newsletter", href: "/#newsletter" },
 ];

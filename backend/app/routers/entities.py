@@ -167,3 +167,137 @@ def get_destination_entity(slug: str, db: Session = Depends(get_db)):
         },
     }
     return entity
+
+
+BRAND_ENTITIES: dict[str, dict[str, Any]] = {
+    "wishnest": {
+        "slug": "wishnest",
+        "name": "WishNest",
+        "tagline": "Independent hospitality, architecture, destination and second-home intelligence",
+        "description": (
+            "WishNest is an editorial and intelligence platform covering hospitality design, "
+            "destinations, second homes and market research across India. It is not a property "
+            "sales marketplace. Editorial coverage remains independent of commercial placement."
+        ),
+        "schema_type": "Organization",
+        "links": [
+            {"label": "Reviews", "href": "/reviews"},
+            {"label": "Destinations", "href": "/destinations"},
+            {"label": "Intelligence", "href": "/intelligence"},
+            {"label": "Reimagined™", "href": "/reimagined"},
+            {"label": "Get Reviewed", "href": "/get-reviewed"},
+        ],
+    },
+    "abcde": {
+        "slug": "abcde",
+        "name": "ABCDE™ Framework",
+        "tagline": "Structured scoring for hospitality and architecture reviews",
+        "description": (
+            "ABCDE™ is WishNest’s review framework: Architecture, Building systems & comfort, "
+            "Context & landscape, Design experience, and Environment & operations. Scores support "
+            "independent analysis — not paid rankings."
+        ),
+        "schema_type": "DefinedTerm",
+        "links": [
+            {"label": "Reviews", "href": "/reviews"},
+            {"label": "Intelligence", "href": "/intelligence"},
+            {"label": "Contributors", "href": "/contributors"},
+        ],
+    },
+    "reimagined": {
+        "slug": "reimagined",
+        "name": "Reimagined™",
+        "tagline": "Before/after design intelligence for hospitality projects",
+        "description": (
+            "Reimagined™ explores how existing or proposed hospitality properties can be "
+            "strengthened through design, guest experience and positioning — with clear separation "
+            "between editorial exploration and commercial project work."
+        ),
+        "schema_type": "CreativeWork",
+        "links": [
+            {"label": "Reimagined portfolio", "href": "/reimagined"},
+            {"label": "Get Reviewed", "href": "/get-reviewed"},
+            {"label": "WishNest", "href": "/entity/wishnest"},
+        ],
+    },
+}
+
+
+@router.get("/api/public/entities/brands")
+def list_brand_entities():
+    return {
+        "entities": [
+            {
+                "slug": e["slug"],
+                "name": e["name"],
+                "tagline": e["tagline"],
+                "url": f"https://wishnest.info/entity/{e['slug']}",
+            }
+            for e in BRAND_ENTITIES.values()
+        ]
+    }
+
+
+@router.get("/api/public/entities/brands/{slug}")
+def get_brand_entity(slug: str, db: Session = Depends(get_db)):
+    key = (slug or "").strip().lower().replace("_", "-")
+    if key in ("abcde-framework", "abcde-tm"):
+        key = "abcde"
+    if key in ("reimagined-tm", "reimaging"):
+        key = "reimagined"
+    meta = BRAND_ENTITIES.get(key)
+    if not meta:
+        raise HTTPException(404, "Entity not found")
+
+    # Related published articles by keyword / category
+    clauses = []
+    if key == "abcde":
+        clauses = [
+            Article.headline.ilike("%ABCDE%"),
+            Article.executive_summary.ilike("%ABCDE%") if hasattr(Article, "executive_summary") else Article.headline.ilike("%framework%"),
+            Article.category.ilike("%review%"),
+        ]
+    elif key == "reimagined":
+        clauses = [
+            Article.category.ilike("%reimagin%"),
+            Article.headline.ilike("%reimagin%"),
+            Article.category == "reimagined",
+        ]
+    else:
+        clauses = [
+            Article.headline.ilike("%WishNest%"),
+            Article.category.in_(["intelligence", "destinations", "reviews", "best-of"]),
+        ]
+
+    q = (
+        db.query(Article)
+        .filter(_published_filter())
+        .filter(Article.is_trash.is_(False))
+    )
+    try:
+        articles = (
+            q.filter(or_(*[c for c in clauses if c is not None]))
+            .order_by(Article.published_at.desc().nullslast(), Article.created_at.desc())
+            .limit(24)
+            .all()
+        )
+    except Exception:
+        articles = q.order_by(Article.created_at.desc()).limit(12).all()
+
+    schema: dict[str, Any] = {
+        "@context": "https://schema.org",
+        "@type": meta["schema_type"],
+        "name": meta["name"],
+        "description": meta["description"],
+        "url": f"https://wishnest.info/entity/{meta['slug']}",
+    }
+    if meta["schema_type"] == "Organization":
+        schema["sameAs"] = ["https://wishnest.info"]
+
+    return {
+        **meta,
+        "url": f"https://wishnest.info/entity/{meta['slug']}",
+        "schema": schema,
+        "related_articles": [_article_card(a) for a in articles],
+        "counts": {"articles": len(articles)},
+    }
