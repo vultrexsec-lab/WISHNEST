@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
-from app.routers import approve, articles, auth, image_proxy, newsletter, research, vision, reimaging, submissions, growth
+from app.routers import approve, articles, auth, image_proxy, newsletter, research, vision, reimaging, submissions, growth, entities
 from app.routers import scheduler as scheduler_router
 from app.models import automation  # noqa: F401 ensures settings table metadata is loaded
 from app.models import media_blob  # noqa: F401 ensures media_blobs table metadata is loaded
@@ -370,6 +370,7 @@ app.include_router(scheduler_router.router)
 app.include_router(vision.router)
 app.include_router(reimaging.router)
 app.include_router(growth.router)
+app.include_router(entities.router)
 
 
 @app.get("/api/health")

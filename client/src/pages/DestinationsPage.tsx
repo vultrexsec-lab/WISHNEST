@@ -5,6 +5,14 @@ import { resolveMediaUrl, resolveMediaHtml } from "@/lib/mediaUrl";
 import { SiteFooter } from "@/components/SiteFooter";
 import type { Article } from "@/lib/article-types";
 
+function destSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
 const destinations = [
   {
     region: "HIMALAYA",
@@ -177,6 +185,19 @@ export const DestinationsPage = (): JSX.Element => {
             We're actively reviewing properties across Sri Lanka, Bhutan, and
             Southeast Asia. Subscribe to the newsletter for first access.
           </p>
+        </div>
+      </section>
+
+            <section className="mx-auto max-w-[1166px] px-4 pb-16 sm:px-8">
+        <p className="text-[10px] tracking-[2px] text-[#1e1e1e66]">DESTINATION ENTITIES</p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {destinations.map((d) => (
+            <Link key={d.name} href={`/destination/${destSlug(d.name)}`}>
+              <a className="rounded-full border border-[#1e1e1e18] px-4 py-2 text-[12px] text-[#1e1e1e99] hover:border-[#1e1e1e40] hover:text-[#1e1e1e]">
+                {d.name}
+              </a>
+            </Link>
+          ))}
         </div>
       </section>
 

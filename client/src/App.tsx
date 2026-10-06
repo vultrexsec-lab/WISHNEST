@@ -27,6 +27,7 @@ import { SubmitProjectPage } from "@/pages/SubmitProjectPage";
 import { SubmissionsAdminPage } from "@/pages/SubmissionsAdminPage";
 import { GrowthOsPage } from "@/pages/GrowthOsPage";
 import { SurveyPublicPage } from "@/pages/SurveyPublicPage";
+import { DestinationEntityPage } from "@/pages/DestinationEntityPage";
 
 /** Redirects to /login when not authenticated. */
 function ProtectedDashboard() {
@@ -66,6 +67,7 @@ function Router() {
         <Route path="/article/:id" component={ArticleDetailPage} />
         <Route path="/reviews" component={ReviewsPage} />
         <Route path="/destinations" component={DestinationsPage} />
+        <Route path="/destination/:slug" component={DestinationEntityPage} />
         <Route path="/best-of" component={BestOfPage} />
         <Route path="/intelligence" component={IntelligencePage} />
         <Route path="/contributors" component={ContributorsPage} />
