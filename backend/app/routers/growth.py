@@ -19,6 +19,7 @@ from app.models.growth import (
     GrowthContact,
     GrowthSurvey,
     GrowthSurveyResponse,
+    MarketNetworkPulse,
     OutreachJob,
     SeoGeoRun,
 )
@@ -136,6 +137,7 @@ def growth_status(
             "surveys": db.query(GrowthSurvey).count(),
             "survey_responses": db.query(GrowthSurveyResponse).count(),
             "outreach_jobs": db.query(OutreachJob).count(),
+            "market_pulses": db.query(MarketNetworkPulse).count(),
             "by_type": by_type,
         },
     )
@@ -1201,6 +1203,177 @@ def send_campaign_test_email(
         "campaign_id": str(row.id),
     }
 
+
+
+
+# ── Market Network (broker / agent research nodes) ─────────────────────────
+
+MARKET_PULSE_QUESTIONS = [
+    {"id": "ticket_size", "label": "Strongest demand ticket size", "options": ["< ₹1 Cr", "₹1–1.5 Cr", "₹1.5–3 Cr", "₹3–5 Cr", "₹5 Cr+"]},
+    {"id": "property_mix", "label": "What buyers ask for most", "options": ["Villa", "Apartment", "Managed villa", "Plot", "Hospitality unit"]},
+    {"id": "use_case", "label": "Primary buyer intent", "options": ["Self-use", "Managed rental", "Investment flip", "Mix"]},
+    {"id": "not_selling", "label": "What is hardest to sell right now", "type": "text"},
+    {"id": "top_locations", "label": "Top 1–3 locations buyers request", "type": "text"},
+    {"id": "rental_yield", "label": "Rental yield expectation you hear", "options": ["< 3%", "3–5%", "5–7%", "7%+", "Not discussed"]},
+]
+
+
+@router.get("/api/growth/market-network/questions")
+def market_network_questions(admin: str = Depends(require_admin)):
+    return {"questions": MARKET_PULSE_QUESTIONS}
+
+
+class MarketPulseIn(BaseModel):
+    respondent_role: str = "broker"
+    region: str | None = None
+    destination: str | None = None
+    email: str | None = None
+    answers: dict[str, Any] = Field(default_factory=dict)
+    contact_id: str | None = None
+
+
+@router.post("/api/growth/market-network/pulses")
+def add_market_pulse(
+    body: MarketPulseIn,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    if not body.answers:
+        raise HTTPException(400, "answers required")
+    cid = None
+    if body.contact_id:
+        try:
+            cid = uuid.UUID(body.contact_id)
+        except ValueError:
+            cid = None
+    row = MarketNetworkPulse(
+        contact_id=cid,
+        respondent_role=(body.respondent_role or "broker")[:64],
+        region=(body.region or "").strip() or None,
+        destination=(body.destination or "").strip() or None,
+        answers=body.answers,
+        email=(body.email or "").strip().lower() or None,
+        source="admin",
+    )
+    db.add(row)
+    if row.email:
+        existing = db.query(GrowthContact).filter(GrowthContact.email == row.email).first()
+        if not existing:
+            db.add(
+                GrowthContact(
+                    email=row.email,
+                    contact_type="broker",
+                    state=row.region,
+                    destination=row.destination,
+                    email_permission=True,
+                    source="market_network",
+                    tags="market_network,broker",
+                )
+            )
+    db.commit()
+    db.refresh(row)
+    return {"id": str(row.id), "ok": True}
+
+
+@router.get("/api/growth/market-network/insights")
+def market_network_insights(
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+    region: str | None = None,
+):
+    q = db.query(MarketNetworkPulse)
+    if region:
+        q = q.filter(MarketNetworkPulse.region.ilike(f"%{region.strip()}%"))
+    rows = q.order_by(MarketNetworkPulse.created_at.desc()).limit(500).all()
+    answers = [r.answers for r in rows if r.answers]
+    signals = aggregate_demand_signals(answers)
+    # location field from top_locations text answers counted in other
+    return {
+        "pulse_count": len(rows),
+        "region_filter": region,
+        **signals,
+        "note": "Aggregated only — individual broker answers are not exposed as a public list.",
+    }
+
+
+@router.post("/api/growth/market-network/to-arrowx")
+def market_network_to_arrowx(
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+    region: str | None = None,
+):
+    q = db.query(MarketNetworkPulse)
+    if region:
+        q = q.filter(MarketNetworkPulse.region.ilike(f"%{region.strip()}%"))
+    rows = q.all()
+    if not rows:
+        raise HTTPException(400, "No market pulses to aggregate")
+    signals = aggregate_demand_signals([r.answers for r in rows if r.answers])
+    title = opportunity_title(
+        "Market Network broker pulse",
+        region or "India",
+        signals,
+    )
+    opp = ArrowxOpportunity(
+        source_type="market_network",
+        source_id=region or "all",
+        title=title[:512],
+        summary=opportunity_summary(signals),
+        destination=region,
+        demand_signals=signals,
+        status="new",
+        consent_commercial=False,
+    )
+    db.add(opp)
+    db.commit()
+    db.refresh(opp)
+    return {
+        "id": str(opp.id),
+        "title": opp.title,
+        "summary": opp.summary,
+        "demand_signals": opp.demand_signals,
+    }
+
+
+@router.get("/api/public/market-network/form")
+def public_market_network_form():
+    """Public form schema for broker pulse (no PII list)."""
+    return {
+        "title": "WishNest Market Network",
+        "subtitle": "Periodic pulse for agents & brokers — insights stay aggregated.",
+        "questions": MARKET_PULSE_QUESTIONS,
+    }
+
+
+@router.post("/api/public/market-network/pulses")
+def public_market_pulse(body: MarketPulseIn, db: Session = Depends(get_db)):
+    if not body.answers:
+        raise HTTPException(400, "answers required")
+    row = MarketNetworkPulse(
+        respondent_role=(body.respondent_role or "broker")[:64],
+        region=(body.region or "").strip() or None,
+        destination=(body.destination or "").strip() or None,
+        answers=body.answers,
+        email=(body.email or "").strip().lower() or None,
+        source="public",
+    )
+    db.add(row)
+    if row.email:
+        existing = db.query(GrowthContact).filter(GrowthContact.email == row.email).first()
+        if not existing:
+            db.add(
+                GrowthContact(
+                    email=row.email,
+                    contact_type="broker",
+                    state=row.region,
+                    destination=row.destination,
+                    email_permission=True,
+                    source="market_network_public",
+                    tags="market_network,broker",
+                )
+            )
+    db.commit()
+    return {"ok": True, "message": "Thank you — your pulse was recorded in aggregate form."}
 
 class ColdDraftIn(BaseModel):
     campaign_name: str

@@ -29,6 +29,7 @@ import { GrowthOsPage } from "@/pages/GrowthOsPage";
 import { SurveyPublicPage } from "@/pages/SurveyPublicPage";
 import { DestinationEntityPage } from "@/pages/DestinationEntityPage";
 import { BrandEntityPage } from "@/pages/BrandEntityPage";
+import { MarketNetworkPage } from "@/pages/MarketNetworkPage";
 
 /** Redirects to /login when not authenticated. */
 function ProtectedDashboard() {
@@ -70,6 +71,7 @@ function Router() {
         <Route path="/destinations" component={DestinationsPage} />
         <Route path="/destination/:slug" component={DestinationEntityPage} />
         <Route path="/entity/:slug" component={BrandEntityPage} />
+        <Route path="/market-network" component={MarketNetworkPage} />
         <Route path="/best-of" component={BestOfPage} />
         <Route path="/intelligence" component={IntelligencePage} />
         <Route path="/contributors" component={ContributorsPage} />

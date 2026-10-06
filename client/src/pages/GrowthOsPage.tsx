@@ -771,6 +771,8 @@ export function GrowthOsPage(): JSX.Element {
         {/* Step 8: Cold / WA / Telecaller */}
         <OutreachPanel />
 
+        <MarketNetworkAdminPanel />
+
         <section className="mt-12">
           <div className="flex items-center gap-2">
             <Network className="h-4 w-4 text-white/40" />
@@ -1289,6 +1291,132 @@ function OutreachPanel(): JSX.Element {
             </li>
           ))}
         </ul>
+      )}
+    </section>
+  );
+}
+
+
+function MarketNetworkAdminPanel(): JSX.Element {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [region, setRegion] = useState("Maharashtra");
+  const [ticket, setTicket] = useState("₹1.5–3 Cr");
+  const [mix, setMix] = useState("Villa");
+  const [useCase, setUseCase] = useState("Managed rental");
+  const [topLoc, setTopLoc] = useState("Lonavala, Alibaug, Mulshi");
+
+  const { data: insights } = useQuery<{
+    pulse_count: number;
+    signals: Record<string, Array<{ value: string; count: number }>>;
+  }>({ queryKey: ["/api/growth/market-network/insights"] });
+
+  return (
+    <section className="mt-12 border-t border-white/10 pt-10">
+      <p className="text-[10px] tracking-[1.4px] text-white/35">MARKET NETWORK</p>
+      <p className="mt-1 text-[12px] text-white/40">
+        Brokers as research nodes. Public form:{" "}
+        <a className="text-emerald-300 underline" href="/market-network" target="_blank" rel="noreferrer">
+          /market-network
+        </a>
+      </p>
+      <div className="mt-4 grid gap-2 rounded-xl border border-white/10 p-4 sm:grid-cols-2">
+        <input
+          value={region}
+          onChange={(e) => setRegion(e.target.value)}
+          className="h-9 rounded-md border border-white/15 bg-[#121816] px-3 text-[12px] text-white"
+          placeholder="Region"
+        />
+        <select
+          value={ticket}
+          onChange={(e) => setTicket(e.target.value)}
+          className="h-9 rounded-md border border-white/15 bg-[#121816] px-3 text-[12px] text-white"
+        >
+          {["< ₹1 Cr", "₹1–1.5 Cr", "₹1.5–3 Cr", "₹3–5 Cr", "₹5 Cr+"].map((x) => (
+            <option key={x}>{x}</option>
+          ))}
+        </select>
+        <select
+          value={mix}
+          onChange={(e) => setMix(e.target.value)}
+          className="h-9 rounded-md border border-white/15 bg-[#121816] px-3 text-[12px] text-white"
+        >
+          {["Villa", "Apartment", "Managed villa", "Plot"].map((x) => (
+            <option key={x}>{x}</option>
+          ))}
+        </select>
+        <select
+          value={useCase}
+          onChange={(e) => setUseCase(e.target.value)}
+          className="h-9 rounded-md border border-white/15 bg-[#121816] px-3 text-[12px] text-white"
+        >
+          {["Self-use", "Managed rental", "Investment flip", "Mix"].map((x) => (
+            <option key={x}>{x}</option>
+          ))}
+        </select>
+        <input
+          value={topLoc}
+          onChange={(e) => setTopLoc(e.target.value)}
+          className="h-9 rounded-md border border-white/15 bg-[#121816] px-3 text-[12px] text-white sm:col-span-2"
+          placeholder="Top locations"
+        />
+        <Button
+          type="button"
+          className="h-9 rounded-full bg-emerald-800 text-[11px] text-white sm:col-span-2"
+          onClick={async () => {
+            try {
+              await apiRequest("POST", "/api/growth/market-network/pulses", {
+                respondent_role: "broker",
+                region,
+                answers: {
+                  ticket_size: ticket,
+                  property_mix: mix,
+                  use_case: useCase,
+                  top_locations: topLoc,
+                  location: topLoc,
+                },
+              });
+              await qc.invalidateQueries({ queryKey: ["/api/growth/market-network/insights"] });
+              toast({ title: "Pulse saved" });
+            } catch (e) {
+              toast({
+                title: "Failed",
+                description: e instanceof Error ? e.message : "Error",
+                variant: "destructive",
+              });
+            }
+          }}
+        >
+          Add sample broker pulse
+        </Button>
+        <Button
+          type="button"
+          className="h-9 rounded-full border border-violet-500/40 bg-violet-500/10 text-[11px] text-violet-100 sm:col-span-2"
+          onClick={async () => {
+            try {
+              const res = await apiRequest("POST", "/api/growth/market-network/to-arrowx", {});
+              const data = await res.json();
+              await qc.invalidateQueries({ queryKey: ["/api/growth/arrowx/opportunities"] });
+              toast({ title: "ArrowX from Market Network", description: data.title });
+            } catch (e) {
+              toast({
+                title: "Failed",
+                description: e instanceof Error ? e.message : "Need pulses first",
+                variant: "destructive",
+              });
+            }
+          }}
+        >
+          Aggregate → ArrowX
+        </Button>
+      </div>
+      {insights && (
+        <p className="mt-3 text-[12px] text-white/45">
+          {insights.pulse_count} pulses · ticket{" "}
+          {(insights.signals?.ticket_size || insights.signals?.budget || [])
+            .map((x) => `${x.value} (${x.count})`)
+            .join(", ") || "—"}
+        </p>
       )}
     </section>
   );

@@ -300,6 +300,19 @@ def _sync_schema() -> None:
                     updated_at TIMESTAMPTZ DEFAULT now()
                 )
                 """,
+                """
+                CREATE TABLE IF NOT EXISTS market_network_pulses (
+                    id UUID PRIMARY KEY,
+                    contact_id UUID,
+                    respondent_role VARCHAR(64) NOT NULL DEFAULT 'broker',
+                    region VARCHAR(128),
+                    destination VARCHAR(128),
+                    answers JSONB NOT NULL DEFAULT '{}',
+                    email VARCHAR(255),
+                    source VARCHAR(64) DEFAULT 'admin',
+                    created_at TIMESTAMPTZ DEFAULT now()
+                )
+                """,
             ):
                 try:
                     conn.execute(text(tbl_sql))
@@ -374,8 +387,9 @@ app.include_router(entities.router)
 
 
 @app.get("/api/health")
+@app.get("/health")
 def health_check():
-    return {"status": "ok"}
+    return {"status": "ok", "service": "wishnest-api"}
 
 
 # ── Serve built React frontend for all non-API routes ─────────────────────

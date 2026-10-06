@@ -172,3 +172,20 @@ class OutreachJob(Base):
     result = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class MarketNetworkPulse(Base):
+    """Broker / agent research node response (Market Network)."""
+
+    __tablename__ = "market_network_pulses"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    contact_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    respondent_role = Column(String(64), nullable=False, default="broker")  # broker, agent, dealer
+    region = Column(String(128), nullable=True)
+    destination = Column(String(128), nullable=True)
+    answers = Column(JSONB, nullable=False, default=dict)
+    # e.g. ticket_size, property_mix, not_selling, rental_yield_expect, top_locations
+    email = Column(String(255), nullable=True)
+    source = Column(String(64), nullable=True, default="admin")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
