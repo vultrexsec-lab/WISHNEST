@@ -728,7 +728,7 @@ export function ReimagingPage(): JSX.Element {
               </Button>
               {loading && (
                 <p className="[font-family:'Inter',Helvetica] text-[12px] text-white/40">
-                  Keep this tab open. Redesigning several photos can take a few minutes.
+                  Writing the before/after article (text only — no image API).
                 </p>
               )}
             </div>
