@@ -72,6 +72,9 @@ export function ReimagingPage(): JSX.Element {
   const [hotelName, setHotelName] = useState("");
   const [prompt, setPrompt] = useState("");
   const [photos, setPhotos] = useState<SelectablePhoto[]>([]);
+  /** AFTER images: manually redesigned (e.g. ChatGPT) — uploaded by user */
+  const [afterPhotos, setAfterPhotos] = useState<SelectablePhoto[]>([]);
+  const afterInputRef = useRef<HTMLInputElement>(null);
   const [fetchedMeta, setFetchedMeta] = useState<Omit<FetchedPhotos, "photo_urls"> | null>(null);
   const [fetchingPhotos, setFetchingPhotos] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -108,8 +111,29 @@ export function ReimagingPage(): JSX.Element {
     setResult(null);
     setPrompt("");
     clearPhotos();
+    afterPhotos.forEach((p) => {
+      if (p.file && p.displayUrl.startsWith("blob:")) URL.revokeObjectURL(p.displayUrl);
+    });
+    setAfterPhotos([]);
     if (fileInputRef.current) fileInputRef.current.value = "";
     if (addMoreInputRef.current) addMoreInputRef.current.value = "";
+    if (afterInputRef.current) afterInputRef.current.value = "";
+  };
+
+  const onAfterFiles = (files: FileList | null) => {
+    if (!files?.length) return;
+    const next: SelectablePhoto[] = [];
+    Array.from(files).slice(0, 8).forEach((file) => {
+      if (!file.type.startsWith("image/")) return;
+      next.push({
+        id: `after-${file.name}-${file.size}-${Math.random().toString(36).slice(2)}`,
+        displayUrl: URL.createObjectURL(file),
+        remoteUrl: null,
+        file,
+        selected: true,
+      });
+    });
+    setAfterPhotos((prev) => [...prev, ...next].slice(0, 8));
   };
 
   const togglePhoto = (id: string) => {
@@ -249,7 +273,7 @@ export function ReimagingPage(): JSX.Element {
       });
       toast({
         title: "Photos loaded",
-        description: `${data.photo_urls.length} photos found. First 4 selected — click to toggle.`,
+        description: `${data.photo_urls.length} photos found. BEFORE photos — select which to keep, download if needed, redesign in ChatGPT, upload AFTER below.`,
       });
     } catch (err) {
       toast({
@@ -277,18 +301,11 @@ export function ReimagingPage(): JSX.Element {
     e.preventDefault();
     setResult(null);
 
-    if (selectedCount === 0) {
+    const afterSelected = afterPhotos.filter((p) => p.selected && p.file);
+    if (afterSelected.length === 0) {
       toast({
-        title: "No photos selected",
-        description: "Select at least one photo to redesign.",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (!prompt.trim()) {
-      toast({
-        title: "Prompt required",
-        description: "Describe how you want the photos redesigned.",
+        title: "AFTER images required",
+        description: "Upload redesigned images from ChatGPT (or any tool), then generate the article.",
         variant: "destructive",
       });
       return;
@@ -302,77 +319,31 @@ export function ReimagingPage(): JSX.Element {
 
     setLoading(true);
     try {
-      let res: Response;
+      const before_photo_urls = selectedPhotos
+        .filter((p) => p.remoteUrl)
+        .map((p) => p.remoteUrl as string);
+      const beforeLocal = selectedPhotos.filter((p) => p.file);
+      const before_images_base64 = await Promise.all(
+        beforeLocal.map((p) => fileToBase64(p.file!)),
+      );
+      const after_images_base64 = await Promise.all(
+        afterSelected.map((p) => fileToBase64(p.file!)),
+      );
 
-      if (mode === "hotel") {
-        if (!hotelName.trim()) {
-          toast({ title: "Hotel name required", variant: "destructive" });
-          setLoading(false);
-          return;
-        }
-        const remoteSelected = selectedPhotos
-          .filter((p) => p.remoteUrl)
-          .map((p) => p.remoteUrl as string);
-        const localSelected = selectedPhotos.filter((p) => p.file);
-
-        // If only local files selected in hotel mode, use upload endpoint
-        if (remoteSelected.length === 0 && localSelected.length > 0) {
-          const images_base64 = await Promise.all(
-            localSelected.map((p) => fileToBase64(p.file!)),
-          );
-          res = await fetch(apiUrl("/api/reimaging/upload"), {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-              prompt: prompt.trim(),
-              hotel_name: hotelName.trim(),
-              images_base64,
-            }),
-          });
-        } else {
-          res = await fetch(apiUrl("/api/reimaging/hotel"), {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-              hotel_name: hotelName.trim(),
-              prompt: prompt.trim(),
-              photo_urls: remoteSelected.length > 0 ? remoteSelected : undefined,
-            }),
-          });
-        }
-      } else {
-        const localSelected = selectedPhotos.filter((p) => p.file);
-        if (localSelected.length === 0) {
-          toast({
-            title: "No images",
-            description: "Upload and select at least one image.",
-            variant: "destructive",
-          });
-          setLoading(false);
-          return;
-        }
-        const images_base64 = await Promise.all(
-          localSelected.map((p) => fileToBase64(p.file!)),
-        );
-        res = await fetch(apiUrl("/api/reimaging/upload"), {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            prompt: prompt.trim(),
-            hotel_name: hotelName.trim() || null,
-            images_base64,
-          }),
-        });
-      }
+      const res = await fetch(apiUrl("/api/reimaging/before-after"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          hotel_name: hotelName.trim() || null,
+          notes: prompt.trim(),
+          before_photo_urls: before_photo_urls.length ? before_photo_urls : undefined,
+          before_images_base64,
+          after_images_base64,
+        }),
+      });
 
       if (!res.ok) {
         let detail: string = "Reimaging failed";
@@ -391,7 +362,7 @@ export function ReimagingPage(): JSX.Element {
       setResult(data);
       toast({
         title: "Draft created",
-        description: "Article saved as draft. Review it in the main Dashboard to publish.",
+        description: "Before/After draft saved (no image-gen API). Review in Dashboard to publish.",
       });
     } catch (err) {
       toast({
@@ -655,7 +626,50 @@ export function ReimagingPage(): JSX.Element {
                         >
                           <Download className="h-3.5 w-3.5" />
                         </button>
-                        <button
+                                    {/* AFTER — manual redesign uploads */}
+            <div className="mt-8 rounded-2xl border border-emerald-500/25 bg-emerald-500/5 p-5">
+              <p className="text-[10px] tracking-[1.6px] text-emerald-300/80">AFTER · MANUAL REDESIGN</p>
+              <p className="mt-2 text-[13px] text-white/55">
+                Download BEFORE photos, redesign them in ChatGPT (or any tool), then upload here.
+                We do <span className="text-white/80">not</span> call the image-generation API — only
+                the article text uses AI.
+              </p>
+              <input
+                ref={afterInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="mt-4 block w-full text-[12px] text-white/50 file:mr-3 file:rounded-full file:border-0 file:bg-emerald-700 file:px-4 file:py-2 file:text-[11px] file:text-white"
+                onChange={(e) => onAfterFiles(e.target.files)}
+              />
+              {afterPhotos.length > 0 && (
+                <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  {afterPhotos.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() =>
+                        setAfterPhotos((prev) =>
+                          prev.map((x) =>
+                            x.id === p.id ? { ...x, selected: !x.selected } : x,
+                          ),
+                        )
+                      }
+                      className={`relative overflow-hidden rounded-lg border ${
+                        p.selected ? "border-emerald-400" : "border-white/15 opacity-50"
+                      }`}
+                    >
+                      <img src={p.displayUrl} alt="" className="aspect-[4/3] w-full object-cover" />
+                      <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 text-[9px] text-white">
+                        AFTER
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+<button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -686,7 +700,7 @@ export function ReimagingPage(): JSX.Element {
               <Textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                placeholder="e.g. Make it more luxurious with soft evening lighting, natural stone, and a refined modern look."
+                placeholder="Optional notes for the article writer (what changed, design intent). Image redesign is done manually in ChatGPT — upload AFTER images below."
                 rows={4}
                 className="border-white/10 bg-white/5 text-white placeholder:text-white/30 focus-visible:ring-emerald-500/40"
                 disabled={loading}
@@ -697,7 +711,7 @@ export function ReimagingPage(): JSX.Element {
             <div className="mt-6 flex flex-wrap items-center gap-3">
               <Button
                 type="submit"
-                disabled={loading || selectedCount === 0 || !prompt.trim()}
+                disabled={loading || afterPhotos.filter((p) => p.selected).length === 0}
                 className="bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50"
               >
                 {loading ? (

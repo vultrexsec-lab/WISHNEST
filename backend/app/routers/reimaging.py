@@ -31,7 +31,11 @@ from pydantic import BaseModel, Field
 
 from app.dependencies import require_admin
 from app.services.places_service import text_search_place
-from app.services.reimaging_service import run_reimaging_hotel, run_reimaging_upload
+from app.services.reimaging_service import (
+    run_reimaging_hotel,
+    run_reimaging_upload,
+    run_reimaging_before_after,
+)
 
 router = APIRouter(tags=["reimaging"])
 logger = logging.getLogger("wishnest.reimaging")
@@ -258,3 +262,39 @@ def serve_reimaging_media(media_id: str):
         )
 
     raise HTTPException(status_code=404, detail="Image not found.")
+
+
+class BeforeAfterRequest(BaseModel):
+    """Manual ChatGPT redesign workflow — no image generation API."""
+    hotel_name: str | None = Field(default=None, max_length=300)
+    notes: str = Field(default="", max_length=2000)
+    before_images_base64: list[str] = Field(default_factory=list, max_length=MAX_IMAGES)
+    after_images_base64: list[str] = Field(..., min_length=1, max_length=MAX_IMAGES)
+    before_photo_urls: list[str] | None = Field(default=None, max_length=9)
+
+
+@router.post("/api/reimaging/before-after", response_model=ReimagingResult)
+def reimaging_before_after(
+    body: BeforeAfterRequest,
+    admin: str = Depends(require_admin),
+):
+    """
+    Before = Maps/source photos; After = user-uploaded redesigns (e.g. from ChatGPT).
+    Only text/vision article generation uses OpenAI — not images.generate / images.edit.
+    """
+    if not body.after_images_base64:
+        raise HTTPException(400, "Upload at least one AFTER (redesigned) image")
+    try:
+        result = run_reimaging_before_after(
+            hotel_name=(body.hotel_name or "").strip() or None,
+            notes=(body.notes or "").strip(),
+            before_images_b64=body.before_images_base64 or [],
+            after_images_b64=body.after_images_base64,
+            before_photo_urls=body.before_photo_urls,
+        )
+        return ReimagingResult(**result)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        logger.exception("before-after reimaging failed")
+        raise HTTPException(500, f"Reimaging failed: {exc}") from exc
