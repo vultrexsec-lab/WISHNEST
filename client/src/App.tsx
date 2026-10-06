@@ -26,6 +26,7 @@ import { GetReviewedPage } from "@/pages/GetReviewedPage";
 import { SubmitProjectPage } from "@/pages/SubmitProjectPage";
 import { SubmissionsAdminPage } from "@/pages/SubmissionsAdminPage";
 import { GrowthOsPage } from "@/pages/GrowthOsPage";
+import { SurveyPublicPage } from "@/pages/SurveyPublicPage";
 
 /** Redirects to /login when not authenticated. */
 function ProtectedDashboard() {
@@ -78,6 +79,7 @@ function Router() {
         <Route path="/get-reviewed/submit" component={SubmitProjectPage} />
         <Route path="/submissions" component={SubmissionsAdminPage} />
         <Route path="/growth" component={ProtectedGrowth} />
+        <Route path="/survey/:id" component={SurveyPublicPage} />
         <Route component={NotFound} />
       </Switch>
     </>

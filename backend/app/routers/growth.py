@@ -1386,3 +1386,62 @@ def list_outreach_jobs(
         }
         for r in rows
     ]
+
+
+# ── Public survey (no admin auth) ───────────────────────────────────────────
+
+@router.get("/api/public/surveys/{survey_id}")
+def public_get_survey(survey_id: uuid.UUID, db: Session = Depends(get_db)):
+    """Public read of an active survey (questions only — no PII)."""
+    survey = db.query(GrowthSurvey).filter(GrowthSurvey.id == survey_id).first()
+    if not survey or survey.status != "active":
+        raise HTTPException(404, "Survey not found or closed")
+    return {
+        "id": str(survey.id),
+        "title": survey.title,
+        "destination": survey.destination,
+        "topic": survey.topic,
+        "questions": survey.questions or [],
+    }
+
+
+@router.post("/api/public/surveys/{survey_id}/responses")
+def public_add_survey_response(
+    survey_id: uuid.UUID,
+    body: SurveyResponseIn,
+    db: Session = Depends(get_db),
+):
+    """Public submit — same storage as admin sample responses."""
+    survey = db.query(GrowthSurvey).filter(GrowthSurvey.id == survey_id).first()
+    if not survey or survey.status != "active":
+        raise HTTPException(404, "Survey not found or closed")
+    if not body.answers:
+        raise HTTPException(400, "answers required")
+    row = GrowthSurveyResponse(
+        survey_id=survey.id,
+        contact_id=None,
+        email=(body.email or "").strip().lower() or None,
+        answers=body.answers or {},
+        consent_commercial=bool(body.consent_commercial),
+    )
+    db.add(row)
+    if row.email:
+        existing = db.query(GrowthContact).filter(GrowthContact.email == row.email).first()
+        if not existing:
+            db.add(
+                GrowthContact(
+                    email=row.email,
+                    contact_type="consumer",
+                    destination=survey.destination,
+                    email_permission=True,
+                    source="survey_public",
+                    tags="survey_response,public",
+                )
+            )
+    db.commit()
+    db.refresh(row)
+    return {
+        "ok": True,
+        "id": str(row.id),
+        "message": "Thank you — your response was recorded.",
+    }

@@ -950,6 +950,17 @@ function SurveyIntelligencePanel(): JSX.Element {
 
       {selectedId && (
         <div className="mt-4 grid gap-3 rounded-xl border border-white/10 p-4 sm:grid-cols-2">
+          <p className="text-[11px] text-emerald-200/90 sm:col-span-2">
+            Public link:{" "}
+            <a
+              className="underline"
+              href={`/survey/${selectedId}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              /survey/{selectedId}
+            </a>
+          </p>
           <p className="text-[11px] text-white/40 sm:col-span-2">Add sample response (admin test)</p>
           <input
             placeholder="Email (optional)"
