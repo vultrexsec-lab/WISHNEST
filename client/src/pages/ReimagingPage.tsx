@@ -476,7 +476,7 @@ export function ReimagingPage(): JSX.Element {
                     </Button>
                   </div>
                   <p className="mt-1.5 [font-family:'Inter',Helvetica] text-[11px] text-white/30">
-                    Fetch photos, then click to select/deselect. Only selected photos are redesigned.
+                    Fetch BEFORE photos from Maps. Download → redesign in ChatGPT → upload AFTER below.
                   </p>
                 </div>
               </div>
@@ -626,50 +626,7 @@ export function ReimagingPage(): JSX.Element {
                         >
                           <Download className="h-3.5 w-3.5" />
                         </button>
-                                    {/* AFTER — manual redesign uploads */}
-            <div className="mt-8 rounded-2xl border border-emerald-500/25 bg-emerald-500/5 p-5">
-              <p className="text-[10px] tracking-[1.6px] text-emerald-300/80">AFTER · MANUAL REDESIGN</p>
-              <p className="mt-2 text-[13px] text-white/55">
-                Download BEFORE photos, redesign them in ChatGPT (or any tool), then upload here.
-                We do <span className="text-white/80">not</span> call the image-generation API — only
-                the article text uses AI.
-              </p>
-              <input
-                ref={afterInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                className="mt-4 block w-full text-[12px] text-white/50 file:mr-3 file:rounded-full file:border-0 file:bg-emerald-700 file:px-4 file:py-2 file:text-[11px] file:text-white"
-                onChange={(e) => onAfterFiles(e.target.files)}
-              />
-              {afterPhotos.length > 0 && (
-                <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  {afterPhotos.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() =>
-                        setAfterPhotos((prev) =>
-                          prev.map((x) =>
-                            x.id === p.id ? { ...x, selected: !x.selected } : x,
-                          ),
-                        )
-                      }
-                      className={`relative overflow-hidden rounded-lg border ${
-                        p.selected ? "border-emerald-400" : "border-white/15 opacity-50"
-                      }`}
-                    >
-                      <img src={p.displayUrl} alt="" className="aspect-[4/3] w-full object-cover" />
-                      <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 text-[9px] text-white">
-                        AFTER
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-<button
+                        <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -693,9 +650,68 @@ export function ReimagingPage(): JSX.Element {
               </div>
             )}
 
+
+            {/* AFTER — always visible: manual redesign uploads */}
+            <div className="mt-6 rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-5">
+              <p className="[font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1.6px] text-emerald-300/90">
+                AFTER · UPLOAD REDESIGNED IMAGES
+              </p>
+              <p className="mt-2 [font-family:'Inter',Helvetica] text-[13px] leading-relaxed text-white/55">
+                1) Fetch &amp; download BEFORE photos above → 2) Redesign in ChatGPT → 3) Upload AFTER
+                images here. AI only writes the article (before vs after) — no image-generation API.
+              </p>
+              <input
+                ref={afterInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                multiple
+                className="mt-4 block w-full cursor-pointer text-[12px] text-white/50 file:mr-3 file:cursor-pointer file:rounded-full file:border-0 file:bg-emerald-600 file:px-4 file:py-2.5 file:text-[12px] file:font-medium file:text-white hover:file:bg-emerald-500"
+                onChange={(e) => {
+                  onAfterFiles(e.target.files);
+                  e.target.value = "";
+                }}
+                disabled={loading}
+              />
+              {afterPhotos.length > 0 ? (
+                <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  {afterPhotos.map((ap) => (
+                    <button
+                      key={ap.id}
+                      type="button"
+                      onClick={() =>
+                        setAfterPhotos((prev) =>
+                          prev.map((x) =>
+                            x.id === ap.id ? { ...x, selected: !x.selected } : x,
+                          ),
+                        )
+                      }
+                      className={`relative overflow-hidden rounded-xl border ${
+                        ap.selected
+                          ? "border-emerald-400 ring-2 ring-emerald-500/30"
+                          : "border-white/15 opacity-50"
+                      }`}
+                    >
+                      <img
+                        src={ap.displayUrl}
+                        alt="After"
+                        className="aspect-[4/3] w-full object-cover"
+                      />
+                      <span className="absolute bottom-1.5 left-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[9px] tracking-wide text-white">
+                        AFTER
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-3 [font-family:'Inter',Helvetica] text-[12px] text-white/35">
+                  No AFTER images yet — upload required before creating the draft.
+                </p>
+              )}
+            </div>
+
             <div className="mt-5">
               <label className="mb-1.5 block [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1.4px] text-white/40">
-                REDESIGN PROMPT
+                ARTICLE NOTES (OPTIONAL)
               </label>
               <Textarea
                 value={prompt}
@@ -704,7 +720,6 @@ export function ReimagingPage(): JSX.Element {
                 rows={4}
                 className="border-white/10 bg-white/5 text-white placeholder:text-white/30 focus-visible:ring-emerald-500/40"
                 disabled={loading}
-                required
               />
             </div>
 
