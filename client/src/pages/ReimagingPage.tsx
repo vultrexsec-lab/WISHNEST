@@ -717,12 +717,12 @@ export function ReimagingPage(): JSX.Element {
                 {loading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Reimagining {selectedCount} photo{selectedCount > 1 ? "s" : ""}… 1–3 min
+                    Writing before/after article…
                   </>
                 ) : (
                   <>
                     <Sparkles className="mr-2 h-4 w-4" />
-                    Reimagine {selectedCount > 0 ? `${selectedCount} selected` : ""} & Create Draft
+                    Create before/after draft article
                   </>
                 )}
               </Button>
