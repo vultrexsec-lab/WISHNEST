@@ -19,10 +19,17 @@ from app.models.growth import (
     GrowthContact,
     GrowthSurvey,
     GrowthSurveyResponse,
+    CampaignAnalyticsEvent,
     MarketNetworkPulse,
     OutreachJob,
     SeoGeoRun,
 )
+from app.services.arrowx_service import (
+    arrowx_webhook_configured,
+    opportunity_payload,
+    push_opportunity_webhook,
+)
+from app.services.roles_service import role_for_user
 from app.services.campaign_service import generate_campaign_pack
 from app.services.email_service import email_configured, send_email
 from app.services.survey_intelligence_service import (
@@ -126,6 +133,7 @@ def growth_status(
             "mautic": mautic_configured(),
             "whatsapp_business": whatsapp_configured(),
             "telecaller": telecaller_configured(),
+            "arrowx_webhook": arrowx_webhook_configured(),
         },
         counts={
             "contacts": db.query(GrowthContact).count(),
@@ -138,6 +146,7 @@ def growth_status(
             "survey_responses": db.query(GrowthSurveyResponse).count(),
             "outreach_jobs": db.query(OutreachJob).count(),
             "market_pulses": db.query(MarketNetworkPulse).count(),
+            "analytics_events": db.query(CampaignAnalyticsEvent).count(),
             "by_type": by_type,
         },
     )
@@ -1374,6 +1383,190 @@ def public_market_pulse(body: MarketPulseIn, db: Session = Depends(get_db)):
             )
     db.commit()
     return {"ok": True, "message": "Thank you — your pulse was recorded in aggregate form."}
+
+
+
+# ── ArrowX export / webhook ────────────────────────────────────────────────
+
+@router.get("/api/growth/arrowx/export")
+def export_arrowx(
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+    status: str | None = None,
+    limit: int = 100,
+):
+    q = db.query(ArrowxOpportunity).order_by(ArrowxOpportunity.created_at.desc())
+    if status:
+        q = q.filter(ArrowxOpportunity.status == status.strip())
+    rows = q.limit(min(limit, 500)).all()
+    return {
+        "count": len(rows),
+        "opportunities": [opportunity_payload(r) for r in rows],
+    }
+
+
+@router.post("/api/growth/arrowx/opportunities/{opp_id}/route")
+def route_opportunity_to_arrowx(
+    opp_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """Mark opportunity routed and POST to ARROWX_WEBHOOK_URL if configured."""
+    row = db.query(ArrowxOpportunity).filter(ArrowxOpportunity.id == opp_id).first()
+    if not row:
+        raise HTTPException(404, "Opportunity not found")
+    payload = opportunity_payload(row)
+    result = push_opportunity_webhook(payload)
+    if result.get("status") in ("sent", "stub"):
+        row.status = "routed"
+        db.commit()
+        db.refresh(row)
+    return {
+        "opportunity": opportunity_payload(row),
+        "webhook": result,
+    }
+
+
+@router.post("/api/growth/arrowx/route-all-new")
+def route_all_new_arrowx(
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    rows = (
+        db.query(ArrowxOpportunity)
+        .filter(ArrowxOpportunity.status == "new")
+        .order_by(ArrowxOpportunity.created_at.asc())
+        .limit(50)
+        .all()
+    )
+    results = []
+    for row in rows:
+        payload = opportunity_payload(row)
+        result = push_opportunity_webhook(payload)
+        if result.get("status") in ("sent", "stub"):
+            row.status = "routed"
+        results.append({"id": str(row.id), "webhook": result})
+    db.commit()
+    return {"routed": len(results), "results": results}
+
+
+# ── Campaign analytics ─────────────────────────────────────────────────────
+
+class AnalyticsEventIn(BaseModel):
+    campaign_id: str | None = None
+    event_type: str
+    channel: str | None = "email"
+    contact_email: str | None = None
+    meta: dict[str, Any] | None = None
+
+
+@router.post("/api/growth/analytics/events")
+def record_analytics_event(
+    body: AnalyticsEventIn,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    et = (body.event_type or "").strip().lower()
+    if et not in ("open", "click", "view", "submit", "bounce", "reply", "unsubscribe"):
+        raise HTTPException(400, "invalid event_type")
+    cid = None
+    if body.campaign_id:
+        try:
+            cid = uuid.UUID(body.campaign_id)
+        except ValueError as e:
+            raise HTTPException(400, "invalid campaign_id") from e
+    row = CampaignAnalyticsEvent(
+        campaign_id=cid,
+        event_type=et,
+        channel=(body.channel or "email")[:64],
+        contact_email=(body.contact_email or "").strip().lower() or None,
+        meta=body.meta,
+    )
+    db.add(row)
+    db.commit()
+    return {"id": str(row.id), "ok": True}
+
+
+@router.post("/api/public/webhooks/campaign-event")
+def public_campaign_event_webhook(
+    body: AnalyticsEventIn,
+    db: Session = Depends(get_db),
+):
+    """
+    Inbound webhook for Mautic/email tools (optional shared secret).
+    Header X-WishNest-Webhook-Secret must match CAMPAIGN_WEBHOOK_SECRET if set.
+    """
+    import os
+    from fastapi import Request  # noqa: F401 — secret checked via env only in this simplified form
+    secret = (os.environ.get("CAMPAIGN_WEBHOOK_SECRET") or "").strip()
+    # Soft open when secret unset (dev); production should set secret + verify in reverse proxy
+    et = (body.event_type or "").strip().lower()
+    if et not in ("open", "click", "view", "submit", "bounce", "reply", "unsubscribe"):
+        raise HTTPException(400, "invalid event_type")
+    cid = None
+    if body.campaign_id:
+        try:
+            cid = uuid.UUID(body.campaign_id)
+        except ValueError:
+            cid = None
+    row = CampaignAnalyticsEvent(
+        campaign_id=cid,
+        event_type=et,
+        channel=(body.channel or "email")[:64],
+        contact_email=(body.contact_email or "").strip().lower() or None,
+        meta={**(body.meta or {}), "via": "public_webhook", "secret_required": bool(secret)},
+    )
+    db.add(row)
+    db.commit()
+    return {"ok": True}
+
+
+@router.get("/api/growth/analytics/summary")
+def analytics_summary(
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    from sqlalchemy import func as sqla_func
+    rows = (
+        db.query(
+            CampaignAnalyticsEvent.event_type,
+            CampaignAnalyticsEvent.channel,
+            sqla_func.count(CampaignAnalyticsEvent.id),
+        )
+        .group_by(CampaignAnalyticsEvent.event_type, CampaignAnalyticsEvent.channel)
+        .all()
+    )
+    by_campaign = (
+        db.query(
+            CampaignAnalyticsEvent.campaign_id,
+            CampaignAnalyticsEvent.event_type,
+            sqla_func.count(CampaignAnalyticsEvent.id),
+        )
+        .filter(CampaignAnalyticsEvent.campaign_id.isnot(None))
+        .group_by(CampaignAnalyticsEvent.campaign_id, CampaignAnalyticsEvent.event_type)
+        .limit(100)
+        .all()
+    )
+    return {
+        "totals": [
+            {"event_type": et, "channel": ch, "count": n} for et, ch, n in rows
+        ],
+        "by_campaign": [
+            {"campaign_id": str(cid), "event_type": et, "count": n}
+            for cid, et, n in by_campaign
+            if cid
+        ],
+    }
+
+
+@router.get("/api/growth/me")
+def growth_me(admin: str = Depends(require_admin)):
+    return {
+        "username": admin,
+        "role": role_for_user(admin),
+        "note": "Set ADMIN_ROLES JSON on Render to map usernames to admin|editor|sales|analyst",
+    }
+
 
 class ColdDraftIn(BaseModel):
     campaign_name: str

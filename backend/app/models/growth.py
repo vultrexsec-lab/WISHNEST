@@ -189,3 +189,17 @@ class MarketNetworkPulse(Base):
     email = Column(String(255), nullable=True)
     source = Column(String(64), nullable=True, default="admin")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class CampaignAnalyticsEvent(Base):
+    """Inbound campaign engagement events (email open/click, page view, form)."""
+
+    __tablename__ = "campaign_analytics_events"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    campaign_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    event_type = Column(String(64), nullable=False, index=True)  # open, click, view, submit, bounce
+    channel = Column(String(64), nullable=True)  # email, web, whatsapp, social
+    contact_email = Column(String(255), nullable=True)
+    meta = Column(JSONB, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

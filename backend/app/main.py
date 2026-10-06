@@ -313,6 +313,17 @@ def _sync_schema() -> None:
                     created_at TIMESTAMPTZ DEFAULT now()
                 )
                 """,
+                """
+                CREATE TABLE IF NOT EXISTS campaign_analytics_events (
+                    id UUID PRIMARY KEY,
+                    campaign_id UUID,
+                    event_type VARCHAR(64) NOT NULL,
+                    channel VARCHAR(64),
+                    contact_email VARCHAR(255),
+                    meta JSONB,
+                    created_at TIMESTAMPTZ DEFAULT now()
+                )
+                """,
             ):
                 try:
                     conn.execute(text(tbl_sql))

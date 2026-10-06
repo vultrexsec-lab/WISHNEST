@@ -773,6 +773,8 @@ export function GrowthOsPage(): JSX.Element {
 
         <MarketNetworkAdminPanel />
 
+        <FinalOpsPanel />
+
         <section className="mt-12">
           <div className="flex items-center gap-2">
             <Network className="h-4 w-4 text-white/40" />
@@ -1418,6 +1420,155 @@ function MarketNetworkAdminPanel(): JSX.Element {
             .join(", ") || "—"}
         </p>
       )}
+    </section>
+  );
+}
+
+
+function FinalOpsPanel(): JSX.Element {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const { data: me } = useQuery<{ username: string; role: string }>({
+    queryKey: ["/api/growth/me"],
+  });
+  const { data: analytics } = useQuery<{
+    totals: Array<{ event_type: string; channel: string; count: number }>;
+  }>({ queryKey: ["/api/growth/analytics/summary"] });
+  const { data: arrowx = [], refetch: refetchAx } = useQuery<
+    Array<{ id: string; title: string; status: string; summary: string | null }>
+  >({ queryKey: ["/api/growth/arrowx/opportunities"] });
+
+  return (
+    <section className="mt-12 border-t border-white/10 pt-10 pb-16">
+      <p className="text-[10px] tracking-[1.4px] text-white/35">ARROWX · ANALYTICS · ROLES</p>
+      <p className="mt-1 text-[12px] text-white/40">
+        Logged in as {me?.username || "…"} · role{" "}
+        <span className="text-emerald-300">{me?.role || "admin"}</span>
+        . Map roles via ADMIN_ROLES env JSON.
+      </p>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button
+          type="button"
+          className="h-9 rounded-full bg-violet-800 text-[11px] text-white"
+          onClick={async () => {
+            try {
+              const res = await apiRequest("POST", "/api/growth/arrowx/route-all-new", {});
+              const data = await res.json();
+              await refetchAx();
+              toast({
+                title: "ArrowX route",
+                description: `Processed ${data.routed ?? 0} (webhook or stub)`,
+              });
+            } catch (e) {
+              toast({
+                title: "Failed",
+                description: e instanceof Error ? e.message : "Error",
+                variant: "destructive",
+              });
+            }
+          }}
+        >
+          Route all new → ArrowX webhook
+        </Button>
+        <Button
+          type="button"
+          className="h-9 rounded-full border border-white/15 bg-white/5 text-[11px] text-white/70"
+          onClick={async () => {
+            try {
+              const res = await apiRequest("GET", "/api/growth/arrowx/export");
+              const data = await res.json();
+              const blob = new Blob([JSON.stringify(data, null, 2)], {
+                type: "application/json",
+              });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = "arrowx-export.json";
+              a.click();
+              URL.revokeObjectURL(url);
+              toast({ title: "Export downloaded", description: `${data.count} opportunities` });
+            } catch (e) {
+              toast({
+                title: "Export failed",
+                description: e instanceof Error ? e.message : "Error",
+                variant: "destructive",
+              });
+            }
+          }}
+        >
+          Download ArrowX JSON
+        </Button>
+        <Button
+          type="button"
+          className="h-9 rounded-full border border-amber-500/30 bg-amber-500/10 text-[11px] text-amber-100"
+          onClick={async () => {
+            try {
+              await apiRequest("POST", "/api/growth/analytics/events", {
+                event_type: "view",
+                channel: "web",
+                meta: { source: "growth_os_test" },
+              });
+              await qc.invalidateQueries({ queryKey: ["/api/growth/analytics/summary"] });
+              toast({ title: "Test analytics event recorded" });
+            } catch (e) {
+              toast({
+                title: "Failed",
+                description: e instanceof Error ? e.message : "Error",
+                variant: "destructive",
+              });
+            }
+          }}
+        >
+          Record test analytics event
+        </Button>
+      </div>
+
+      {arrowx.filter((o) => o.status === "new").length > 0 && (
+        <ul className="mt-4 space-y-1">
+          {arrowx
+            .filter((o) => o.status === "new")
+            .slice(0, 5)
+            .map((o) => (
+              <li
+                key={o.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 px-3 py-2 text-[12px]"
+              >
+                <span className="text-white/70">{o.title}</span>
+                <Button
+                  type="button"
+                  className="h-7 rounded-full border border-violet-500/40 px-2 text-[10px] text-violet-200"
+                  onClick={async () => {
+                    await apiRequest("POST", `/api/growth/arrowx/opportunities/${o.id}/route`, {});
+                    await refetchAx();
+                    toast({ title: "Routed", description: o.title.slice(0, 40) });
+                  }}
+                >
+                  Route
+                </Button>
+              </li>
+            ))}
+        </ul>
+      )}
+
+      {analytics?.totals && analytics.totals.length > 0 && (
+        <div className="mt-6 text-[12px] text-white/50">
+          <p className="text-[10px] tracking-[1px] text-white/35">ANALYTICS TOTALS</p>
+          <ul className="mt-2 space-y-1">
+            {analytics.totals.map((r, i) => (
+              <li key={i}>
+                {r.event_type} · {r.channel || "—"} · {r.count}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <p className="mt-8 text-[11px] leading-relaxed text-white/30">
+        Phase 1 Growth OS complete: editorial pipeline, contacts, segments, campaigns, Mautic/Postiz
+        adapters, surveys, market network, entities, outreach stubs, ArrowX export/webhook, analytics
+        events, roles. Connect vendor env keys for live send. Mass scrapers and paid-ad automation stay
+        out of scope until explicitly approved.
+      </p>
     </section>
   );
 }
