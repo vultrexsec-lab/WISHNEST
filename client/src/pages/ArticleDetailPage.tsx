@@ -523,15 +523,15 @@ export const ArticleDetailPage = (): JSX.Element => {
                   );
                 })()}
 
-                {!!(article.best_for?.length || article.not_ideal_for?.length) && (
+                {!!(asItemList(article.best_for).length || asItemList(article.not_ideal_for).length) && (
                   <div className="bg-white p-8">
-                    {article.best_for && article.best_for.length > 0 && (
+                    {asItemList(article.best_for).length > 0 && (
                       <div className="pb-5">
                         <div className="[font-family:'Inter',Helvetica] text-[9px] font-normal tracking-[1.98px] text-[#6b6b6b]">
                           BEST FOR
                         </div>
                         <ul className="mt-2 space-y-1">
-                          {article.best_for.map((b, i) => (
+                          {asItemList(article.best_for).map((b, i) => (
                             <li
                               key={i}
                               className="[font-family:'Inter',Helvetica] text-[13px] text-[#1e1e1e]"
@@ -542,13 +542,13 @@ export const ArticleDetailPage = (): JSX.Element => {
                         </ul>
                       </div>
                     )}
-                    {article.not_ideal_for && article.not_ideal_for.length > 0 && (
+                    {asItemList(article.not_ideal_for).length > 0 && (
                       <div>
                         <div className="[font-family:'Inter',Helvetica] text-[9px] font-normal tracking-[1.98px] text-[#6b6b6b]">
                           NOT IDEAL FOR
                         </div>
                         <ul className="mt-2 space-y-1">
-                          {article.not_ideal_for.map((b, i) => (
+                          {asItemList(article.not_ideal_for).map((b, i) => (
                             <li
                               key={i}
                               className="[font-family:'Inter',Helvetica] text-[13px] text-[#1e1e1e]"
@@ -590,3 +590,27 @@ export const ArticleDetailPage = (): JSX.Element => {
     </main>
   );
 };
+function asItemList(value: unknown): string[] {
+  if (value == null) return [];
+  if (Array.isArray(value)) {
+    const mapped = value
+      .map((x) => (typeof x === "string" ? x : String(x ?? "")).trim())
+      .filter((s) => s.length > 0);
+    // Recover from accidental character-split strings stored as arrays
+    if (mapped.length > 6 && mapped.every((s) => s.length === 1)) {
+      const joined = mapped.join("");
+      const parts = joined.split(/[,;]+/).map((x) => x.trim()).filter((s) => s.length > 1);
+      return parts.length ? parts : [joined];
+    }
+    return mapped;
+  }
+  if (typeof value === "string") {
+    const s = value.trim();
+    if (!s) return [];
+    const parts = s.split(/[,;\n]+/).map((x) => x.trim()).filter(Boolean);
+    return parts.length > 1 ? parts : [s];
+  }
+  return [];
+}
+
+

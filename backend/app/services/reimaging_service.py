@@ -541,6 +541,36 @@ def _normalise_grade_value(raw):
     return mapping.get(key)
 
 
+
+def _as_str_list(raw: Any, *, max_items: int = 12) -> list[str] | None:
+    """Normalize LLM output to a list of strings (never a character-split string)."""
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        s = raw.strip()
+        if not s:
+            return None
+        # Split common delimiters; avoid treating whole sentence as char array
+        import re as _re
+        parts = [p.strip() for p in _re.split(r"[,;\n]+", s) if p.strip()]
+        if len(parts) <= 1 and len(s) > 40:
+            return [s]
+        return parts[:max_items] or None
+    if isinstance(raw, (list, tuple)):
+        out: list[str] = []
+        for item in raw:
+            if item is None:
+                continue
+            if isinstance(item, str):
+                ss = item.strip()
+                if ss:
+                    out.append(ss)
+            else:
+                out.append(str(item))
+        return out[:max_items] or None
+    return [str(raw)]
+
+
 def _save_as_draft(
     package: dict[str, Any],
     *,
@@ -553,16 +583,55 @@ def _save_as_draft(
     """Persist a draft Article and return its UUID string."""
     db = SessionLocal()
     try:
-        hero = redesigned_urls[0] if redesigned_urls else (original_urls[0] if original_urls else None)
-        sections = redesigned_urls[1:] if len(redesigned_urls) > 1 else redesigned_urls
+        # Gallery: BEFORE images then AFTER images so the article can show both
+        gallery: list[str] = []
+        for u in original_urls or []:
+            if u and u not in gallery:
+                gallery.append(u)
+        for u in redesigned_urls or []:
+            if u and u not in gallery:
+                gallery.append(u)
+        hero = (redesigned_urls[0] if redesigned_urls else None) or (
+            original_urls[0] if original_urls else None
+        )
+        sections = gallery[1:] if len(gallery) > 1 else (gallery[1:] if gallery else [])
+        # If only one image total, keep sections empty; hero holds it
+        if not sections and len(gallery) > 1:
+            sections = gallery[1:]
 
-        # Pad captions / alt_text to match image count
-        captions = list(package.get("captions") or [])
-        alt_text = list(package.get("alt_text") or [])
-        while len(captions) < len(redesigned_urls):
-            captions.append(f"Reimagined view of {hotel_name or 'the property'}")
-        while len(alt_text) < len(redesigned_urls):
-            alt_text.append(f"Reimagined design concept for {hotel_name or 'property'}")
+        n_imgs = max(len(gallery), 1)
+        captions = _as_str_list(package.get("captions")) or []
+        alt_text = _as_str_list(package.get("alt_text")) or []
+        while len(captions) < n_imgs:
+            if len(captions) < len(original_urls or []):
+                captions.append(f"Before — existing view of {hotel_name or 'the property'}")
+            else:
+                captions.append(f"After — redesigned concept for {hotel_name or 'property'}")
+        while len(alt_text) < n_imgs:
+            alt_text.append(f"WishNest reimagined view {len(alt_text)+1}")
+
+        # Inject before/after figure blocks into full_article if missing images
+        body = package.get("full_article") or ""
+        if gallery and "<img" not in (body or "").lower():
+            before_html = ""
+            after_html = ""
+            for i, u in enumerate(original_urls or []):
+                before_html += (
+                    f'<figure class="wishnest-before"><img src="{u}" alt="Before {i+1}" />'
+                    f"<figcaption>Before {i+1}</figcaption></figure>"
+                )
+            for i, u in enumerate(redesigned_urls or []):
+                after_html += (
+                    f'<figure class="wishnest-after"><img src="{u}" alt="After {i+1}" />'
+                    f"<figcaption>After {i+1}</figcaption></figure>"
+                )
+            inject = ""
+            if before_html:
+                inject += f"<h2>Before</h2>{before_html}"
+            if after_html:
+                inject += f"<h2>After</h2>{after_html}"
+            body = f"{inject}{body}"
+            package = {**package, "full_article": body}
 
         article = Article(
             article_type=ArticleType.review if hotel_name else ArticleType.standard,
@@ -572,20 +641,20 @@ def _save_as_draft(
             subtitle=package.get("subtitle"),
             full_article=package.get("full_article"),
             executive_summary=package.get("executive_summary"),
-            pull_quotes=package.get("pull_quotes"),
+            pull_quotes=_as_str_list(package.get("pull_quotes")),
             seo_title=package.get("seo_title"),
             meta_description=package.get("meta_description"),
             focus_keyword=package.get("focus_keyword"),
-            keywords=package.get("keywords"),
+            keywords=_as_str_list(package.get("keywords")),
             image_credits=package.get("image_credits")
             or ["WishNest Reimaging Studio · AI-assisted concept"],
-            captions=captions[: len(redesigned_urls) or 1],
-            alt_text=alt_text[: len(redesigned_urls) or 1],
+            captions=captions[:n_imgs],
+            alt_text=alt_text[:n_imgs],
             hero_image_url=hero,
             section_image_urls=sections or None,
             location=(listing.address if listing else None) or hotel_name,
-            best_for=package.get("best_for"),
-            not_ideal_for=package.get("not_ideal_for"),
+            best_for=_as_str_list(package.get("best_for")),
+            not_ideal_for=_as_str_list(package.get("not_ideal_for")),
             architecture_grade=_normalise_grade_value(package.get("architecture_grade")),
             landscape_grade=_normalise_grade_value(package.get("landscape_grade")),
             connectivity_grade=_normalise_grade_value(package.get("connectivity_grade")),

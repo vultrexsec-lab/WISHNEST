@@ -1369,13 +1369,13 @@ function ArticlePreviewModal({
                       {!!(article.best_for?.length ||
                         article.not_ideal_for?.length) && (
                         <div className="bg-white p-6 shadow-sm">
-                          {article.best_for && article.best_for.length > 0 && (
+                          {asItemList(article.best_for).length > 0 && (
                             <div className="pb-4">
                               <div className="[font-family:'Inter',Helvetica] text-[9px] tracking-[1.98px] text-[#6b6b6b]">
                                 BEST FOR
                               </div>
                               <ul className="mt-2 space-y-1">
-                                {article.best_for.map((b, i) => (
+                                {asItemList(article.best_for).map((b, i) => (
                                   <li
                                     key={i}
                                     className="[font-family:'Inter',Helvetica] text-[13px] text-[#1e1e1e]"
@@ -1386,14 +1386,13 @@ function ArticlePreviewModal({
                               </ul>
                             </div>
                           )}
-                          {article.not_ideal_for &&
-                            article.not_ideal_for.length > 0 && (
+                          {asItemList(article.not_ideal_for).length > 0 && (
                               <div>
                                 <div className="[font-family:'Inter',Helvetica] text-[9px] tracking-[1.98px] text-[#6b6b6b]">
                                   NOT IDEAL FOR
                                 </div>
                                 <ul className="mt-2 space-y-1">
-                                  {article.not_ideal_for.map((b, i) => (
+                                  {asItemList(article.not_ideal_for).map((b, i) => (
                                     <li
                                       key={i}
                                       className="[font-family:'Inter',Helvetica] text-[13px] text-[#1e1e1e]"
@@ -2434,6 +2433,30 @@ function Field({
   );
 }
 
+
+function asItemList(value: unknown): string[] {
+  if (value == null) return [];
+  if (Array.isArray(value)) {
+    const mapped = value
+      .map((x) => (typeof x === "string" ? x : String(x ?? "")).trim())
+      .filter((s) => s.length > 0);
+    // Recover from accidental character-split strings stored as arrays
+    if (mapped.length > 6 && mapped.every((s) => s.length === 1)) {
+      const joined = mapped.join("");
+      const parts = joined.split(/[,;]+/).map((x) => x.trim()).filter((s) => s.length > 1);
+      return parts.length ? parts : [joined];
+    }
+    return mapped;
+  }
+  if (typeof value === "string") {
+    const s = value.trim();
+    if (!s) return [];
+    const parts = s.split(/[,;\n]+/).map((x) => x.trim()).filter(Boolean);
+    return parts.length > 1 ? parts : [s];
+  }
+  return [];
+}
+
 function ListField({
   label,
   items,
@@ -2460,7 +2483,7 @@ function ListField({
         </div>
       )}
       <ul className={`flex flex-wrap gap-1.5 ${bare ? "flex-col" : ""} pt-1`}>
-        {items.map((item, i) =>
+        {asItemList(items).map((item, i) =>
           link ? (
             <li key={i}>
               <a
