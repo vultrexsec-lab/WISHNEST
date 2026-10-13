@@ -38,6 +38,7 @@ from app.services.survey_intelligence_service import (
     opportunity_title,
 )
 from app.models.newsletter import NewsletterSubscriber
+from app.services.places_service import search_hospitality_for_crm
 from app.services.agentreach_service import (
     agentreach_configured,
     create_cold_sequence_draft,
@@ -362,6 +363,141 @@ def import_newsletter_subscribers(
                 synced += 1
     db.commit()
     return {"created": created, "skipped": skipped, "mautic_synced": synced, "total_subscribers": len(subs)}
+
+
+
+
+# ── Public business intake (Google Maps via SerpApi) ───────────────────────
+
+class PlacesSearchIn(BaseModel):
+    region: str = Field(..., min_length=2, max_length=200)
+    category: str = Field(default="hotels resorts", max_length=200)
+    limit: int = Field(default=20, ge=1, le=40)
+
+
+@router.post("/api/growth/places/search")
+def places_search_for_crm(
+    body: PlacesSearchIn,
+    admin: str = Depends(require_admin),
+):
+    """
+    Search public hospitality / business listings (Google Maps via SerpApi).
+    Returns name, phone, website, address — not social network scrape.
+    Email is rarely present in Maps data.
+    """
+    leads = search_hospitality_for_crm(
+        region=body.region.strip(),
+        category=(body.category or "hotels").strip(),
+        limit=body.limit,
+    )
+    return {
+        "region": body.region.strip(),
+        "category": body.category,
+        "count": len(leads),
+        "note": (
+            "Public business listings only. Email is rarely available from Maps. "
+            "Import sets email_permission=false (cold outreach — use carefully)."
+        ),
+        "results": [
+            {
+                "name": L.name,
+                "address": L.address,
+                "phone": L.phone,
+                "website": L.website,
+                "rating": L.rating,
+                "review_count": L.review_count,
+                "maps_url": L.maps_url,
+                "place_id": L.place_id,
+                "category": L.category,
+            }
+            for L in leads
+        ],
+    }
+
+
+class PlacesImportIn(BaseModel):
+    region: str | None = None
+    contact_type: str = "resort_owner"
+    results: list[dict[str, Any]] = Field(default_factory=list)
+
+
+@router.post("/api/growth/places/import")
+def places_import_to_contacts(
+    body: PlacesImportIn,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """Import selected Places results into growth_contacts (cold, no email opt-in)."""
+    ctype = (body.contact_type or "resort_owner").lower().replace(" ", "_")
+    if ctype not in CONTACT_TYPES:
+        ctype = "other"
+    created = 0
+    skipped = 0
+    for row in body.results or []:
+        name = (row.get("name") or "").strip()
+        phone = (row.get("phone") or "").strip() or None
+        website = (row.get("website") or "").strip() or None
+        address = (row.get("address") or "").strip() or None
+        if not name and not phone:
+            skipped += 1
+            continue
+        # Dedupe by phone or company+name
+        if phone:
+            exists = (
+                db.query(GrowthContact)
+                .filter(GrowthContact.phone == phone)
+                .first()
+            )
+            if exists:
+                skipped += 1
+                continue
+        if name:
+            exists = (
+                db.query(GrowthContact)
+                .filter(
+                    GrowthContact.name == name,
+                    GrowthContact.source == "google_places",
+                )
+                .first()
+            )
+            if exists:
+                skipped += 1
+                continue
+        notes_parts = []
+        if website:
+            notes_parts.append(f"website: {website}")
+        if row.get("place_id"):
+            notes_parts.append(f"place_id: {row.get('place_id')}")
+        if row.get("rating") is not None:
+            notes_parts.append(f"rating: {row.get('rating')}")
+        contact = GrowthContact(
+            name=name or None,
+            email=None,
+            phone=phone,
+            company=name or None,
+            contact_type=ctype,
+            city=None,
+            state=None,
+            destination=(body.region or "").strip() or None,
+            email_permission=False,
+            whatsapp_permission=False,
+            phone_permission=bool(phone),
+            source="google_places",
+            tags="places_intake,cold",
+            notes="; ".join(notes_parts) if notes_parts else address,
+            interests=address,
+        )
+        db.add(contact)
+        created += 1
+    db.commit()
+    return {
+        "created": created,
+        "skipped": skipped,
+        "message": (
+            f"Imported {created} public listings as cold contacts "
+            f"(no email opt-in). Skipped {skipped}."
+        ),
+    }
 
 
 @router.post("/api/growth/contacts/import-csv")

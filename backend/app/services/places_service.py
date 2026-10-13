@@ -503,3 +503,94 @@ def fetch_premium_stays(location: str | None, limit: int = 8) -> list[PropertyLi
     else:
         logger.info("No live property listings found for %r from SerpApi.", location)
     return []
+
+
+@dataclass
+class BusinessLead:
+    """Public business listing for CRM intake (not editorial photos)."""
+    name: str
+    address: str | None = None
+    phone: str | None = None
+    website: str | None = None
+    rating: float | None = None
+    review_count: int | None = None
+    maps_url: str | None = None
+    place_id: str | None = None
+    category: str | None = None
+
+
+def search_hospitality_for_crm(
+    region: str,
+    category: str = "hotels",
+    limit: int = 20,
+) -> list[BusinessLead]:
+    """
+    Google Maps via SerpApi — public business fields for Growth OS intake.
+    Does not scrape social networks. Email is almost never available from Maps.
+    """
+    api_key = get_settings().serpapi_key
+    if not api_key:
+        _log_missing_key_notice()
+        return []
+
+    region = (region or "").strip()
+    category = (category or "hotels").strip()
+    if not region:
+        return []
+
+    query = f"{category} in {region}"
+    try:
+        resp = requests.get(
+            "https://serpapi.com/search.json",
+            params={
+                "engine": "google_maps",
+                "q": query,
+                "type": "search",
+                "api_key": api_key,
+            },
+            timeout=_REQUEST_TIMEOUT,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        results = data.get("local_results") or data.get("place_results") or []
+        if isinstance(results, dict):
+            results = [results]
+
+        out: list[BusinessLead] = []
+        seen: set[str] = set()
+        for place in results:
+            if not isinstance(place, dict):
+                continue
+            name = (place.get("title") or place.get("name") or "").strip()
+            if not name:
+                continue
+            key = name.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            phone = place.get("phone") or place.get("phone_number")
+            if isinstance(phone, dict):
+                phone = phone.get("number") or phone.get("national")
+            website = place.get("website") or place.get("site")
+            cat = place.get("type") or place.get("category")
+            if isinstance(cat, list):
+                cat = ", ".join(str(c) for c in cat[:3])
+            out.append(
+                BusinessLead(
+                    name=name,
+                    address=place.get("address"),
+                    phone=str(phone).strip() if phone else None,
+                    website=str(website).strip() if website else None,
+                    rating=_coerce_rating(place.get("rating")),
+                    review_count=_coerce_review_count(place.get("reviews")),
+                    maps_url=place.get("link") or place.get("gps_coordinates") and None,
+                    place_id=place.get("data_id") or place.get("place_id"),
+                    category=str(cat) if cat else category,
+                )
+            )
+            if len(out) >= max(1, min(limit, 40)):
+                break
+        return out
+    except Exception as exc:
+        logger.warning("CRM places search failed: %s", exc)
+        return []

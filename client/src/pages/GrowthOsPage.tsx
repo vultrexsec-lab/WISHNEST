@@ -63,6 +63,22 @@ export function GrowthOsPage(): JSX.Element {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [importing, setImporting] = useState(false);
+  const [placesRegion, setPlacesRegion] = useState("Lonavala, India");
+  const [placesCategory, setPlacesCategory] = useState("hotels resorts villas");
+  const [placesLoading, setPlacesLoading] = useState(false);
+  const [placesResults, setPlacesResults] = useState<
+    Array<{
+      name: string;
+      address?: string | null;
+      phone?: string | null;
+      website?: string | null;
+      rating?: number | null;
+      place_id?: string | null;
+      category?: string | null;
+    }>
+  >([]);
+  const [placesSelected, setPlacesSelected] = useState<Record<number, boolean>>({});
+
   const [search, setSearch] = useState("");
 
   const { data: status, isLoading, error } = useQuery<GrowthStatus>({
@@ -405,6 +421,136 @@ export function GrowthOsPage(): JSX.Element {
           <p className="mt-2 text-[12px] text-white/40">
             Universal contact record. Mautic sync only when email permission is set and not suppressed.
           </p>
+
+          <div className="mt-6 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+            <p className="text-[10px] tracking-[1.4px] text-emerald-300/90">PUBLIC BUSINESS INTAKE · GOOGLE MAPS</p>
+            <p className="mt-1 text-[12px] text-white/45">
+              Region + category → public listings (name, phone, website). Not Instagram/Facebook scrape.
+              Email is rarely available. Imports as cold contacts (no email opt-in) so you can connect carefully.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <input
+                value={placesRegion}
+                onChange={(e) => setPlacesRegion(e.target.value)}
+                placeholder="Region e.g. Lonavala, India"
+                className="h-9 min-w-[160px] flex-1 rounded-md border border-white/15 bg-[#121816] px-3 text-[12px] text-white"
+              />
+              <input
+                value={placesCategory}
+                onChange={(e) => setPlacesCategory(e.target.value)}
+                placeholder="hotels resorts villas"
+                className="h-9 min-w-[140px] flex-1 rounded-md border border-white/15 bg-[#121816] px-3 text-[12px] text-white"
+              />
+              <Button
+                type="button"
+                disabled={placesLoading || !placesRegion.trim()}
+                className="h-9 rounded-full bg-emerald-700 px-4 text-[11px] text-white hover:bg-emerald-600"
+                onClick={async () => {
+                  setPlacesLoading(true);
+                  setPlacesResults([]);
+                  try {
+                    const res = await apiRequest("POST", "/api/growth/places/search", {
+                      region: placesRegion.trim(),
+                      category: placesCategory.trim() || "hotels",
+                      limit: 20,
+                    });
+                    const data = await res.json();
+                    const rows = data.results || [];
+                    setPlacesResults(rows);
+                    const sel: Record<number, boolean> = {};
+                    rows.forEach((_: unknown, i: number) => {
+                      sel[i] = true;
+                    });
+                    setPlacesSelected(sel);
+                    toast({
+                      title: "Places search",
+                      description: data.count
+                        ? `${data.count} listings found`
+                        : "No results — check SERPAPI_KEY or try another region",
+                    });
+                  } catch (e) {
+                    toast({
+                      title: "Search failed",
+                      description: e instanceof Error ? e.message : "Error",
+                      variant: "destructive",
+                    });
+                  } finally {
+                    setPlacesLoading(false);
+                  }
+                }}
+              >
+                {placesLoading ? "Searching…" : "Search Google listings"}
+              </Button>
+              <Button
+                type="button"
+                disabled={placesResults.length === 0}
+                className="h-9 rounded-full border border-white/20 bg-white/5 px-4 text-[11px] text-white/80"
+                onClick={async () => {
+                  const picked = placesResults.filter((_, i) => placesSelected[i]);
+                  if (!picked.length) {
+                    toast({ title: "Select at least one listing", variant: "destructive" });
+                    return;
+                  }
+                  try {
+                    const res = await apiRequest("POST", "/api/growth/places/import", {
+                      region: placesRegion.trim(),
+                      contact_type: "resort_owner",
+                      results: picked,
+                    });
+                    const data = await res.json();
+                    await qc.invalidateQueries({ queryKey: ["/api/growth/contacts"] });
+                    await qc.invalidateQueries({ queryKey: ["/api/growth/status"] });
+                    toast({
+                      title: "Imported to contacts",
+                      description: data.message || `${data.created} created`,
+                    });
+                  } catch (e) {
+                    toast({
+                      title: "Import failed",
+                      description: e instanceof Error ? e.message : "Error",
+                      variant: "destructive",
+                    });
+                  }
+                }}
+              >
+                Import selected → contacts
+              </Button>
+            </div>
+            {placesResults.length > 0 && (
+              <div className="mt-4 max-h-64 overflow-y-auto rounded-lg border border-white/10">
+                <table className="w-full text-left text-[11px]">
+                  <thead className="sticky top-0 bg-[#0d1210] text-white/40">
+                    <tr>
+                      <th className="px-2 py-1.5">✓</th>
+                      <th className="px-2 py-1.5">NAME</th>
+                      <th className="px-2 py-1.5">PHONE</th>
+                      <th className="px-2 py-1.5">WEBSITE</th>
+                      <th className="px-2 py-1.5">ADDRESS</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {placesResults.map((r, i) => (
+                      <tr key={i} className="border-t border-white/5 text-white/70">
+                        <td className="px-2 py-1.5">
+                          <input
+                            type="checkbox"
+                            checked={!!placesSelected[i]}
+                            onChange={() =>
+                              setPlacesSelected((s) => ({ ...s, [i]: !s[i] }))
+                            }
+                          />
+                        </td>
+                        <td className="px-2 py-1.5">{r.name}</td>
+                        <td className="px-2 py-1.5">{r.phone || "—"}</td>
+                        <td className="px-2 py-1.5 max-w-[120px] truncate">{r.website || "—"}</td>
+                        <td className="px-2 py-1.5 max-w-[160px] truncate">{r.address || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
