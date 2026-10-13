@@ -423,10 +423,12 @@ export function GrowthOsPage(): JSX.Element {
           </p>
 
           <div className="mt-6 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-            <p className="text-[10px] tracking-[1.4px] text-emerald-300/90">PUBLIC BUSINESS INTAKE · GOOGLE MAPS</p>
+            <p className="text-[10px] tracking-[1.4px] text-emerald-300/90">
+              PUBLIC BUSINESS INTAKE · GOOGLE MAPS (not Google Pay)
+            </p>
             <p className="mt-1 text-[12px] text-white/45">
-              Region + category → public listings (name, phone, website). Not Instagram/Facebook scrape.
-              Email is rarely available. Imports as cold contacts (no email opt-in) so you can connect carefully.
+              Multiple Maps queries in your region (hotels, resorts, villas…) → more listings.
+              Compact list scrolls inside the box. Import → contacts for outreach. Email rare from Maps.
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               <input
@@ -452,7 +454,7 @@ export function GrowthOsPage(): JSX.Element {
                     const res = await apiRequest("POST", "/api/growth/places/search", {
                       region: placesRegion.trim(),
                       category: placesCategory.trim() || "hotels",
-                      limit: 20,
+                      limit: 60,
                     });
                     const data = await res.json();
                     const rows = data.results || [];
@@ -517,37 +519,42 @@ export function GrowthOsPage(): JSX.Element {
               </Button>
             </div>
             {placesResults.length > 0 && (
-              <div className="mt-4 max-h-64 overflow-y-auto rounded-lg border border-white/10">
-                <table className="w-full text-left text-[11px]">
-                  <thead className="sticky top-0 bg-[#0d1210] text-white/40">
-                    <tr>
-                      <th className="px-2 py-1.5">✓</th>
-                      <th className="px-2 py-1.5">NAME</th>
-                      <th className="px-2 py-1.5">PHONE</th>
-                      <th className="px-2 py-1.5">WEBSITE</th>
-                      <th className="px-2 py-1.5">ADDRESS</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {placesResults.map((r, i) => (
-                      <tr key={i} className="border-t border-white/5 text-white/70">
-                        <td className="px-2 py-1.5">
-                          <input
-                            type="checkbox"
-                            checked={!!placesSelected[i]}
-                            onChange={() =>
-                              setPlacesSelected((s) => ({ ...s, [i]: !s[i] }))
-                            }
-                          />
-                        </td>
-                        <td className="px-2 py-1.5">{r.name}</td>
-                        <td className="px-2 py-1.5">{r.phone || "—"}</td>
-                        <td className="px-2 py-1.5 max-w-[120px] truncate">{r.website || "—"}</td>
-                        <td className="px-2 py-1.5 max-w-[160px] truncate">{r.address || "—"}</td>
+              <div className="mt-3">
+                <p className="mb-1.5 text-[11px] text-white/40">
+                  {placesResults.length} listings · scroll inside box · page does not expand
+                </p>
+                <div className="h-52 overflow-y-auto overscroll-contain rounded-lg border border-white/10 bg-[#0a0e0c]">
+                  <table className="w-full text-left text-[10px]">
+                    <thead className="sticky top-0 z-10 bg-[#121816] text-white/40">
+                      <tr>
+                        <th className="px-2 py-1">✓</th>
+                        <th className="px-2 py-1">NAME</th>
+                        <th className="px-2 py-1">PHONE</th>
+                        <th className="px-2 py-1">WEB</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {placesResults.map((r, i) => (
+                        <tr key={i} className="border-t border-white/5 text-white/70">
+                          <td className="px-2 py-1">
+                            <input
+                              type="checkbox"
+                              checked={!!placesSelected[i]}
+                              onChange={() =>
+                                setPlacesSelected((s) => ({ ...s, [i]: !s[i] }))
+                              }
+                            />
+                          </td>
+                          <td className="px-2 py-1 max-w-[180px] truncate" title={r.address || r.name}>
+                            {r.name}
+                          </td>
+                          <td className="px-2 py-1 whitespace-nowrap">{r.phone || "—"}</td>
+                          <td className="px-2 py-1 max-w-[100px] truncate">{r.website || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </div>

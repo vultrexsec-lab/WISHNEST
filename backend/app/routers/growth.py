@@ -372,7 +372,7 @@ def import_newsletter_subscribers(
 class PlacesSearchIn(BaseModel):
     region: str = Field(..., min_length=2, max_length=200)
     category: str = Field(default="hotels resorts", max_length=200)
-    limit: int = Field(default=20, ge=1, le=40)
+    limit: int = Field(default=60, ge=1, le=80)
 
 
 @router.post("/api/growth/places/search")

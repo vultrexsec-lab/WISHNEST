@@ -519,14 +519,41 @@ class BusinessLead:
     category: str | None = None
 
 
+def _lead_from_maps_place(place: dict, fallback_category: str) -> BusinessLead | None:
+    if not isinstance(place, dict):
+        return None
+    name = (place.get("title") or place.get("name") or "").strip()
+    if not name:
+        return None
+    phone = place.get("phone") or place.get("phone_number")
+    if isinstance(phone, dict):
+        phone = phone.get("number") or phone.get("national")
+    website = place.get("website") or place.get("site")
+    cat = place.get("type") or place.get("category")
+    if isinstance(cat, list):
+        cat = ", ".join(str(c) for c in cat[:3])
+    return BusinessLead(
+        name=name,
+        address=place.get("address"),
+        phone=str(phone).strip() if phone else None,
+        website=str(website).strip() if website else None,
+        rating=_coerce_rating(place.get("rating")),
+        review_count=_coerce_review_count(place.get("reviews")),
+        maps_url=place.get("link"),
+        place_id=place.get("data_id") or place.get("place_id"),
+        category=str(cat) if cat else fallback_category,
+    )
+
+
 def search_hospitality_for_crm(
     region: str,
     category: str = "hotels",
-    limit: int = 20,
+    limit: int = 60,
 ) -> list[BusinessLead]:
     """
-    Google Maps via SerpApi — public business fields for Growth OS intake.
-    Does not scrape social networks. Email is almost never available from Maps.
+    Google Maps (via SerpApi) — many public business listings for CRM intake.
+    Multiple related queries + pagination to increase coverage within a region.
+    Not Google Pay, not social networks. Email almost never present.
     """
     api_key = get_settings().serpapi_key
     if not api_key:
@@ -538,59 +565,76 @@ def search_hospitality_for_crm(
     if not region:
         return []
 
-    query = f"{category} in {region}"
-    try:
-        resp = requests.get(
-            "https://serpapi.com/search.json",
-            params={
-                "engine": "google_maps",
-                "q": query,
-                "type": "search",
-                "api_key": api_key,
-            },
-            timeout=_REQUEST_TIMEOUT,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        results = data.get("local_results") or data.get("place_results") or []
-        if isinstance(results, dict):
-            results = [results]
+    limit = max(1, min(int(limit or 60), 80))
 
-        out: list[BusinessLead] = []
-        seen: set[str] = set()
+    # Split user category + hospitality variants for wider coverage
+    bits = [b.strip() for b in category.replace(",", " ").split() if b.strip()]
+    base_terms = bits[:4] if bits else ["hotels"]
+    extra = ["hotels", "resorts", "villas", "boutique hotels", "homestays"]
+    terms: list[str] = []
+    for t in base_terms + extra:
+        if t.lower() not in [x.lower() for x in terms]:
+            terms.append(t)
+    terms = terms[:6]
+
+    queries = [f"{term} in {region}" for term in terms]
+    # Also a broader catch-all
+    queries.append(f"hospitality lodging accommodation in {region}")
+
+    out: list[BusinessLead] = []
+    seen: set[str] = set()
+
+    def _ingest(results: list) -> None:
         for place in results:
-            if not isinstance(place, dict):
+            if len(out) >= limit:
+                return
+            lead = _lead_from_maps_place(place, category)
+            if not lead:
                 continue
-            name = (place.get("title") or place.get("name") or "").strip()
-            if not name:
-                continue
-            key = name.lower()
+            key = lead.name.lower()
             if key in seen:
                 continue
             seen.add(key)
-            phone = place.get("phone") or place.get("phone_number")
-            if isinstance(phone, dict):
-                phone = phone.get("number") or phone.get("national")
-            website = place.get("website") or place.get("site")
-            cat = place.get("type") or place.get("category")
-            if isinstance(cat, list):
-                cat = ", ".join(str(c) for c in cat[:3])
-            out.append(
-                BusinessLead(
-                    name=name,
-                    address=place.get("address"),
-                    phone=str(phone).strip() if phone else None,
-                    website=str(website).strip() if website else None,
-                    rating=_coerce_rating(place.get("rating")),
-                    review_count=_coerce_review_count(place.get("reviews")),
-                    maps_url=place.get("link") or place.get("gps_coordinates") and None,
-                    place_id=place.get("data_id") or place.get("place_id"),
-                    category=str(cat) if cat else category,
-                )
-            )
-            if len(out) >= max(1, min(limit, 40)):
+            out.append(lead)
+
+    try:
+        for q in queries:
+            if len(out) >= limit:
                 break
-        return out
+            # First page + a second page via start offset when SerpApi supports it
+            for start in (0, 20, 40):
+                if len(out) >= limit:
+                    break
+                params = {
+                    "engine": "google_maps",
+                    "q": q,
+                    "type": "search",
+                    "api_key": api_key,
+                }
+                if start:
+                    params["start"] = start
+                try:
+                    resp = requests.get(
+                        "https://serpapi.com/search.json",
+                        params=params,
+                        timeout=_REQUEST_TIMEOUT,
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                except Exception as exc:
+                    logger.warning("CRM places page failed q=%s start=%s: %s", q[:40], start, exc)
+                    break
+                results = data.get("local_results") or data.get("place_results") or []
+                if isinstance(results, dict):
+                    results = [results]
+                if not results:
+                    break
+                before = len(out)
+                _ingest(results)
+                if len(out) == before:
+                    # no new unique rows
+                    break
+        return out[:limit]
     except Exception as exc:
         logger.warning("CRM places search failed: %s", exc)
-        return []
+        return out[:limit]
