@@ -583,7 +583,7 @@ def _save_as_draft(
     """Persist a draft Article and return its UUID string."""
     db = SessionLocal()
     try:
-        # Gallery: BEFORE images then AFTER images so the article can show both
+        # Gallery: ALL before then ALL after (do not drop the first before image)
         gallery: list[str] = []
         for u in original_urls or []:
             if u and u not in gallery:
@@ -594,10 +594,8 @@ def _save_as_draft(
         hero = (redesigned_urls[0] if redesigned_urls else None) or (
             original_urls[0] if original_urls else None
         )
-        sections = gallery[1:] if len(gallery) > 1 else (gallery[1:] if gallery else [])
-        # If only one image total, keep sections empty; hero holds it
-        if not sections and len(gallery) > 1:
-            sections = gallery[1:]
+        # Section grid must include every image (hero may also appear in header)
+        sections = list(gallery) if gallery else None
 
         n_imgs = max(len(gallery), 1)
         captions = _as_str_list(package.get("captions")) or []
@@ -610,27 +608,42 @@ def _save_as_draft(
         while len(alt_text) < n_imgs:
             alt_text.append(f"WishNest reimagined view {len(alt_text)+1}")
 
-        # Inject before/after figure blocks into full_article if missing images
+        # ALWAYS inject Before/After figures for reimaging (LLM often omits real <img> srcs)
         body = package.get("full_article") or ""
-        if gallery and "<img" not in (body or "").lower():
-            before_html = ""
-            after_html = ""
-            for i, u in enumerate(original_urls or []):
-                before_html += (
-                    f'<figure class="wishnest-before"><img src="{u}" alt="Before {i+1}" />'
-                    f"<figcaption>Before {i+1}</figcaption></figure>"
-                )
-            for i, u in enumerate(redesigned_urls or []):
-                after_html += (
-                    f'<figure class="wishnest-after"><img src="{u}" alt="After {i+1}" />'
-                    f"<figcaption>After {i+1}</figcaption></figure>"
-                )
-            inject = ""
-            if before_html:
-                inject += f"<h2>Before</h2>{before_html}"
-            if after_html:
-                inject += f"<h2>After</h2>{after_html}"
-            body = f"{inject}{body}"
+        before_html = ""
+        after_html = ""
+        for i, u in enumerate(original_urls or []):
+            if not u:
+                continue
+            before_html += (
+                f'<figure class="wishnest-before" data-ba="before">'
+                f'<img src="{u}" alt="Before — existing condition {i+1}" loading="lazy" />'
+                f"<figcaption>Before {i+1} — existing condition</figcaption></figure>"
+            )
+        for i, u in enumerate(redesigned_urls or []):
+            if not u:
+                continue
+            after_html += (
+                f'<figure class="wishnest-after" data-ba="after">'
+                f'<img src="{u}" alt="After — redesign concept {i+1}" loading="lazy" />'
+                f"<figcaption>After {i+1} — redesign concept</figcaption></figure>"
+            )
+        inject = ""
+        if before_html:
+            inject += (
+                "<h2>Before — existing condition</h2>"
+                "<p>Photographs of the property as it stands today, drawn from public listing imagery.</p>"
+                f"{before_html}"
+            )
+        if after_html:
+            inject += (
+                "<h2>After — redesign direction</h2>"
+                "<p>Concept visuals exploring how the same spaces could feel with a refined design approach.</p>"
+                f"{after_html}"
+            )
+        if inject:
+            # Prefer our figures; keep LLM prose after
+            body = f"{inject}<h2>Design reading</h2>{body}"
             package = {**package, "full_article": body}
 
         article = Article(
@@ -879,34 +892,44 @@ def run_reimaging_before_after(
     if not after_images_b64:
         raise ValueError("At least one AFTER (redesigned) image is required.")
 
+    from urllib.parse import quote
+
+    def _safe_persist_url(url: str) -> str:
+        """Download + store in media_blobs; else image-proxy so the article can still render."""
+        b64 = _download_image_as_b64(url, timeout=25)
+        if b64:
+            try:
+                return _persist_image_bytes(base64.b64decode(b64), "jpg")
+            except Exception as exc:
+                logger.warning("Persist before failed, using proxy: %s", exc)
+        return f"/api/image-proxy?url={quote(url, safe='')}"
+
+    def _safe_persist_b64(raw: str, ext: str = "png") -> str | None:
+        s = raw.split(",", 1)[-1] if raw.startswith("data:") else raw
+        try:
+            data = base64.b64decode(s)
+            if len(data) < 80:
+                return None
+            return _persist_image_bytes(data, ext)
+        except Exception as exc:
+            logger.warning("Skip image bytes: %s", exc)
+            return None
+
     original_urls: list[str] = []
-    # Persist before from URLs
     for url in (before_photo_urls or [])[:MAX_SOURCE_PHOTOS]:
         if not url:
             continue
-        b64 = _download_image_as_b64(url)
-        if not b64:
-            original_urls.append(url)  # keep remote URL as fallback
-            continue
-        try:
-            original_urls.append(_persist_image_bytes(base64.b64decode(b64), "jpg"))
-        except Exception:
-            original_urls.append(url)
-    # Persist before from base64
-    for raw in before_images_b64[:MAX_SOURCE_PHOTOS]:
-        s = raw.split(",", 1)[-1] if raw.startswith("data:") else raw
-        try:
-            original_urls.append(_persist_image_bytes(base64.b64decode(s), "jpg"))
-        except Exception as exc:
-            logger.warning("Skip before image: %s", exc)
+        original_urls.append(_safe_persist_url(url))
+    for raw in (before_images_b64 or [])[:MAX_SOURCE_PHOTOS]:
+        saved = _safe_persist_b64(raw, "jpg")
+        if saved:
+            original_urls.append(saved)
 
     redesigned_urls: list[str] = []
     for raw in after_images_b64[:MAX_SOURCE_PHOTOS]:
-        s = raw.split(",", 1)[-1] if raw.startswith("data:") else raw
-        try:
-            redesigned_urls.append(_persist_image_bytes(base64.b64decode(s), "png"))
-        except Exception as exc:
-            logger.warning("Skip after image: %s", exc)
+        saved = _safe_persist_b64(raw, "png")
+        if saved:
+            redesigned_urls.append(saved)
 
     if not redesigned_urls:
         raise ValueError("Could not save any AFTER images.")
@@ -933,17 +956,7 @@ def run_reimaging_before_after(
         {
             "type": "text",
             "text": (
-                f"You are WishNest Reimagined™ editorial. Property: {property_line}.\n"
-                f"Editor notes: {user_prompt}\n"
-                "Images are labeled BEFORE (existing) and AFTER (manually redesigned — not AI-generated by our API).\n"
-                "Write a full WishNest-style article in JSON with keys: "
-                "headline, subtitle, full_article (HTML with <p> and clear Before/After sections), "
-                "executive_summary, pull_quotes (array), seo_title, meta_description, focus_keyword, "
-                "keywords (array), captions (array for AFTER images), alt_text (array), "
-                "key_takeaways (array), wishnest_verdict, best_for, not_ideal_for, "
-                "architecture_grade, landscape_grade, connectivity_grade, delight_grade, "
-                "experience_grade (letter grades like A, B+).\n"
-                "Tone: independent hospitality/architecture intelligence — not sales brochure."
+                f"You are WishNest Reimagined editorial. Property: {property_line}.\nEditor notes: {user_prompt}\nImages labeled BEFORE (existing public listing photos) and AFTER (manually redesigned concepts).\nDo NOT invent that our API generated the after images.\nWrite a FULL WishNest-style article as JSON with keys: headline, subtitle, full_article, executive_summary, pull_quotes (array of 2-4 strings), seo_title, meta_description, focus_keyword, keywords (array), captions (array), alt_text (array), key_takeaways (array of 4-6 strings), wishnest_verdict, best_for (array of short phrases), not_ideal_for (array of short phrases), architecture_grade, landscape_grade, connectivity_grade, delight_grade, experience_grade.\nfull_article MUST be semantic HTML only (<h2>, <h3>, <p>, <ul><li>) and at least 650-900 words. Structure: (1) context of the property and place, (2) reading of the BEFORE condition — materials, guest arrival, spatial quality, what feels dated or strong, (3) reading of the AFTER direction — what the redesign is trying to improve for hospitality experience, (4) practical implications for owners/operators, (5) a measured WishNest verdict. Do not include <img> tags in full_article (images are injected by the system). Tone: independent hospitality/architecture intelligence — not a sales brochure."
             ),
         }
     ]
@@ -971,10 +984,11 @@ def run_reimaging_before_after(
 
     try:
         resp = client.chat.completions.create(
-            model=ARTICLE_MODEL if ARTICLE_MODEL else "gpt-4o-mini",
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": content}],
             response_format={"type": "json_object"},
-            temperature=0.5,
+            temperature=0.45,
+            max_tokens=4500,
         )
         package = json.loads(resp.choices[0].message.content or "{}")
     except Exception as exc:
@@ -996,9 +1010,45 @@ def run_reimaging_before_after(
             "wishnest_verdict": "A clear before/after design narrative for review.",
         }
 
-    # Ensure full_article mentions before/after if thin
-    if not package.get("full_article"):
-        package["full_article"] = f"<p>Before/after study of {property_line}.</p>"
+    # Ensure full_article is substantial; expand if the model returned a stub
+    body = (package.get("full_article") or "").strip()
+    plain_len = len(__import__("re").sub(r"<[^>]+>", " ", body))
+    if plain_len < 400:
+        notes = user_prompt or "a refined hospitality design direction"
+        package["full_article"] = f"""
+<h2>Context</h2>
+<p>WishNest Reimagined looks at {property_line} as a live hospitality setting rather than a static photograph.
+The before images record how the property presents today. The after images explore a design direction that could
+strengthen arrival, material quality, and guest experience without pretending the work is already built.</p>
+<h2>Before — what the existing condition communicates</h2>
+<p>Public listing photography typically emphasises occupancy and amenity. Reading those frames carefully still
+reveals useful signals: proportion of rooms, quality of finishes, outdoor edges, and whether the architecture
+feels specific to its place or interchangeable. For {property_line}, the before set is the baseline against which
+any redesign should be judged.</p>
+<h2>After — the proposed design direction</h2>
+<p>The after concepts respond to editor notes: {notes}. The intent is not cosmetic novelty for its own sake, but
+clearer thresholds, calmer material palettes, better daylight hierarchy, and outdoor spaces that feel owned by the
+guest rather than left over. Each after frame should be read as a hypothesis — what this property could become if
+design investment tracked hospitality performance.</p>
+<h2>Implications for operators</h2>
+<p>Owners evaluating a repositioning should treat these images as a conversation starter with architects and
+operators: which rooms underperform, which edges of the site are underused, and where a modest intervention would
+change the guest narrative more than a full rebuild. WishNest does not guarantee construction outcomes or revenue;
+the value is a sharper brief before money is spent.</p>
+<h2>WishNest verdict</h2>
+<p>Used honestly, before-and-after studies help separate taste from strategy. The strongest next step is a focused
+site brief — which spaces matter most, what the guest should feel in the first ten minutes, and which upgrades are
+worth sequencing first.</p>
+""".strip()
+        if not package.get("executive_summary"):
+            package["executive_summary"] = (
+                f"A before-and-after design reading of {property_line}, pairing existing listing imagery "
+                "with redesign concepts to clarify hospitality potential."
+            )
+        if not package.get("wishnest_verdict"):
+            package["wishnest_verdict"] = (
+                "A useful design brief in visual form — not a construction document, but a clearer conversation starter."
+            )
 
     article_id = _save_as_draft(
         package,
