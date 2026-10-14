@@ -12,6 +12,8 @@ Does NOT modify any existing research / image / article pipelines.
 """
 from __future__ import annotations
 
+import re
+
 from pathlib import Path
 
 import base64
@@ -140,6 +142,30 @@ def _vision_redesign_prompt(
 _MEDIA_DIR = Path(__file__).resolve().parent.parent / "data" / "reimaging_media"
 _MEDIA_URL_PREFIX = "/api/reimaging/media"
 
+
+def _api_public_base() -> str:
+    """Absolute API origin so article <img> works on Vercel (not relative /api on the frontend host)."""
+    import os
+    for key in ("PUBLIC_API_BASE_URL", "RENDER_EXTERNAL_URL"):
+        val = (os.environ.get(key) or "").strip().rstrip("/")
+        if val.startswith("http"):
+            return val
+    return ""
+
+
+def _public_media_url(path_or_url: str) -> str:
+    """Ensure media/proxy paths are absolute when public API base is known."""
+    if not path_or_url:
+        return path_or_url
+    u = path_or_url.strip()
+    if u.startswith("http://") or u.startswith("https://") or u.startswith("data:"):
+        return u
+    base = _api_public_base()
+    if u.startswith("/") and base:
+        return f"{base}{u}"
+    return u
+
+
 # Prefer one model to avoid burning credits on retries
 EDIT_MODELS = (
     IMAGE_GEN_MODEL,  # gpt-image-1
@@ -199,14 +225,7 @@ def _persist_image_bytes(data: bytes, ext: str = "png") -> str:
 
     logger.info("Persisted redesign image %s (%d bytes) to media_blobs", blob_id, len(data))
     path = f"{_MEDIA_URL_PREFIX}/{blob_id}"
-    import os
-    base = ""
-    for key in ("PUBLIC_API_BASE_URL", "RENDER_EXTERNAL_URL"):
-        val = (os.environ.get(key) or "").strip().rstrip("/")
-        if val.startswith("http"):
-            base = val
-            break
-    return f"{base}{path}" if base else path
+    return _public_media_url(path)
 
 
 def _bytes_to_file(data: bytes, filename: str = "source.png"):
@@ -608,25 +627,35 @@ def _save_as_draft(
         while len(alt_text) < n_imgs:
             alt_text.append(f"WishNest reimagined view {len(alt_text)+1}")
 
-        # ALWAYS inject Before/After figures for reimaging (LLM often omits real <img> srcs)
+        # Strip broken LLM <img>/figures (they use fake src + alt only), then inject real media
         body = package.get("full_article") or ""
+        body = re.sub(r"<figure\b[^>]*>.*?</figure>", "", body, flags=re.I | re.S)
+        body = re.sub(r"<img\b[^>]*/?>", "", body, flags=re.I)
+        body = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", body)  # markdown images
+        body = re.sub(r"\n{3,}", "\n\n", body).strip()
+
+        def _img_tag(url: str, alt: str, kind: str, n: int) -> str:
+            src = _public_media_url(url)
+            return (
+                f'<figure class="wishnest-{kind}" data-ba="{kind}">'
+                f'<img src="{src}" alt="{alt}" loading="lazy" '
+                f'style="max-width:100%;height:auto;border-radius:8px;display:block;margin:0.75rem 0;" />'
+                f"<figcaption>{alt}</figcaption></figure>"
+            )
+
         before_html = ""
         after_html = ""
         for i, u in enumerate(original_urls or []):
             if not u:
                 continue
-            before_html += (
-                f'<figure class="wishnest-before" data-ba="before">'
-                f'<img src="{u}" alt="Before — existing condition {i+1}" loading="lazy" />'
-                f"<figcaption>Before {i+1} — existing condition</figcaption></figure>"
+            before_html += _img_tag(
+                u, f"Before {i+1} — existing condition", "before", i + 1
             )
         for i, u in enumerate(redesigned_urls or []):
             if not u:
                 continue
-            after_html += (
-                f'<figure class="wishnest-after" data-ba="after">'
-                f'<img src="{u}" alt="After — redesign concept {i+1}" loading="lazy" />'
-                f"<figcaption>After {i+1} — redesign concept</figcaption></figure>"
+            after_html += _img_tag(
+                u, f"After {i+1} — redesign concept", "after", i + 1
             )
         inject = ""
         if before_html:
@@ -642,9 +671,20 @@ def _save_as_draft(
                 f"{after_html}"
             )
         if inject:
-            # Prefer our figures; keep LLM prose after
-            body = f"{inject}<h2>Design reading</h2>{body}"
+            body = f"{inject}<h2>Design reading</h2>{body}" if body else inject
             package = {**package, "full_article": body}
+
+        # Also absolute-ise gallery URLs stored on the article row
+        original_urls = [_public_media_url(u) for u in (original_urls or []) if u]
+        redesigned_urls = [_public_media_url(u) for u in (redesigned_urls or []) if u]
+        gallery = []
+        for u in original_urls + redesigned_urls:
+            if u and u not in gallery:
+                gallery.append(u)
+        hero = (redesigned_urls[0] if redesigned_urls else None) or (
+            original_urls[0] if original_urls else None
+        )
+        sections = list(gallery) if gallery else None
 
         article = Article(
             article_type=ArticleType.review if hotel_name else ArticleType.standard,
