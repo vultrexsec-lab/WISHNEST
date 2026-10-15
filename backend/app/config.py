@@ -22,6 +22,9 @@ class Settings(BaseSettings):
         os.environ.get("OPENAI_API_KEY", "")
         or os.environ.get("CHATGPT_API_KEY", "")
     )
+    # xAI Grok — used for Reimagined before/after article text
+    xai_api_key: str = os.environ.get("XAI_API_KEY", "") or os.environ.get("GROK_API_KEY", "")
+    xai_model: str = os.environ.get("XAI_MODEL", "grok-2-latest")
     firecrawl_api_key: str = os.environ.get("FIRECRAWL_API_KEY", "")
 
     # --- Image providers (fallback chain: DDG -> Pexels -> Unsplash) ---

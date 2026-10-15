@@ -362,7 +362,7 @@ export function ReimagingPage(): JSX.Element {
       setResult(data);
       toast({
         title: "Draft created",
-        description: "Before/After draft saved (no image-gen API). Review in Dashboard to publish.",
+        description: "Before/After draft saved — article by Grok. Review in Dashboard to publish.",
       });
     } catch (err) {
       toast({
@@ -657,8 +657,7 @@ export function ReimagingPage(): JSX.Element {
                 AFTER · UPLOAD REDESIGNED IMAGES
               </p>
               <p className="mt-2 [font-family:'Inter',Helvetica] text-[13px] leading-relaxed text-white/55">
-                1) Fetch &amp; download BEFORE photos above → 2) Redesign in ChatGPT → 3) Upload AFTER
-                images here. AI only writes the article (before vs after) — no image-generation API.
+                1) Fetch BEFORE from Maps → 2) Redesign in ChatGPT → 3) Upload AFTER here → 4) Grok writes the full article (no image-gen API cost).
               </p>
               <input
                 ref={afterInputRef}
@@ -716,7 +715,7 @@ export function ReimagingPage(): JSX.Element {
               <Textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                placeholder="Optional notes for the article writer (what changed, design intent). Image redesign is done manually in ChatGPT — upload AFTER images below."
+                placeholder="Optional notes for Grok (design intent, what changed). Redesign images in ChatGPT, upload AFTER below."
                 rows={4}
                 className="border-white/10 bg-white/5 text-white placeholder:text-white/30 focus-visible:ring-emerald-500/40"
                 disabled={loading}

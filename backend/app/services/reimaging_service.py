@@ -50,6 +50,21 @@ def _client() -> OpenAI:
     return OpenAI(api_key=settings.openai_api_key)
 
 
+def _grok_client() -> OpenAI:
+    """xAI Grok — OpenAI-compatible API for before/after article text."""
+    settings = get_settings()
+    key = settings.xai_api_key
+    if not key:
+        raise RuntimeError(
+            "XAI_API_KEY is not configured. Add your Grok API key on Render to write before/after articles."
+        )
+    return OpenAI(api_key=key, base_url="https://api.x.ai/v1")
+
+
+def _grok_model() -> str:
+    return (get_settings().xai_model or "grok-2-latest").strip() or "grok-2-latest"
+
+
 def _download_image_as_b64(url: str, timeout: int = 15) -> str | None:
     """Download an image and return base64 string (no data: prefix)."""
     try:
@@ -925,7 +940,7 @@ def run_reimaging_before_after(
     Manual redesign workflow (no image-generation API):
       Before = Google Maps / source photos (URLs or base64)
       After  = user uploads from ChatGPT (or any tool) redesigns
-      Then text-only OpenAI writes the before/after article as draft.
+      Then text-only Grok (xAI) writes the before/after article as draft.
     """
     import json
 
@@ -990,7 +1005,7 @@ def run_reimaging_before_after(
         "Explain what improved for hospitality design, guest experience, and positioning."
     )
 
-    client = _client()
+    client = _grok_client()
     # Vision: send a couple of before/after pairs as context (text generation only)
     content: list[dict[str, Any]] = [
         {
@@ -1024,15 +1039,22 @@ def run_reimaging_before_after(
 
     try:
         resp = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=_grok_model(),
             messages=[{"role": "user", "content": content}],
-            response_format={"type": "json_object"},
+            # json_object not always supported on all Grok models — parse robustly
             temperature=0.45,
             max_tokens=4500,
         )
-        package = json.loads(resp.choices[0].message.content or "{}")
+        raw = (resp.choices[0].message.content or "").strip()
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:].lstrip()
+            if raw.endswith("```"):
+                raw = raw[:-3].rstrip()
+        package = json.loads(raw or "{}")
     except Exception as exc:
-        logger.warning("Before/after article AI failed: %s", exc)
+        logger.warning("Before/after article Grok failed: %s", exc)
         package = {
             "headline": f"Reimagined: {property_line}",
             "subtitle": "Before & after design study",
