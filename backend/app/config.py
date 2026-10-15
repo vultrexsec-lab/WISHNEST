@@ -80,6 +80,10 @@ class Settings(BaseSettings):
     brevo_from_name: str = os.environ.get("BREVO_FROM_NAME", "WishNest")
     # Public WhatsApp Business number (E.164 digits, e.g. 9198XXXXXXXX)
     whatsapp_business_number: str = os.environ.get("WHATSAPP_BUSINESS_NUMBER", "")
+    # Infobip WhatsApp (free trial / paid)
+    infobip_api_key: str = os.environ.get("INFOBIP_API_KEY", "")
+    infobip_base_url: str = os.environ.get("INFOBIP_BASE_URL", "")
+    infobip_whatsapp_from: str = os.environ.get("INFOBIP_WHATSAPP_FROM", "")
 
 
 
