@@ -63,7 +63,9 @@ import {
   Timer,
   Play,
   Zap,
-  RefreshCw, Megaphone } from "lucide-react";
+  RefreshCw,
+  Megaphone,
+} from "lucide-react";
 import {
   ABCDE_GRADES,
   Article,
