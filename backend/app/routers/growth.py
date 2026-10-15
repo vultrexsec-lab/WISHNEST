@@ -1966,3 +1966,98 @@ def public_add_survey_response(
         "id": str(row.id),
         "message": "Thank you — your response was recorded.",
     }
+
+
+# ── Outreach desk: simple approach email ───────────────────────────────────
+
+class OutreachApproachIn(BaseModel):
+    contact_ids: list[str] = Field(default_factory=list)
+    to_emails: list[str] = Field(default_factory=list)
+    subject: str | None = None
+    property_or_offer: str | None = None
+    dry_run: bool = False
+
+
+@router.post("/api/growth/outreach/approach-email")
+def outreach_approach_email(
+    body: OutreachApproachIn,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """
+    Send a short WishNest approach email (listing / before-after invitation).
+    Only contacts with email; respects do_not_contact / unsubscribed.
+    """
+    if not email_configured():
+        raise HTTPException(503, "Email is not configured (Brevo / Resend / SMTP).")
+
+    recipients: list[tuple[str, str | None]] = []  # email, name
+    for cid in body.contact_ids or []:
+        try:
+            uid = uuid.UUID(str(cid))
+        except Exception:
+            continue
+        c = db.query(GrowthContact).filter(GrowthContact.id == uid).first()
+        if not c or not c.email:
+            continue
+        if c.do_not_contact or c.unsubscribed:
+            continue
+        recipients.append((c.email.lower(), c.name))
+
+    for em in body.to_emails or []:
+        e = (em or "").strip().lower()
+        if e and "@" in e:
+            recipients.append((e, None))
+
+    # dedupe
+    seen = set()
+    unique = []
+    for em, name in recipients:
+        if em in seen:
+            continue
+        seen.add(em)
+        unique.append((em, name))
+
+    if not unique:
+        raise HTTPException(400, "No valid email recipients.")
+
+    offer = (body.property_or_offer or "").strip() or "independent hotels and resorts"
+    subject = (body.subject or "").strip() or "WishNest — complimentary listing & design conversation"
+    sent = 0
+    failed = 0
+    results = []
+    for em, name in unique[:50]:  # hard cap per request
+        greet = f"Dear {name}," if name else "Hello,"
+        html = f"""
+        <p>{greet}</p>
+        <p>WishNest is a hospitality discovery and design-intelligence platform.
+        We feature properties like yours and explore thoughtful before-and-after design directions with participating partners.</p>
+        <p>We are inviting selected <strong>{offer}</strong> to consider a complimentary property listing on WishNest.info — no listing fee and no booking commission for this programme.</p>
+        <p>If useful, we can also share how a design evaluation conversation works (selection is not guaranteed; there is no obligation to purchase anything).</p>
+        <p>Reply to this email if you would like listing details, or ask us not to contact you again.</p>
+        <p>— WishNest</p>
+        """
+        text = (
+            f"{greet}\n\nWishNest invites selected hospitality properties to a complimentary listing "
+            f"programme for {offer}. No listing fee. Reply if interested, or ask us not to contact you.\n\n— WishNest"
+        )
+        if body.dry_run:
+            results.append({"email": em, "status": "dry_run"})
+            sent += 1
+            continue
+        try:
+            send_email(to_email=em, subject=subject, html_body=html, text_body=text)
+            results.append({"email": em, "status": "sent"})
+            sent += 1
+        except Exception as exc:
+            results.append({"email": em, "status": "failed", "error": str(exc)[:200]})
+            failed += 1
+
+    return {
+        "sent": sent,
+        "failed": failed,
+        "total": len(unique),
+        "dry_run": body.dry_run,
+        "results": results,
+    }
+

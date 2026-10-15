@@ -26,6 +26,7 @@ import { GetReviewedPage } from "@/pages/GetReviewedPage";
 import { SubmitProjectPage } from "@/pages/SubmitProjectPage";
 import { SubmissionsAdminPage } from "@/pages/SubmissionsAdminPage";
 import { GrowthOsPage } from "@/pages/GrowthOsPage";
+import { OutreachPage } from "@/pages/OutreachPage";
 import { SurveyPublicPage } from "@/pages/SurveyPublicPage";
 import { DestinationEntityPage } from "@/pages/DestinationEntityPage";
 import { BrandEntityPage } from "@/pages/BrandEntityPage";
@@ -43,6 +44,13 @@ function ProtectedGrowth() {
   if (!isAdmin) return <Redirect to="/login" />;
   return <GrowthOsPage />;
 }
+
+function ProtectedOutreach() {
+  const { isAdmin } = useAuth();
+  if (!isAdmin) return <Redirect to="/login" />;
+  return <OutreachPage />;
+}
+
 
 /** On every route change, jump to the top of the page. */
 function ScrollToTop() {
@@ -85,6 +93,7 @@ function Router() {
         <Route path="/get-reviewed/submit" component={SubmitProjectPage} />
         <Route path="/submissions" component={SubmissionsAdminPage} />
         <Route path="/growth" component={ProtectedGrowth} />
+        <Route path="/outreach" component={ProtectedOutreach} />
         <Route path="/survey/:id" component={SurveyPublicPage} />
         <Route component={NotFound} />
       </Switch>
