@@ -1,7 +1,7 @@
 """
 AI telecaller adapters (priority order):
-  1) Vapi.ai — VAPI_API_KEY + VAPI_ASSISTANT_ID + VAPI_PHONE_NUMBER_ID
-  2) Bolna.ai — BOLNA_API_KEY + BOLNA_AGENT_ID
+  1) Bolna.ai — BOLNA_API_KEY + BOLNA_AGENT_ID (+ optional BOLNA_FROM_NUMBER)
+  2) Vapi.ai — VAPI_API_KEY + VAPI_ASSISTANT_ID + VAPI_PHONE_NUMBER_ID
   3) Generic — TELECALLER_API_URL + TELECALLER_API_KEY
 
 Vapi: free Vapi numbers are inbound-only. Outbound needs imported Twilio/Telnyx/DIDWW number.
@@ -78,10 +78,10 @@ def enqueue_call(
             ),
         }
 
-    if vapi_configured():
-        return _enqueue_vapi(e164, name=name, script_summary=script_summary, metadata=metadata or {})
     if bolna_configured():
         return _enqueue_bolna(e164, name=name, script_summary=script_summary, metadata=metadata or {})
+    if vapi_configured():
+        return _enqueue_vapi(e164, name=name, script_summary=script_summary, metadata=metadata or {})
     return _enqueue_generic(e164, name=name, script_summary=script_summary, metadata=metadata or {})
 
 
