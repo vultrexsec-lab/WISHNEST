@@ -423,11 +423,12 @@ export function OutreachPage(): JSX.Element {
         {tab === "call" && (
           <section className="mt-6 space-y-4">
             <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-[11px] leading-relaxed text-sky-100/90">
-              <strong className="text-sky-200">Bolna / telecaller:</strong> Render pe{" "}
-              <code className="text-sky-200">BOLNA_API_KEY</code> +{" "}
-              <code className="text-sky-200">BOLNA_AGENT_ID</code> (optional{" "}
-              <code className="text-sky-200">BOLNA_FROM_NUMBER</code>). Agent dashboard pe live + credits chahiye.
-              India me DND/TRAI se kuch numbers block ho sakte hain. Toast me real status dikhega (stub = keys missing).
+              <strong className="text-sky-200">Vapi:</strong> Render pe{" "}
+              <code className="text-sky-200">VAPI_API_KEY</code> (private) +{" "}
+              <code className="text-sky-200">VAPI_ASSISTANT_ID</code> +{" "}
+              <code className="text-sky-200">VAPI_PHONE_NUMBER_ID</code>.
+              Free Vapi numbers are inbound only — outbound ke liye Twilio/Telnyx se number import karo.
+              Credits required. Toast shows queued/error.
             </div>
             <p className="text-[12px] text-white/40">
               Phone E.164 (e.g. 917146396887). Consent required for outbound.
