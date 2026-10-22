@@ -462,7 +462,12 @@ export function OutreachPage(): JSX.Element {
                     `Status: ${st}`,
                     data.provider ? `via ${data.provider}` : "",
                     data.to ? `to ${data.to}` : "",
-                    data.detail ? String(data.detail).slice(0, 120) : "",
+                    data.detail
+                      ? (typeof data.detail === "string"
+                          ? data.detail
+                          : data.detail?.message || JSON.stringify(data.detail)
+                        ).slice(0, 200)
+                      : "",
                     data.hint ? String(data.hint).slice(0, 100) : "",
                   ]
                     .filter(Boolean)
