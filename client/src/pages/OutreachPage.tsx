@@ -422,9 +422,15 @@ export function OutreachPage(): JSX.Element {
         {/* CALL */}
         {tab === "call" && (
           <section className="mt-6 space-y-4">
+            <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-[11px] leading-relaxed text-sky-100/90">
+              <strong className="text-sky-200">Bolna / telecaller:</strong> Render pe{" "}
+              <code className="text-sky-200">BOLNA_API_KEY</code> +{" "}
+              <code className="text-sky-200">BOLNA_AGENT_ID</code> (optional{" "}
+              <code className="text-sky-200">BOLNA_FROM_NUMBER</code>). Agent dashboard pe live + credits chahiye.
+              India me DND/TRAI se kuch numbers block ho sakte hain. Toast me real status dikhega (stub = keys missing).
+            </div>
             <p className="text-[12px] text-white/40">
-              Queue AI telecaller job (Vapi/Retell + telephony). Human transfer depends on your voice provider config.
-              India: follow TRAI/DLT and consent rules before outbound.
+              Phone E.164 (e.g. 917146396887). Consent required for outbound.
             </p>
             <input
               value={callPhone}
@@ -450,9 +456,25 @@ export function OutreachPage(): JSX.Element {
                     script_summary: callNotes.trim() || "WishNest free listing invitation",
                   });
                   const data = await res.json();
+                  const st = data.status || "unknown";
+                  const desc = [
+                    `Status: ${st}`,
+                    data.provider ? `via ${data.provider}` : "",
+                    data.to ? `to ${data.to}` : "",
+                    data.detail ? String(data.detail).slice(0, 120) : "",
+                    data.hint ? String(data.hint).slice(0, 100) : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ");
                   toast({
-                    title: "Call queued",
-                    description: data.status || data.message || JSON.stringify(data).slice(0, 120),
+                    title:
+                      st === "queued"
+                        ? "Call queued"
+                        : st === "stub_queued"
+                          ? "Keys missing (stub)"
+                          : "Call result",
+                    description: desc || JSON.stringify(data).slice(0, 200),
+                    variant: st === "error" || st === "stub_queued" ? "destructive" : "default",
                   });
                 } catch (e) {
                   toast({

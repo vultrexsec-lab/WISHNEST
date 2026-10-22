@@ -45,7 +45,7 @@ from app.services.agentreach_service import (
     submit_approved_sequence,
 )
 from app.services.whatsapp_service import whatsapp_configured, send_whatsapp_text, infobip_configured
-from app.services.telecaller_service import telecaller_configured, enqueue_call
+from app.services.telecaller_service import telecaller_configured, enqueue_call, bolna_configured
 from app.services.mautic_service import (
     mautic_configured,
     push_campaign_email_pack,
@@ -154,6 +154,7 @@ def growth_status(
             "whatsapp_business": whatsapp_configured(),
             "infobip_whatsapp": infobip_configured(),
             "telecaller": telecaller_configured(),
+            "bolna": bolna_configured(),
             "arrowx_webhook": arrowx_webhook_configured(),
         },
         counts={
