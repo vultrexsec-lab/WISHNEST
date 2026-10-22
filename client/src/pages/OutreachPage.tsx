@@ -354,8 +354,14 @@ export function OutreachPage(): JSX.Element {
         {/* WHATSAPP */}
         {tab === "whatsapp" && (
           <section className="mt-6 space-y-4">
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-100/90">
+              <strong className="text-amber-200">Infobip free trial rules:</strong> messages only reach the
+              <em> one phone number verified when you created the Infobip account</em> — not any number you type.
+              Sender must be the connected test sender (e.g. 447860088970). Free-form text needs a 24h session
+              (recipient messages that sender first) or an approved template. Check Infobip → Analyze / Logs for DELIVERED vs REJECTED.
+            </div>
             <p className="text-[12px] text-white/40">
-              Single WhatsApp text (Meta Cloud API). Needs WHATSAPP_* env on Render + templates where required.
+              Uses Infobip when INFOBIP_* is set on Render (else Meta Cloud). Put the verified trial number below.
             </p>
             <input
               value={waPhone}
@@ -382,9 +388,20 @@ export function OutreachPage(): JSX.Element {
                     dry_run: false,
                   });
                   const data = await res.json();
+                  const st = data.status || "unknown";
+                  const hint = data.hint || data.detail || data.infobip_status || "";
+                  const desc = [
+                    `Status: ${st}`,
+                    data.infobip_status ? `Infobip: ${data.infobip_status}` : "",
+                    data.provider ? `via ${data.provider}` : "",
+                    typeof hint === "string" ? hint.slice(0, 180) : JSON.stringify(hint).slice(0, 180),
+                  ]
+                    .filter(Boolean)
+                    .join(" · ");
                   toast({
-                    title: "WhatsApp",
-                    description: data.status || data.message || JSON.stringify(data).slice(0, 120),
+                    title: st === "accepted" || st === "sent" ? "WhatsApp accepted" : "WhatsApp result",
+                    description: desc || JSON.stringify(data).slice(0, 200),
+                    variant: st === "error" || st === "rejected" ? "destructive" : "default",
                   });
                 } catch (e) {
                   toast({
