@@ -2620,6 +2620,16 @@ export const ReviewDashboard = (): JSX.Element => {
                   OUTREACH
                 </a>
               </Link>
+              <Link href="/listening">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
+                  data-testid="btn-open-listening"
+                >
+                  LISTENING
+                </Button>
+              </Link>
               <Link href="/growth">
                 <a
                   className="inline-flex items-center gap-2 rounded-full border border-violet-500/40 bg-violet-500/15 px-4 py-2 [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1px] text-violet-200 shadow-[0_0_20px_rgba(139,92,246,0.12)] transition hover:border-violet-400/60 hover:bg-violet-500/25"

@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
-from app.routers import approve, articles, auth, image_proxy, newsletter, research, vision, reimaging, submissions, growth, entities
+from app.routers import approve, articles, auth, image_proxy, newsletter, research, vision, reimaging, submissions, growth, entities, listening
 from app.routers import scheduler as scheduler_router
 from app.models import automation  # noqa: F401 ensures settings table metadata is loaded
 from app.models import media_blob  # noqa: F401 ensures media_blobs table metadata is loaded
@@ -395,6 +395,7 @@ app.include_router(vision.router)
 app.include_router(reimaging.router)
 app.include_router(growth.router)
 app.include_router(entities.router)
+app.include_router(listening.router)
 
 
 @app.get("/api/health")
@@ -431,3 +432,96 @@ else:
     @app.get("/")
     def root():
         return {"status": "ok", "service": "WishNest API (frontend not built)"}
+
+                CREATE TABLE IF NOT EXISTS listening_businesses (
+                    id UUID PRIMARY KEY,
+                    name VARCHAR(255) NOT NULL,
+                    website_url VARCHAR(512),
+                    description TEXT,
+                    category VARCHAR(128),
+                    offerings JSONB,
+                    target_markets JSONB,
+                    buyer_personas JSONB,
+                    competitors JSONB,
+                    profile JSONB,
+                    status VARCHAR(32) NOT NULL DEFAULT 'active',
+                    created_at TIMESTAMPTZ DEFAULT now(),
+                    updated_at TIMESTAMPTZ DEFAULT now()
+                );
+                CREATE TABLE IF NOT EXISTS listening_campaigns (
+                    id UUID PRIMARY KEY,
+                    business_id UUID NOT NULL,
+                    name VARCHAR(255) NOT NULL,
+                    platforms JSONB,
+                    keywords JSONB,
+                    negative_keywords JSONB,
+                    target_geography JSONB,
+                    status VARCHAR(32) NOT NULL DEFAULT 'draft',
+                    last_run_at TIMESTAMPTZ,
+                    meta JSONB,
+                    created_at TIMESTAMPTZ DEFAULT now(),
+                    updated_at TIMESTAMPTZ DEFAULT now()
+                );
+                CREATE TABLE IF NOT EXISTS listening_discovery_jobs (
+                    id UUID PRIMARY KEY,
+                    campaign_id UUID NOT NULL,
+                    status VARCHAR(32) NOT NULL DEFAULT 'queued',
+                    platforms JSONB,
+                    posts_found INTEGER DEFAULT 0,
+                    opportunities_created INTEGER DEFAULT 0,
+                    error TEXT,
+                    started_at TIMESTAMPTZ,
+                    finished_at TIMESTAMPTZ,
+                    created_at TIMESTAMPTZ DEFAULT now()
+                );
+                CREATE TABLE IF NOT EXISTS listening_posts (
+                    id UUID PRIMARY KEY,
+                    campaign_id UUID,
+                    platform VARCHAR(32) NOT NULL,
+                    external_id VARCHAR(255),
+                    url VARCHAR(1024) NOT NULL,
+                    title VARCHAR(512),
+                    body TEXT,
+                    author_handle VARCHAR(255),
+                    language VARCHAR(16),
+                    location_mentioned VARCHAR(255),
+                    published_at TIMESTAMPTZ,
+                    comment_count INTEGER DEFAULT 0,
+                    like_count INTEGER DEFAULT 0,
+                    share_count INTEGER DEFAULT 0,
+                    raw JSONB,
+                    collected_at TIMESTAMPTZ DEFAULT now()
+                );
+                CREATE TABLE IF NOT EXISTS listening_comments (
+                    id UUID PRIMARY KEY,
+                    post_id UUID NOT NULL,
+                    external_id VARCHAR(255),
+                    body TEXT,
+                    author_handle VARCHAR(255),
+                    published_at TIMESTAMPTZ,
+                    like_count INTEGER DEFAULT 0,
+                    parent_external_id VARCHAR(255),
+                    collected_at TIMESTAMPTZ DEFAULT now()
+                );
+                CREATE TABLE IF NOT EXISTS listening_opportunities (
+                    id UUID PRIMARY KEY,
+                    campaign_id UUID,
+                    post_id UUID,
+                    platform VARCHAR(32) NOT NULL,
+                    source_url VARCHAR(1024) NOT NULL,
+                    excerpt TEXT,
+                    category VARCHAR(128),
+                    requirement TEXT,
+                    location VARCHAR(255),
+                    budget_hint VARCHAR(128),
+                    intent_score INTEGER DEFAULT 0,
+                    intent_band VARCHAR(32),
+                    stage VARCHAR(64),
+                    recommended_action VARCHAR(255),
+                    contact_eligible BOOLEAN DEFAULT false,
+                    public_author VARCHAR(255),
+                    evidence JSONB,
+                    status VARCHAR(32) NOT NULL DEFAULT 'new',
+                    created_at TIMESTAMPTZ DEFAULT now(),
+                    updated_at TIMESTAMPTZ DEFAULT now()
+                );

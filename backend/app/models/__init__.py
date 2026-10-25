@@ -12,3 +12,4 @@ __all__ = [
 ]
 from app.models import media_blob  # noqa: F401
 from app.models import submission  # noqa: F401
+from app.models import listening  # noqa
