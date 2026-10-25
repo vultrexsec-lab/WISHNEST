@@ -108,9 +108,6 @@ export function OutreachPage(): JSX.Element {
               <h1 className="text-[15px] font-medium tracking-wide">Outreach</h1>
             </div>
           </div>
-          <Link href="/growth">
-            <a className="text-[11px] text-white/40 hover:text-white/70">Growth OS →</a>
-          </Link>
         </div>
       </header>
 
@@ -290,7 +287,6 @@ export function OutreachPage(): JSX.Element {
             />
             <div className="max-h-40 overflow-y-auto rounded-lg border border-white/10">
               {contacts.filter((c) => c.email).length === 0 ? (
-                <p className="p-3 text-[12px] text-white/40">No contacts with email yet. Use intake or CSV in Growth OS.</p>
               ) : (
                 contacts
                   .filter((c) => c.email)
