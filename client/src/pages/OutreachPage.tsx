@@ -287,6 +287,7 @@ export function OutreachPage(): JSX.Element {
             />
             <div className="max-h-40 overflow-y-auto rounded-lg border border-white/10">
               {contacts.filter((c) => c.email).length === 0 ? (
+                <p className="px-3 py-4 text-[11px] text-white/35">No contacts with email yet.</p>
               ) : (
                 contacts
                   .filter((c) => c.email)
