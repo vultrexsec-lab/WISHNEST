@@ -2614,7 +2614,7 @@ export const ReviewDashboard = (): JSX.Element => {
               <Link href="/outreach">
                 <a
                   className="inline-flex items-center gap-2 rounded-full border border-orange-500/40 bg-orange-500/15 px-4 py-2 [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1px] text-orange-200 shadow-[0_0_20px_rgba(249,115,22,0.12)] transition hover:border-orange-400/60 hover:bg-orange-500/25"
-                  data-testid="btn-open-outreach"
+                  data-testid="btn-open-outreach" data-nav="v2"
                 >
                   <Megaphone className="h-3.5 w-3.5" />
                   OUTREACH
