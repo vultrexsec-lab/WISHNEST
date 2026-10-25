@@ -26,6 +26,7 @@ import { GetReviewedPage } from "@/pages/GetReviewedPage";
 import { SubmitProjectPage } from "@/pages/SubmitProjectPage";
 import { SubmissionsAdminPage } from "@/pages/SubmissionsAdminPage";
 import { OutreachPage } from "@/pages/OutreachPage";
+import { ListeningPage } from "@/pages/ListeningPage";
 import { SurveyPublicPage } from "@/pages/SurveyPublicPage";
 import { DestinationEntityPage } from "@/pages/DestinationEntityPage";
 import { BrandEntityPage } from "@/pages/BrandEntityPage";
@@ -39,6 +40,12 @@ function ProtectedDashboard() {
 }
 
 
+
+function ProtectedListening() {
+  const { isAdmin } = useAuth();
+  if (!isAdmin) return <Redirect to="/login" />;
+  return <ListeningPage />;
+}
 
 function ProtectedOutreach() {
   const { isAdmin } = useAuth();
@@ -88,6 +95,7 @@ function Router() {
         <Route path="/get-reviewed/submit" component={SubmitProjectPage} />
         <Route path="/submissions" component={SubmissionsAdminPage} />
         <Route path="/outreach" component={ProtectedOutreach} />
+        <Route path="/listening" component={ProtectedListening} />
         <Route path="/survey/:id" component={SurveyPublicPage} />
         <Route component={NotFound} />
       </Switch>
