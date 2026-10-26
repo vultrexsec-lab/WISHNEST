@@ -2090,17 +2090,20 @@ class OutreachApproachIn(BaseModel):
 
 DEFAULT_APPROACH_BODY = """{{greeting}}
 
-WishNest is a hospitality discovery and design-intelligence platform. We feature properties and explore thoughtful before-and-after design directions with participating partners.
+I am writing from WishNest (wishnest.info) — an independent hospitality and design-intelligence platform. We publish property features and thoughtful design perspectives for owners and operators, not as a booking marketplace.
 
-We are inviting selected {{offer}} to consider a complimentary property listing on WishNest.info — no listing fee and no booking commission for this programme.
+While reviewing {{offer}}, your property stood out as a strong fit for a complimentary editorial listing on WishNest (no listing fee and no booking commission for this invitation).
 
-If useful, we can also share how a design evaluation conversation works (selection is not guaranteed; there is no obligation to purchase anything).
+You are welcome to:
+• See the platform: {{website}}
+• Message us on WhatsApp: {{whatsapp}}
+• Request a short call: {{call}}
 
-You can see the site here: {{website}}
+If this is not relevant, simply reply "no" or ignore this note — we will not follow up further.
 
-Reply to this email if you would like listing details, or ask us not to contact you again.
-
-— WishNest
+Warm regards,
+WishNest team
+https://wishnest.info
 """
 
 
@@ -2176,11 +2179,19 @@ def outreach_approach_email(
             .replace("{{whatsapp}}", whatsapp)
             .replace("{{call}}", call)
         )
-        cta_html = f'''
-        <p style="margin:12px 0;font-size:14px;line-height:1.5;color:#333;">
-          <a href="{website}" style="color:#1a5c4a;">{website}</a>
-        </p>
-        '''
+        cta_html = f"""
+        <table role="presentation" cellpadding="0" cellspacing="0" style="margin:20px 0;">
+          <tr><td style="padding:0 0 10px 0;">
+            <a href="{website}" style="display:inline-block;background:#165948;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-size:14px;font-weight:600;">Visit WishNest.info</a>
+          </td></tr>
+          <tr><td style="padding:0 0 10px 0;">
+            <a href="{whatsapp}" style="display:inline-block;background:#128C7E;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-size:14px;font-weight:600;">WhatsApp us</a>
+          </td></tr>
+          <tr><td style="padding:0;">
+            <a href="{call}" style="display:inline-block;background:#1a2e28;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-size:14px;font-weight:600;">Request a call</a>
+          </td></tr>
+        </table>
+        """
 
         img_html = ""
         if image_url:

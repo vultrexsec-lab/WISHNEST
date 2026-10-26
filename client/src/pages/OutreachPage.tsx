@@ -74,17 +74,20 @@ export function OutreachPage(): JSX.Element {
   const [emailBody, setEmailBody] = useState(
     `{{greeting}}
 
-WishNest is a hospitality discovery and design-intelligence platform. We feature properties and explore thoughtful before-and-after design directions with participating partners.
+I am writing from WishNest (wishnest.info) — an independent hospitality and design-intelligence platform. We publish property features and thoughtful design perspectives for owners and operators, not as a booking marketplace.
 
-We are inviting selected {{offer}} to consider a complimentary property listing on WishNest.info — no listing fee and no booking commission for this programme.
+While reviewing {{offer}}, your property stood out as a strong fit for a complimentary editorial listing on WishNest (no listing fee and no booking commission for this invitation).
 
-If useful, we can also share how a design evaluation conversation works (selection is not guaranteed; there is no obligation to purchase anything).
+You are welcome to:
+• See the platform: {{website}}
+• Message us on WhatsApp: {{whatsapp}}
+• Request a short call: {{call}}
 
-You can see the site here: {{website}}
+If this is not relevant, simply reply "no" or ignore this note — we will not follow up further.
 
-Reply to this email if you would like listing details, or ask us not to contact you again.
-
-— WishNest`,
+Warm regards,
+WishNest team
+https://wishnest.info`,
   );
   const [emailImageUrl, setEmailImageUrl] = useState("");
   const [emailWebsite, setEmailWebsite] = useState("https://wishnest.info");
