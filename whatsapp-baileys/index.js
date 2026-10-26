@@ -30,6 +30,34 @@ const logger = pino({ level: process.env.LOG_LEVEL || "info" });
 const app = express();
 app.use(express.json({ limit: "1mb" }));
 
+app.get("/", (_req, res) => {
+  const connected = connectionStatus === "open";
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"/><title>WishNest Baileys</title>
+<style>
+body{font-family:system-ui,sans-serif;background:#0c1210;color:#e8eee9;max-width:480px;margin:40px auto;padding:0 16px}
+.card{border:1px solid #ffffff22;border-radius:16px;padding:20px;background:#ffffff08}
+.ok{color:#6ee7b7}.warn{color:#fbbf24}.err{color:#fca5a5}
+img{max-width:100%;border-radius:12px;background:#fff}
+code{background:#ffffff15;padding:2px 6px;border-radius:4px;font-size:13px}
+a{color:#6ee7b7}
+</style></head><body>
+<h1>WishNest WhatsApp (Baileys)</h1>
+<div class="card">
+<p>Status: <strong class="${connected ? "ok" : connectionStatus === "qr" ? "warn" : "err"}">${connectionStatus}</strong></p>
+<p>Connected: ${connected ? "yes" : "no"}</p>
+${lastError ? `<p class="err">Error: ${lastError}</p>` : ""}
+${lastQrDataUrl ? `<p>Scan this QR with WhatsApp → Linked devices:</p><img src="${lastQrDataUrl}" alt="QR"/>` : connected ? `<p class="ok">Already linked. Use API to send.</p>` : `<p>QR not ready yet — refresh in a few seconds.</p>`}
+<hr style="border-color:#ffffff15;margin:16px 0"/>
+<p><a href="/health">/health</a> · API needs header <code>X-API-Key</code></p>
+</div>
+<meta http-equiv="refresh" content="8"/>
+</body></html>`;
+  res.set("Content-Type", "text/html; charset=utf-8");
+  res.send(html);
+});
+
+
 let sock = null;
 let lastQrDataUrl = null;
 let connectionStatus = "starting"; // starting | qr | open | close
