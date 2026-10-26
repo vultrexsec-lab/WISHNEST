@@ -2209,7 +2209,7 @@ def outreach_approach_email(
             continue
         try:
             send_email(to_email=em, subject=subject, html_body=html, text_body=text)
-            results.append({"email": em, "status": "sent"})
+            results.append({"email": em, "status": "sent", "provider": "configured"})
             sent += 1
             if cobj is not None:
                 try:
@@ -2281,6 +2281,47 @@ def set_outreach_status(
     c.tags = tags
     db.commit()
     return {"id": str(c.id), "outreach_status": st, "ok": True}
+
+
+
+@router.delete("/api/growth/contacts/{contact_id}")
+def delete_growth_contact(
+    contact_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """Permanently remove a contact from growth_contacts (outreach list / pipeline)."""
+    c = db.query(GrowthContact).filter(GrowthContact.id == contact_id).first()
+    if not c:
+        raise HTTPException(404, "Contact not found")
+    email = c.email
+    db.delete(c)
+    db.commit()
+    return {"ok": True, "deleted_id": str(contact_id), "email": email}
+
+
+@router.post("/api/growth/contacts/{contact_id}/clear-outreach")
+def clear_outreach_pipeline(
+    contact_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """Remove from Interested pipeline only (keep contact for newsletter/email list)."""
+    from sqlalchemy.orm.attributes import flag_modified
+    c = db.query(GrowthContact).filter(GrowthContact.id == contact_id).first()
+    if not c:
+        raise HTTPException(404, "Contact not found")
+    meta = dict(c.meta or {})
+    meta.pop("outreach_status", None)
+    meta.pop("outreach_status_at", None)
+    meta.pop("outreach_note", None)
+    c.meta = meta
+    flag_modified(c, "meta")
+    if c.tags:
+        for tag in ("outreach_emailed", "outreach_interested", "outreach_ready"):
+            c.tags = c.tags.replace(tag, "").replace(",,", ",").strip(",")
+    db.commit()
+    return {"ok": True, "id": str(c.id)}
 
 
 @router.get("/api/growth/outreach/pipeline")

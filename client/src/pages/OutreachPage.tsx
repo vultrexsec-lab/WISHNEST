@@ -275,6 +275,7 @@ https://wishnest.info`,
                     });
                     const data = await res.json();
                     await qc.invalidateQueries({ queryKey: ["/api/growth/contacts"] });
+                    await refetchContacts();
                     toast({ title: "Imported", description: data.message || `${data.created} contacts, ${data.emails_found ?? 0} emails` });
                   } catch (e) {
                     toast({
@@ -534,6 +535,7 @@ https://wishnest.info`,
                       variant: data.failed && !data.sent ? "destructive" : "default",
                     });
                     await qc.invalidateQueries({ queryKey: ["/api/growth/contacts"] });
+                    await refetchContacts();
                   } catch (e) {
                     toast({
                       title: "Email failed",
@@ -754,9 +756,10 @@ function ReadyPipeline() {
   return (
     <section className="mt-6 space-y-4">
       <p className="text-[12px] text-white/45 leading-relaxed">
-        People you emailed (and those you mark after a WhatsApp/call/reply). Auto inbox-reading is not
-        connected yet — when someone replies or messages, mark them <strong className="text-white/70">Interested</strong> or{" "}
-        <strong className="text-white/70">Ready</strong> here, then use AI Call.
+        After you send mail they appear here as <strong className="text-white/70">emailed</strong>.
+        Mark <strong className="text-white/70">Interested</strong> / <strong className="text-white/70">Ready</strong> when they reply.
+        <strong className="text-white/70">No</strong> = do not contact. <strong className="text-white/70">Remove</strong> = only leave this list.
+        <strong className="text-red-300/80">Delete</strong> = remove contact permanently. Newsletter list is separate and stays complete.
       </p>
       {isLoading && <Loader2 className="h-5 w-5 animate-spin text-white/40" />}
       <div className="max-h-96 overflow-y-auto rounded-lg border border-white/10">
@@ -804,6 +807,46 @@ function ReadyPipeline() {
                 onClick={() => mark(c.id, "no")}
               >
                 No
+              </button>
+              <button
+                type="button"
+                className="rounded border border-white/15 px-2 py-0.5 text-white/50 hover:bg-white/5"
+                onClick={async () => {
+                  try {
+                    await apiRequest("POST", `/api/growth/contacts/${c.id}/clear-outreach`, {});
+                    toast({ title: "Removed from Interested list" });
+                    await qc.invalidateQueries({ queryKey: ["/api/growth/outreach/pipeline"] });
+                  } catch (e) {
+                    toast({
+                      title: "Failed",
+                      description: e instanceof Error ? e.message : "Error",
+                      variant: "destructive",
+                    });
+                  }
+                }}
+              >
+                Remove
+              </button>
+              <button
+                type="button"
+                className="rounded border border-red-500/30 px-2 py-0.5 text-red-300 hover:bg-red-500/10"
+                onClick={async () => {
+                  if (!confirm(`Delete contact ${c.email || c.name || c.id}?`)) return;
+                  try {
+                    await apiRequest("DELETE", `/api/growth/contacts/${c.id}`);
+                    toast({ title: "Contact deleted" });
+                    await qc.invalidateQueries({ queryKey: ["/api/growth/outreach/pipeline"] });
+                    await qc.invalidateQueries({ queryKey: ["/api/growth/contacts"] });
+                  } catch (e) {
+                    toast({
+                      title: "Delete failed",
+                      description: e instanceof Error ? e.message : "Error",
+                      variant: "destructive",
+                    });
+                  }
+                }}
+              >
+                Delete
               </button>
             </span>
           </div>

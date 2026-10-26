@@ -111,20 +111,28 @@ def _send_via_brevo(
     subject: str,
     html_body: str,
     text_body: str | None = None,
-) -> None:
-    """Brevo transactional API — https://developers.brevo.com/reference/sendtransacemail"""
+) -> str | None:
+    """Brevo transactional API. Returns messageId when present."""
     settings = get_settings()
-    payload = {
+    sender_email = (settings.brevo_from_email or "").strip()
+    if not sender_email:
+        raise RuntimeError("BREVO_FROM_EMAIL is empty")
+    payload: dict = {
         "sender": {
-            "name": (settings.brevo_from_name or "WishNest").strip(),
-            "email": settings.brevo_from_email.strip(),
+            "name": (settings.brevo_from_name or "WishNest").strip() or "WishNest",
+            "email": sender_email,
         },
-        "to": [{"email": to_email}],
-        "subject": subject,
-        "htmlContent": html_body,
+        "to": [{"email": to_email.strip().lower()}],
+        "subject": subject or "WishNest",
+        "htmlContent": html_body or "<p>WishNest</p>",
+        "tags": ["wishnest-outreach"],
     }
     if text_body:
         payload["textContent"] = text_body
+    # Help replies go to a real inbox when configured
+    reply = (getattr(settings, "brevo_reply_to", None) or getattr(settings, "gmail_user", None) or "").strip()
+    if reply and "@" in reply:
+        payload["replyTo"] = {"email": reply}
 
     r = requests.post(
         "https://api.brevo.com/v3/smtp/email",
@@ -134,10 +142,17 @@ def _send_via_brevo(
             "content-type": "application/json",
         },
         json=payload,
-        timeout=30,
+        timeout=45,
     )
     if r.status_code >= 400:
-        raise RuntimeError(f"Brevo API {r.status_code}: {r.text[:400]}")
+        raise RuntimeError(f"Brevo API {r.status_code}: {r.text[:500]}")
+    try:
+        mid = (r.json() or {}).get("messageId")
+        logger.info("Brevo accepted to=%s messageId=%s", to_email, mid)
+        return mid
+    except Exception:
+        logger.info("Brevo accepted to=%s", to_email)
+        return None
 
 
 def _send_via_resend(
