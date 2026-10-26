@@ -185,6 +185,7 @@ def _apply_contact_filters(
     email_permission: bool | None = None,
     exclude_suppressed: bool = True,
     q: str | None = None,
+    source: str | None = None,
 ):
     if contact_type:
         # support comma-separated types
@@ -201,6 +202,16 @@ def _apply_contact_filters(
         query = query.filter(GrowthContact.destination.ilike(f"%{destination.strip()}%"))
     if email_permission is True:
         query = query.filter(GrowthContact.email_permission.is_(True))
+    if source:
+        src = source.strip().lower()
+        if src in ("newsletter", "wishnest_circle", "subscriber"):
+            query = query.filter(
+                (GrowthContact.source == "newsletter")
+                | (GrowthContact.contact_type == "subscriber")
+                | (GrowthContact.tags.ilike("%wishnest_circle%"))
+            )
+        else:
+            query = query.filter(GrowthContact.source == source.strip())
     if exclude_suppressed:
         query = query.filter(GrowthContact.unsubscribed.is_(False))
         query = query.filter(GrowthContact.do_not_contact.is_(False))
@@ -227,6 +238,7 @@ def list_contacts(
     email_permission: bool | None = None,
     exclude_suppressed: bool = True,
     q: str | None = None,
+    source: str | None = None,
     limit: int = 100,
     offset: int = 0,
 ):
@@ -240,6 +252,7 @@ def list_contacts(
         email_permission=email_permission,
         exclude_suppressed=exclude_suppressed,
         q=q,
+        source=source,
     )
     total = query.count()
     rows = query.offset(max(0, offset)).limit(min(limit, 200)).all()
@@ -345,11 +358,21 @@ def import_newsletter_subscribers(
             continue
         existing = db.query(GrowthContact).filter(GrowthContact.email == email).first()
         if existing:
+            # ensure tagged as newsletter so Email filter finds them
+            tags = existing.tags or ""
+            if "wishnest_circle" not in tags:
+                existing.tags = (tags + ",wishnest_circle").strip(",")
+            if existing.source != "newsletter" and not existing.source:
+                existing.source = "newsletter"
+            if existing.contact_type not in ("subscriber", "resort_owner"):
+                existing.contact_type = existing.contact_type or "subscriber"
+            existing.email_permission = True
             skipped += 1
             continue
         interests = getattr(s, "interests", None)
         row = GrowthContact(
             email=email,
+            name=email.split("@")[0] if email else None,
             contact_type="subscriber",
             country="India",
             email_permission=True,

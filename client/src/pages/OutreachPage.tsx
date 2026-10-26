@@ -52,15 +52,19 @@ export function OutreachPage(): JSX.Element {
   const [selectedPlaces, setSelectedPlaces] = useState<Record<number, boolean>>({});
 
   // Contacts
-  const { data: contactsResp } = useQuery<{ contacts: Contact[]; total: number }>({
-    queryKey: ["/api/growth/contacts", "outreach"],
+  const [picked, setPicked] = useState<Record<string, boolean>>({});
+  const [contactSourceFilter, setContactSourceFilter] = useState<"" | "newsletter">("");
+  const { data: contactsResp, refetch: refetchContacts } = useQuery<{ contacts: Contact[]; total: number }>({
+    queryKey: ["/api/growth/contacts", "outreach", contactSourceFilter],
     queryFn: async () => {
-      const res = await apiRequest("GET", "/api/growth/contacts?limit=300");
+      const q = contactSourceFilter === "newsletter"
+        ? "/api/growth/contacts?limit=300&source=newsletter"
+        : "/api/growth/contacts?limit=300";
+      const res = await apiRequest("GET", q);
       return res.json();
     },
   });
   const contacts = contactsResp?.contacts ?? [];
-  const [picked, setPicked] = useState<Record<string, boolean>>({});
 
   // Email
   const [emailSubject, setEmailSubject] = useState(
@@ -340,7 +344,8 @@ https://wishnest.info`,
                 type="button"
                 className="rounded-md border border-white/15 bg-white/5 px-3 py-1.5 text-[11px] text-white/80 hover:bg-white/10"
                 onClick={() => {
-                  const next: Record<string, boolean> = { ...picked };
+                  setContactSourceFilter("");
+                  const next: Record<string, boolean> = {};
                   contacts.filter((c) => c.email && !c.do_not_contact && !c.unsubscribed).forEach((c) => {
                     next[c.id] = true;
                   });
@@ -356,8 +361,53 @@ https://wishnest.info`,
               >
                 Clear selection
               </button>
+              <button
+                type="button"
+                className={`rounded-md border px-3 py-1.5 text-[11px] font-semibold ${
+                  contactSourceFilter === "newsletter"
+                    ? "border-emerald-500/50 bg-emerald-500/20 text-emerald-200"
+                    : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200/90 hover:bg-emerald-500/20"
+                }`}
+                onClick={async () => {
+                  try {
+                    const res = await apiRequest("POST", "/api/growth/contacts/import-newsletter", {});
+                    const data = await res.json();
+                    setContactSourceFilter("newsletter");
+                    setPicked({});
+                    setNewsletterSync(
+                      `Newsletter synced: +${data.created ?? 0} new · ${data.skipped ?? 0} existing · ${data.total_subscribers ?? "?"} on site`,
+                    );
+                    toast({
+                      title: "Newsletter list",
+                      description: `Subscribers on site: ${data.total_subscribers ?? "?"} · added ${data.created ?? 0} · already ${data.skipped ?? 0}`,
+                    });
+                    await refetchContacts();
+                  } catch (e) {
+                    toast({
+                      title: "Newsletter load failed",
+                      description: e instanceof Error ? e.message : "Error",
+                      variant: "destructive",
+                    });
+                  }
+                }}
+              >
+                Newsletter only
+              </button>
+              {contactSourceFilter === "newsletter" && (
+                <button
+                  type="button"
+                  className="rounded-md border border-white/15 bg-white/5 px-3 py-1.5 text-[11px] text-white/60 hover:bg-white/10"
+                  onClick={() => {
+                    setContactSourceFilter("");
+                    setPicked({});
+                  }}
+                >
+                  Show all contacts
+                </button>
+              )}
               <span className="text-[11px] text-orange-200/90">
-                {pickedIds.length} selected · {contacts.filter((c) => c.email).length} with email · {contacts.length} total contacts
+                {pickedIds.length} selected · {contacts.filter((c) => c.email).length} with email · {contacts.length} shown
+                {contactSourceFilter === "newsletter" ? " (newsletter filter on)" : ""}
               </span>
             </div>
 
