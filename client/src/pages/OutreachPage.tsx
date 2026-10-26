@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   Mail,
   MessageCircle,
+  UserCheck,
   Phone,
   MapPin,
   Loader2,
@@ -36,7 +37,7 @@ type PlacesRow = {
   place_id?: string | null;
 };
 
-type Tab = "intake" | "email" | "whatsapp" | "call";
+type Tab = "intake" | "email" | "whatsapp" | "call" | "ready";
 
 export function OutreachPage(): JSX.Element {
   const { toast } = useToast();
@@ -63,22 +64,31 @@ export function OutreachPage(): JSX.Element {
 
   // Email
   const [emailSubject, setEmailSubject] = useState(
-    "WishNest — complimentary listing & design conversation",
+    "WishNest — complimentary listing invitation",
   );
   const [emailOffer, setEmailOffer] = useState("independent hotels and resorts");
   const [emailBody, setEmailBody] = useState(
     `{{greeting}}
 
-WishNest is a hospitality discovery and design-intelligence platform. We feature properties and explore thoughtful before-and-after design directions with participating partners.
+I am writing from WishNest (wishnest.info) — an independent hospitality and design-intelligence platform. We publish property features and thoughtful design perspectives for owners and operators, not as a booking marketplace.
 
-We are inviting selected {{offer}} to consider a complimentary property listing on WishNest.info — no listing fee and no booking commission for this programme.
+While reviewing {{offer}}, your property stood out as a strong fit for a complimentary editorial listing on WishNest (no listing fee and no booking commission for this invitation).
 
-If useful, we can also share how a design evaluation conversation works (selection is not guaranteed; there is no obligation to purchase anything).
+You are welcome to:
+• See the platform: {{website}}
+• Message us on WhatsApp: {{whatsapp}}
+• Request a short call: {{call}}
 
-Reply to this email if you would like listing details, or ask us not to contact you again.
+If this is not relevant, simply reply "no" or ignore this note — we will not follow up further.
 
-— WishNest`,
+Warm regards,
+WishNest team
+https://wishnest.info`,
   );
+  const [emailImageUrl, setEmailImageUrl] = useState("");
+  const [emailWebsite, setEmailWebsite] = useState("https://wishnest.info");
+  const [emailWhatsapp, setEmailWhatsapp] = useState("https://wa.me/91");
+  const [emailCallUrl, setEmailCallUrl] = useState("https://wishnest.info/get-reviewed");
   const [extraEmails, setExtraEmails] = useState("");
   const [emailBusy, setEmailBusy] = useState(false);
   const [lastSendLog, setLastSendLog] = useState<{ email: string; status: string; error?: string }[]>([]);
@@ -105,6 +115,7 @@ Reply to this email if you would like listing details, or ask us not to contact 
     { id: "email", label: "Email", icon: Mail },
     { id: "whatsapp", label: "WhatsApp", icon: MessageCircle },
     { id: "call", label: "AI Call", icon: Phone },
+    { id: "ready", label: "Interested", icon: UserCheck },
   ];
 
   return (
@@ -369,6 +380,35 @@ Reply to this email if you would like listing details, or ask us not to contact 
               className="w-full rounded-md border border-white/15 bg-[#121816] px-3 py-2 text-[12px] text-white/90 leading-relaxed font-mono"
               placeholder="Email body template"
             />
+            <div className="grid gap-2 sm:grid-cols-2">
+              <input
+                value={emailWebsite}
+                onChange={(e) => setEmailWebsite(e.target.value)}
+                className="h-9 w-full rounded-md border border-white/15 bg-[#121816] px-3 text-[12px] text-white"
+                placeholder="Website CTA https://wishnest.info"
+              />
+              <input
+                value={emailWhatsapp}
+                onChange={(e) => setEmailWhatsapp(e.target.value)}
+                className="h-9 w-full rounded-md border border-white/15 bg-[#121816] px-3 text-[12px] text-white"
+                placeholder="WhatsApp link https://wa.me/91XXXXXXXXXX"
+              />
+              <input
+                value={emailCallUrl}
+                onChange={(e) => setEmailCallUrl(e.target.value)}
+                className="h-9 w-full rounded-md border border-white/15 bg-[#121816] px-3 text-[12px] text-white"
+                placeholder="Call / form link"
+              />
+              <input
+                value={emailImageUrl}
+                onChange={(e) => setEmailImageUrl(e.target.value)}
+                className="h-9 w-full rounded-md border border-white/15 bg-[#121816] px-3 text-[12px] text-white"
+                placeholder="Optional image URL (https://...jpg)"
+              />
+            </div>
+            <p className="text-[10px] text-white/35">
+              Placeholders: {"{{greeting}}"} {"{{name}}"} {"{{offer}}"} {"{{website}}"} {"{{whatsapp}}"} {"{{call}}"}. Buttons for Visit / WhatsApp / Call are added automatically under the body.
+            </p>
             <textarea
               value={extraEmails}
               onChange={(e) => setExtraEmails(e.target.value)}
@@ -395,6 +435,10 @@ Reply to this email if you would like listing details, or ask us not to contact 
                       subject: emailSubject,
                       property_or_offer: emailOffer,
                       body_template: emailBody,
+                      image_url: emailImageUrl || null,
+                      website_url: emailWebsite || "https://wishnest.info",
+                      whatsapp_url: emailWhatsapp || null,
+                      call_url: emailCallUrl || null,
                       dry_run: false,
                     });
                     const data = await res.json();
@@ -576,7 +620,109 @@ Reply to this email if you would like listing details, or ask us not to contact 
             </Button>
           </section>
         )}
+
+        {tab === "ready" && (
+          <ReadyPipeline />
+        )}
+
       </div>
     </main>
+  );
+}
+
+function ReadyPipeline() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ["/api/growth/outreach/pipeline"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/growth/outreach/pipeline?limit=80");
+      return res.json() as Promise<{
+        contacts: {
+          id: string;
+          name: string | null;
+          email: string | null;
+          phone: string | null;
+          company: string | null;
+          outreach_status: string;
+          outreach_status_at?: string;
+          outreach_note?: string;
+        }[];
+      }>;
+    },
+  });
+  const rows = data?.contacts || [];
+  const mark = async (id: string, status: string) => {
+    try {
+      await apiRequest("PATCH", `/api/growth/contacts/${id}/outreach-status`, { status });
+      toast({ title: `Marked ${status}` });
+      await qc.invalidateQueries({ queryKey: ["/api/growth/outreach/pipeline"] });
+    } catch (e) {
+      toast({
+        title: "Update failed",
+        description: e instanceof Error ? e.message : "Error",
+        variant: "destructive",
+      });
+    }
+  };
+  return (
+    <section className="mt-6 space-y-4">
+      <p className="text-[12px] text-white/45 leading-relaxed">
+        People you emailed (and those you mark after a WhatsApp/call/reply). Auto inbox-reading is not
+        connected yet — when someone replies or messages, mark them <strong className="text-white/70">Interested</strong> or{" "}
+        <strong className="text-white/70">Ready</strong> here, then use AI Call.
+      </p>
+      {isLoading && <Loader2 className="h-5 w-5 animate-spin text-white/40" />}
+      <div className="max-h-96 overflow-y-auto rounded-lg border border-white/10">
+        {rows.length === 0 && !isLoading && (
+          <p className="px-3 py-6 text-[11px] text-white/35">No pipeline contacts yet. Send approach emails first.</p>
+        )}
+        {rows.map((c) => (
+          <div
+            key={c.id}
+            className="flex flex-wrap items-center gap-2 border-b border-white/5 px-3 py-2.5 text-[11px]"
+          >
+            <span
+              className={
+                c.outreach_status === "ready"
+                  ? "rounded bg-emerald-500/20 px-2 py-0.5 text-emerald-300"
+                  : c.outreach_status === "interested"
+                    ? "rounded bg-amber-500/20 px-2 py-0.5 text-amber-200"
+                    : "rounded bg-white/10 px-2 py-0.5 text-white/50"
+              }
+            >
+              {c.outreach_status}
+            </span>
+            <span className="font-medium text-white/85">{c.name || c.company || "—"}</span>
+            <span className="text-white/40">{c.email}</span>
+            <span className="text-white/35">{c.phone || ""}</span>
+            <span className="text-white/25">{c.outreach_status_at ? String(c.outreach_status_at).slice(0, 16) : ""}</span>
+            <span className="ml-auto flex flex-wrap gap-1">
+              <button
+                type="button"
+                className="rounded border border-amber-500/30 px-2 py-0.5 text-amber-200 hover:bg-amber-500/10"
+                onClick={() => mark(c.id, "interested")}
+              >
+                Interested
+              </button>
+              <button
+                type="button"
+                className="rounded border border-emerald-500/30 px-2 py-0.5 text-emerald-300 hover:bg-emerald-500/10"
+                onClick={() => mark(c.id, "ready")}
+              >
+                Ready
+              </button>
+              <button
+                type="button"
+                className="rounded border border-white/15 px-2 py-0.5 text-white/40 hover:bg-white/5"
+                onClick={() => mark(c.id, "no")}
+              >
+                No
+              </button>
+            </span>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }

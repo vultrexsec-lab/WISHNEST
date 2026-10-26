@@ -2043,28 +2043,45 @@ def public_add_survey_response(
     }
 
 
-# ── Outreach desk: simple approach email ───────────────────────────────────
+# ── Outreach desk: approach email + interested pipeline ───────────────────
 
 class OutreachApproachIn(BaseModel):
     contact_ids: list[str] = Field(default_factory=list)
     to_emails: list[str] = Field(default_factory=list)
     subject: str | None = None
     property_or_offer: str | None = None
-    body_template: str | None = None  # plain text; use {{name}} {{greeting}} {{offer}}
+    body_template: str | None = None
+    image_url: str | None = None
+    website_url: str | None = None
+    whatsapp_url: str | None = None
+    call_url: str | None = None
     dry_run: bool = False
 
 
 DEFAULT_APPROACH_BODY = """{{greeting}}
 
-WishNest is a hospitality discovery and design-intelligence platform. We feature properties and explore thoughtful before-and-after design directions with participating partners.
+I am writing from WishNest (wishnest.info) — an independent hospitality and design-intelligence platform. We publish property features and thoughtful design perspectives for owners and operators, not as a booking marketplace.
 
-We are inviting selected {{offer}} to consider a complimentary property listing on WishNest.info — no listing fee and no booking commission for this programme.
+While reviewing {{offer}}, your property stood out as a strong fit for a complimentary editorial listing on WishNest (no listing fee and no booking commission for this invitation).
 
-If useful, we can also share how a design evaluation conversation works (selection is not guaranteed; there is no obligation to purchase anything).
+You are welcome to:
+• See the platform: {{website}}
+• Message us on WhatsApp: {{whatsapp}}
+• Request a short call: {{call}}
 
-Reply to this email if you would like listing details, or ask us not to contact you again.
+If this is not relevant, simply reply "no" or ignore this note — we will not follow up further.
 
-— WishNest"""
+Warm regards,
+WishNest team
+https://wishnest.info"""
+
+
+def _plain_to_html(text: str) -> str:
+    paras = [p.strip() for p in text.split("\n\n") if p.strip()]
+    return "".join(
+        f'<p style="margin:0 0 14px;line-height:1.55;color:#1a2e28;">{p.replace(chr(10), "<br/>")}</p>'
+        for p in paras
+    )
 
 
 @router.post("/api/growth/outreach/approach-email")
@@ -2073,14 +2090,11 @@ def outreach_approach_email(
     db: Session = Depends(get_db),
     admin: str = Depends(require_admin),
 ):
-    """
-    P1: Send editable approach email to ticked contacts + extra emails.
-    Respects do_not_contact / unsubscribed. Max 50 per request.
-    """
+    """Send approach email with CTAs + optional image. Marks contacts as emailed."""
     if not email_configured():
         raise HTTPException(503, "Email is not configured (Brevo / Resend / SMTP).")
 
-    recipients: list[tuple[str, str | None]] = []
+    recipients: list[tuple[str, str | None, GrowthContact | None]] = []
     for cid in body.contact_ids or []:
         try:
             uid = uuid.UUID(str(cid))
@@ -2091,41 +2105,79 @@ def outreach_approach_email(
             continue
         if c.do_not_contact or c.unsubscribed:
             continue
-        recipients.append((c.email.lower(), c.name))
+        recipients.append((c.email.lower(), c.name, c))
 
     for em in body.to_emails or []:
         e = (em or "").strip().lower()
         if e and "@" in e:
-            recipients.append((e, None))
+            recipients.append((e, None, None))
 
     seen: set[str] = set()
-    unique: list[tuple[str, str | None]] = []
-    for em, name in recipients:
+    unique: list[tuple[str, str | None, GrowthContact | None]] = []
+    for em, name, cobj in recipients:
         if em in seen:
             continue
         seen.add(em)
-        unique.append((em, name))
+        unique.append((em, name, cobj))
 
     if not unique:
         raise HTTPException(400, "No valid email recipients.")
 
     offer = (body.property_or_offer or "").strip() or "independent hotels and resorts"
-    subject = (body.subject or "").strip() or "WishNest — complimentary listing & design conversation"
+    subject = (body.subject or "").strip() or "WishNest — complimentary listing invitation"
     template = (body.body_template or "").strip() or DEFAULT_APPROACH_BODY
+    website = (body.website_url or "").strip() or "https://wishnest.info"
+    whatsapp = (body.whatsapp_url or "").strip() or "https://wa.me/"
+    call = (body.call_url or "").strip() or "https://wishnest.info/get-reviewed"
+    image_url = (body.image_url or "").strip() or None
+    if image_url and not image_url.startswith("http"):
+        image_url = None
+
+    from datetime import datetime, timezone
 
     sent = 0
     failed = 0
     results = []
-    for em, name in unique[:50]:
+    for em, name, cobj in unique[:50]:
         greet = f"Dear {name}," if name else "Hello,"
         text = (
             template.replace("{{greeting}}", greet)
             .replace("{{name}}", name or "")
             .replace("{{offer}}", offer)
+            .replace("{{website}}", website)
+            .replace("{{whatsapp}}", whatsapp)
+            .replace("{{call}}", call)
         )
-        # simple HTML from paragraphs
-        paras = [p.strip() for p in text.split("\n\n") if p.strip()]
-        html = "".join(f"<p>{p.replace(chr(10), '<br/>')}</p>" for p in paras)
+        cta_html = f"""
+        <table role="presentation" cellpadding="0" cellspacing="0" style="margin:18px 0;">
+          <tr><td style="padding:0 0 8px 0;">
+            <a href="{website}" style="display:inline-block;background:#165948;color:#ffffff;text-decoration:none;padding:10px 16px;border-radius:8px;font-size:13px;font-weight:600;">Visit WishNest.info</a>
+          </td></tr>
+          <tr><td style="padding:0 0 8px 0;">
+            <a href="{whatsapp}" style="display:inline-block;background:#128C7E;color:#ffffff;text-decoration:none;padding:10px 16px;border-radius:8px;font-size:13px;font-weight:600;">WhatsApp us</a>
+          </td></tr>
+          <tr><td style="padding:0;">
+            <a href="{call}" style="display:inline-block;background:#1a2e28;color:#ffffff;text-decoration:none;padding:10px 16px;border-radius:8px;font-size:13px;font-weight:600;">Request a call</a>
+          </td></tr>
+        </table>
+        """
+        img_html = ""
+        if image_url:
+            img_html = (
+                f'<p style="margin:0 0 16px;"><img src="{image_url}" alt="WishNest" '
+                f'style="max-width:100%;height:auto;border-radius:10px;border:1px solid #e7eceb;" /></p>'
+            )
+        html = f"""
+        <div style="font-family:Georgia,'Times New Roman',serif;max-width:560px;margin:0 auto;padding:12px;">
+          {img_html}
+          {_plain_to_html(text)}
+          {cta_html}
+          <p style="margin-top:22px;font-size:12px;color:#7e8a92;line-height:1.5;">
+            WishNest · Hospitality · Architecture · Second-home intelligence<br/>
+            <a href="{website}" style="color:#165948;">{website}</a>
+          </p>
+        </div>
+        """
         if body.dry_run:
             results.append({"email": em, "status": "dry_run"})
             sent += 1
@@ -2134,10 +2186,19 @@ def outreach_approach_email(
             send_email(to_email=em, subject=subject, html_body=html, text_body=text)
             results.append({"email": em, "status": "sent"})
             sent += 1
+            if cobj is not None:
+                tags = cobj.tags or ""
+                if "outreach_emailed" not in tags:
+                    cobj.tags = (tags + ",outreach_emailed").strip(",")
+                meta = dict(cobj.meta or {})
+                meta["outreach_status"] = meta.get("outreach_status") or "emailed"
+                meta["last_emailed_at"] = datetime.now(timezone.utc).isoformat()
+                cobj.meta = meta
         except Exception as exc:
             results.append({"email": em, "status": "failed", "error": str(exc)[:200]})
             failed += 1
 
+    db.commit()
     return {
         "sent": sent,
         "failed": failed,
@@ -2146,3 +2207,83 @@ def outreach_approach_email(
         "results": results,
     }
 
+
+class ContactStatusIn(BaseModel):
+    status: str
+    note: str | None = None
+
+
+@router.patch("/api/growth/contacts/{contact_id}/outreach-status")
+def set_outreach_status(
+    contact_id: uuid.UUID,
+    body: ContactStatusIn,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """Mark contact interested / ready after reply or WhatsApp/call."""
+    from datetime import datetime, timezone
+
+    allowed = {"emailed", "interested", "ready", "closed", "no"}
+    st = (body.status or "").strip().lower()
+    if st not in allowed:
+        raise HTTPException(400, f"status must be one of {sorted(allowed)}")
+    c = db.query(GrowthContact).filter(GrowthContact.id == contact_id).first()
+    if not c:
+        raise HTTPException(404, "Contact not found")
+    meta = dict(c.meta or {})
+    meta["outreach_status"] = st
+    meta["outreach_status_at"] = datetime.now(timezone.utc).isoformat()
+    if body.note:
+        meta["outreach_note"] = body.note[:500]
+    c.meta = meta
+    tags = (c.tags or "").replace("outreach_interested", "").replace("outreach_ready", "")
+    if st == "interested":
+        tags = (tags + ",outreach_interested").replace(",,", ",").strip(",")
+    if st == "ready":
+        tags = (tags + ",outreach_ready").replace(",,", ",").strip(",")
+    if st == "no":
+        c.do_not_contact = True
+    c.tags = tags
+    db.commit()
+    return {"id": str(c.id), "outreach_status": st, "ok": True}
+
+
+@router.get("/api/growth/outreach/pipeline")
+def outreach_pipeline(
+    status: str | None = None,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """Contacts in outreach funnel."""
+    rows = (
+        db.query(GrowthContact)
+        .order_by(GrowthContact.updated_at.desc())
+        .limit(400)
+        .all()
+    )
+    out = []
+    for c in rows:
+        meta = c.meta or {}
+        st = (meta.get("outreach_status") or "").lower()
+        if not st and c.tags and "outreach_emailed" in (c.tags or ""):
+            st = "emailed"
+        if not st:
+            continue
+        if status and st != status.lower():
+            continue
+        out.append({
+            "id": str(c.id),
+            "name": c.name,
+            "email": c.email,
+            "phone": c.phone,
+            "company": c.company,
+            "source": c.source,
+            "outreach_status": st,
+            "outreach_status_at": meta.get("outreach_status_at") or meta.get("last_emailed_at"),
+            "outreach_note": meta.get("outreach_note"),
+            "tags": c.tags,
+        })
+        if len(out) >= min(limit, 100):
+            break
+    return {"contacts": out, "total": len(out)}
