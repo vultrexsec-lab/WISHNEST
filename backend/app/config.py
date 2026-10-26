@@ -84,6 +84,8 @@ class Settings(BaseSettings):
     infobip_api_key: str = os.environ.get("INFOBIP_API_KEY", "")
     infobip_base_url: str = os.environ.get("INFOBIP_BASE_URL", "")
     infobip_whatsapp_from: str = os.environ.get("INFOBIP_WHATSAPP_FROM", "")
+    baileys_url: str = os.environ.get("BAILEYS_URL", "")
+    baileys_api_key: str = os.environ.get("BAILEYS_API_KEY", "")
 
 
 

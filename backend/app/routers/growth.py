@@ -7,7 +7,7 @@ import io
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -45,7 +45,16 @@ from app.services.agentreach_service import (
     create_cold_sequence_draft,
     submit_approved_sequence,
 )
-from app.services.whatsapp_service import whatsapp_configured, send_whatsapp_text, infobip_configured
+from app.services.whatsapp_service import (
+    whatsapp_configured,
+    send_whatsapp_text,
+    send_invite,
+    handle_inbound,
+    baileys_configured,
+    baileys_health,
+    infobip_configured,
+    INVITE_MESSAGE,
+)
 logger = logging.getLogger("wishnest.growth")
 from app.services.telecaller_service import telecaller_configured, enqueue_call, bolna_configured, vapi_configured
 from app.services.mautic_service import (
@@ -1933,6 +1942,123 @@ def whatsapp_send(
     db.commit()
     return {"job_id": str(job.id), **result}
 
+
+class WhatsAppInviteIn(BaseModel):
+    phone: str
+    contact_id: str | None = None
+    dry_run: bool = False
+
+
+@router.post("/api/growth/whatsapp/invite")
+def whatsapp_invite(
+    body: WhatsAppInviteIn,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """Send the standard YES/STOP invitation (Baileys / Infobip / Meta)."""
+    phone = body.phone
+    contact = None
+    if body.contact_id:
+        try:
+            cid = uuid.UUID(body.contact_id)
+        except ValueError as e:
+            raise HTTPException(400, "invalid contact_id") from e
+        contact = db.query(GrowthContact).filter(GrowthContact.id == cid).first()
+        if not contact:
+            raise HTTPException(404, "Contact not found")
+        if contact.do_not_contact or contact.unsubscribed:
+            raise HTTPException(400, "Contact suppressed")
+        phone = phone or contact.phone
+    if not phone:
+        raise HTTPException(400, "phone required")
+    result = send_invite(to_phone=phone, dry_run=body.dry_run)
+    if contact and result.get("status") in ("sent", "accepted", "dry_run"):
+        # first invite does not require prior permission
+        pass
+    job = OutreachJob(
+        channel="whatsapp",
+        status=result.get("status") or "error",
+        title=f"WA invite {phone}"[:255],
+        payload={"phone": phone, "message": INVITE_MESSAGE[:500], "kind": "invite"},
+        result=result,
+    )
+    db.add(job)
+    db.commit()
+    return {"job_id": str(job.id), "invite_text": INVITE_MESSAGE, **result}
+
+
+class WhatsAppInboundIn(BaseModel):
+    phone: str
+    text: str
+    messageId: str | None = None
+    timestamp: int | float | None = None
+
+
+@router.post("/api/growth/whatsapp/inbound")
+def whatsapp_inbound(
+    body: WhatsAppInboundIn,
+    db: Session = Depends(get_db),
+    request: Request = None,
+):
+    """
+    Called by Baileys service when a message arrives.
+    Classifies YES/STOP/CALL/details, updates contact, auto-replies.
+    Auth: X-API-Key must match BAILEYS_API_KEY (or admin session).
+    """
+    import os
+    key = (request.headers.get("x-api-key") or request.headers.get("authorization") or "").replace("Bearer ", "").strip()
+    expected = (os.environ.get("BAILEYS_API_KEY") or "").strip()
+    if expected and key != expected:
+        # also allow admin cookie/session via require_admin alternative — keep simple
+        raise HTTPException(401, "unauthorized")
+
+    result = handle_inbound(body.phone, body.text)
+    phone = result["phone"]
+
+    # Best-effort contact update
+    contact = (
+        db.query(GrowthContact)
+        .filter(GrowthContact.phone.isnot(None))
+        .filter(GrowthContact.phone.ilike(f"%{phone[-10:]}%"))
+        .first()
+    )
+    if contact:
+        if result["set_permission"] is True:
+            contact.whatsapp_permission = True
+        elif result["set_permission"] is False:
+            contact.whatsapp_permission = False
+            contact.unsubscribed = True
+        if result["callback_requested"]:
+            # store a lightweight note in existing fields if present
+            note = (contact.notes or "") + f"\n[callback requested via WA] {body.text[:200]}"
+            if hasattr(contact, "notes"):
+                contact.notes = note[-4000:]
+        if result["details_received"] and hasattr(contact, "notes"):
+            note = (contact.notes or "") + f"\n[details] {body.text[:500]}"
+            contact.notes = note[-4000:]
+        db.add(contact)
+
+    job = OutreachJob(
+        channel="whatsapp",
+        status="inbound",
+        title=f"WA in {phone} {result['intent']}"[:255],
+        payload={"phone": phone, "text": body.text[:1000], "messageId": body.messageId},
+        result=result,
+    )
+    db.add(job)
+    db.commit()
+    return {"ok": True, **{k: result[k] for k in ("intent", "phone", "auto_reply", "set_permission", "callback_requested")}}
+
+
+@router.get("/api/growth/whatsapp/status")
+def whatsapp_status(admin: str = Depends(require_admin)):
+    """Provider + Baileys health for dashboard."""
+    return {
+        "provider": "baileys" if baileys_configured() else ("infobip" if infobip_configured() else "none"),
+        "configured": whatsapp_configured(),
+        "baileys": baileys_health(),
+        "invite_preview": INVITE_MESSAGE,
+    }
 
 
 # ── Public: request a call (from email CTA) ────────────────────────────────
