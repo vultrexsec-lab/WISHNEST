@@ -891,56 +891,63 @@ function ReadyPipeline() {
         <strong className="text-red-300/80">Delete</strong> = remove contact permanently. Newsletter list is separate and stays complete.
       </p>
       {isLoading && <Loader2 className="h-5 w-5 animate-spin text-white/40" />}
-      <div className="max-h-96 overflow-y-auto rounded-lg border border-white/10">
+      <div className="max-h-[22rem] overflow-y-auto overscroll-contain rounded-lg border border-white/10">
         {rows.length === 0 && !isLoading && (
           <p className="px-3 py-6 text-[11px] text-white/35">No pipeline contacts yet. Send approach emails first.</p>
         )}
         {rows.map((c) => (
-          <div key={c.id} className="border-b border-white/5 px-3 py-2.5 text-[11px] space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <span
-                className={
-                  c.outreach_status === "ready"
-                    ? "rounded bg-emerald-500/20 px-2 py-0.5 text-emerald-300"
-                    : c.outreach_status === "interested"
-                      ? "rounded bg-amber-500/20 px-2 py-0.5 text-amber-200"
-                      : c.outreach_status === "no"
-                        ? "rounded bg-white/10 px-2 py-0.5 text-white/45"
-                        : "rounded bg-white/10 px-2 py-0.5 text-white/50"
-                }
-              >
-                {c.outreach_status}
-              </span>
-              <span className="font-medium text-white/85">{c.name || c.company || "—"}</span>
-              <span className="text-white/40">{c.email}</span>
-              <span className="text-white/35">{c.phone || ""}</span>
-              <span className="text-white/25">{c.outreach_status_at ? String(c.outreach_status_at).slice(0, 16) : ""}</span>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
+          <div
+            key={c.id}
+            className="flex items-center gap-2 border-b border-white/5 px-3 py-2 text-[11px] min-h-[2.75rem]"
+          >
+            <span
+              className={
+                "shrink-0 rounded px-2 py-0.5 text-[10px] " +
+                (c.outreach_status === "ready"
+                  ? "bg-emerald-500/20 text-emerald-300"
+                  : c.outreach_status === "interested"
+                    ? "bg-amber-500/20 text-amber-200"
+                    : c.outreach_status === "no"
+                      ? "bg-white/10 text-white/45"
+                      : "bg-white/10 text-white/50")
+              }
+            >
+              {c.outreach_status}
+            </span>
+            <span className="min-w-0 flex-1 truncate font-medium text-white/85">
+              {c.name || c.company || "—"}
+            </span>
+            <span className="hidden sm:inline min-w-0 max-w-[200px] truncate text-white/40">
+              {c.email}
+            </span>
+            <span className="shrink-0 text-white/30 tabular-nums">
+              {c.outreach_status_at ? String(c.outreach_status_at).slice(0, 10) : ""}
+            </span>
+            <span className="ml-auto flex shrink-0 flex-nowrap items-center gap-1">
               <button
                 type="button"
-                className="rounded border border-amber-500/30 px-2.5 py-1 text-amber-200 hover:bg-amber-500/10"
+                className="rounded border border-amber-500/30 px-2 py-0.5 text-amber-200 hover:bg-amber-500/10"
                 onClick={() => mark(c.id, "interested")}
               >
                 Interested
               </button>
               <button
                 type="button"
-                className="rounded border border-emerald-500/30 px-2.5 py-1 text-emerald-300 hover:bg-emerald-500/10"
+                className="rounded border border-emerald-500/30 px-2 py-0.5 text-emerald-300 hover:bg-emerald-500/10"
                 onClick={() => mark(c.id, "ready")}
               >
                 Ready
               </button>
               <button
                 type="button"
-                className="rounded border border-white/15 px-2.5 py-1 text-white/50 hover:bg-white/5"
+                className="rounded border border-white/15 px-2 py-0.5 text-white/50 hover:bg-white/5"
                 onClick={() => mark(c.id, "no")}
               >
                 No
               </button>
               <button
                 type="button"
-                className="rounded border border-white/20 px-2.5 py-1 text-white/60 hover:bg-white/5"
+                className="rounded border border-white/20 px-2 py-0.5 text-white/55 hover:bg-white/5"
                 onClick={async () => {
                   try {
                     await apiRequest("POST", `/api/growth/contacts/${c.id}/clear-outreach`, {});
@@ -959,7 +966,7 @@ function ReadyPipeline() {
               </button>
               <button
                 type="button"
-                className="rounded border border-red-500/40 bg-red-500/10 px-2.5 py-1 text-red-300 hover:bg-red-500/20"
+                className="rounded border border-red-500/40 bg-red-500/10 px-2 py-0.5 text-red-300 hover:bg-red-500/20"
                 onClick={async () => {
                   if (!confirm(`Delete contact ${c.email || c.name || c.id}?`)) return;
                   try {
@@ -978,10 +985,9 @@ function ReadyPipeline() {
               >
                 Delete
               </button>
-            </div>
+            </span>
           </div>
         ))}
-
       </div>
     </section>
   );
