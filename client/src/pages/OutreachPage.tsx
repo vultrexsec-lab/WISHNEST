@@ -523,9 +523,15 @@ https://wishnest.info`,
                     });
                     const data = await res.json();
                     setLastSendLog(data.results || []);
+                    const firstFail = (data.results || []).find((r: { status: string }) => r.status === "failed") as
+                      | { email?: string; error?: string }
+                      | undefined;
                     toast({
-                      title: "Approach email",
-                      description: `Sent ${data.sent}, failed ${data.failed}`,
+                      title: data.failed && !data.sent ? "Email failed" : "Approach email",
+                      description: firstFail?.error
+                        ? `Sent ${data.sent}, failed ${data.failed}: ${firstFail.error}`
+                        : `Sent ${data.sent}, failed ${data.failed}`,
+                      variant: data.failed && !data.sent ? "destructive" : "default",
                     });
                     await qc.invalidateQueries({ queryKey: ["/api/growth/contacts"] });
                   } catch (e) {

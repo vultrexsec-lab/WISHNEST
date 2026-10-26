@@ -1,5 +1,6 @@
 """Growth & Intelligence OS — admin APIs (Campaign Manager control module)."""
 from __future__ import annotations
+import logging
 
 import csv
 import io
@@ -45,6 +46,7 @@ from app.services.agentreach_service import (
     submit_approved_sequence,
 )
 from app.services.whatsapp_service import whatsapp_configured, send_whatsapp_text, infobip_configured
+logger = logging.getLogger("wishnest.growth")
 from app.services.telecaller_service import telecaller_configured, enqueue_call, bolna_configured, vapi_configured
 from app.services.mautic_service import (
     mautic_configured,
@@ -2210,18 +2212,28 @@ def outreach_approach_email(
             results.append({"email": em, "status": "sent"})
             sent += 1
             if cobj is not None:
-                tags = cobj.tags or ""
-                if "outreach_emailed" not in tags:
-                    cobj.tags = (tags + ",outreach_emailed").strip(",")
-                meta = dict(cobj.meta or {})
-                meta["outreach_status"] = meta.get("outreach_status") or "emailed"
-                meta["last_emailed_at"] = datetime.now(timezone.utc).isoformat()
-                cobj.meta = meta
+                try:
+                    from sqlalchemy.orm.attributes import flag_modified
+                    tags = cobj.tags or ""
+                    if "outreach_emailed" not in tags:
+                        cobj.tags = (tags + ",outreach_emailed").strip(",")
+                    meta = dict(cobj.meta or {})
+                    meta["outreach_status"] = meta.get("outreach_status") or "emailed"
+                    meta["last_emailed_at"] = datetime.now(timezone.utc).isoformat()
+                    cobj.meta = meta
+                    flag_modified(cobj, "meta")
+                except Exception as meta_exc:
+                    logger.warning("outreach meta update failed for %s: %s", em, meta_exc)
         except Exception as exc:
-            results.append({"email": em, "status": "failed", "error": str(exc)[:200]})
+            logger.exception("approach email failed for %s", em)
+            results.append({"email": em, "status": "failed", "error": str(exc)[:300]})
             failed += 1
 
-    db.commit()
+    try:
+        db.commit()
+    except Exception as commit_exc:
+        logger.exception("outreach commit failed after sends: %s", commit_exc)
+        db.rollback()
     return {
         "sent": sent,
         "failed": failed,
