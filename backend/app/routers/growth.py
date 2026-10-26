@@ -1931,6 +1931,35 @@ def whatsapp_send(
     if not phone:
         raise HTTPException(400, "phone required")
     result = send_whatsapp_text(to_phone=phone, body=body.message, dry_run=body.dry_run)
+    # Flatten object details for UI
+    detail = result.get("detail")
+    if isinstance(detail, (dict, list)):
+        result = {**result, "detail": str(detail)[:300]}
+    if result.get("status") == "stub_queued":
+        result = {
+            **result,
+            "status": "error",
+            "detail": result.get("detail")
+            or "WhatsApp not configured on backend. Set BAILEYS_URL + BAILEYS_API_KEY on Render.",
+        }
+    # Reset conversation step when sending invite-style message
+    msg = (body.message or "").lower()
+    if "reply yes" in msg or "stop to opt out" in msg:
+        phone_digits = "".join(c for c in phone if c.isdigit())
+        contact = (
+            db.query(GrowthContact)
+            .filter(GrowthContact.phone.isnot(None))
+            .filter(GrowthContact.phone.ilike(f"%{phone_digits[-10:]}%"))
+            .first()
+        )
+        if not contact and phone_digits:
+            contact = GrowthContact(phone=phone_digits, source="whatsapp_send", meta={})
+            db.add(contact)
+        if contact:
+            base = dict(contact.meta or {}) if isinstance(contact.meta, dict) else {}
+            base["whatsapp"] = {"wa_step": 0, "collected": {}}
+            contact.meta = base
+            db.add(contact)
     job = OutreachJob(
         channel="whatsapp",
         status=result.get("status") or "error",

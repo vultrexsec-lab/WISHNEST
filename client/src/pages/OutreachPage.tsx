@@ -715,10 +715,15 @@ https://wishnest.info`,
               onClick={async () => {
                 setWaBusy(true);
                 const targets = new Set<string>();
+                const norm = (raw: string) => {
+                  let d = raw.replace(/\D/g, "");
+                  if (d.length === 10 && /^[6-9]/.test(d)) d = "91" + d;
+                  return d;
+                };
                 Object.entries(waPicked).forEach(([ph, on]) => {
-                  if (on && ph) targets.add(ph.replace(/\D/g, ""));
+                  if (on && ph) targets.add(norm(ph));
                 });
-                if (waPhone.trim()) targets.add(waPhone.trim().replace(/\D/g, ""));
+                if (waPhone.trim()) targets.add(norm(waPhone.trim()));
                 let ok = 0;
                 let fail = 0;
                 const errors: string[] = [];
@@ -734,9 +739,10 @@ https://wishnest.info`,
                       if (st === "accepted" || st === "sent" || st === "pending") ok += 1;
                       else {
                         fail += 1;
-                        if (data.hint || data.detail) {
-                          errors.push(String(data.hint || data.detail).slice(0, 120));
-                        }
+                        const d = data.hint || data.detail || data.status || "failed";
+                        errors.push(
+                          (typeof d === "string" ? d : JSON.stringify(d)).slice(0, 160),
+                        );
                       }
                     } catch (e) {
                       fail += 1;

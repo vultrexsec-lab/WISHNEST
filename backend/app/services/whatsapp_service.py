@@ -79,6 +79,15 @@ def _digits(phone: str) -> str:
     return "".join(c for c in (phone or "") if c.isdigit())
 
 
+def normalize_wa_phone(phone: str) -> str:
+    """E.164 digits. 10-digit Indian numbers get 91 prefix."""
+    d = _digits(phone)
+    if len(d) == 10 and d[0] in "6789":
+        d = "91" + d
+    return d
+
+
+
 def baileys_configured() -> bool:
     return bool(os.environ.get("BAILEYS_URL") and os.environ.get("BAILEYS_API_KEY"))
 
@@ -122,8 +131,8 @@ def send_whatsapp_text(
     template_language: str = "en",
 ) -> dict[str, Any]:
     """Send text (or Infobip template when configured)."""
-    phone = _digits(to_phone)
-    if not phone:
+    phone = normalize_wa_phone(to_phone)
+    if not phone or len(phone) < 10:
         return {"status": "error", "detail": "invalid phone — use E.164 digits e.g. 9198XXXXXXXX"}
 
     text = (body or "")[:4000]
