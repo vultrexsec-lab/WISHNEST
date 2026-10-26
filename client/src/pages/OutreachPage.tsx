@@ -53,7 +53,7 @@ export function OutreachPage(): JSX.Element {
   const { data: contactsResp } = useQuery<{ contacts: Contact[]; total: number }>({
     queryKey: ["/api/growth/contacts", "outreach"],
     queryFn: async () => {
-      const res = await apiRequest("GET", "/api/growth/contacts?limit=100");
+      const res = await apiRequest("GET", "/api/growth/contacts?limit=300");
       return res.json();
     },
   });
@@ -65,8 +65,22 @@ export function OutreachPage(): JSX.Element {
     "WishNest — complimentary listing & design conversation",
   );
   const [emailOffer, setEmailOffer] = useState("independent hotels and resorts");
+  const [emailBody, setEmailBody] = useState(
+    `{{greeting}}
+
+WishNest is a hospitality discovery and design-intelligence platform. We feature properties and explore thoughtful before-and-after design directions with participating partners.
+
+We are inviting selected {{offer}} to consider a complimentary property listing on WishNest.info — no listing fee and no booking commission for this programme.
+
+If useful, we can also share how a design evaluation conversation works (selection is not guaranteed; there is no obligation to purchase anything).
+
+Reply to this email if you would like listing details, or ask us not to contact you again.
+
+— WishNest`,
+  );
   const [extraEmails, setExtraEmails] = useState("");
   const [emailBusy, setEmailBusy] = useState(false);
+  const [lastSendLog, setLastSendLog] = useState<{ email: string; status: string; error?: string }[]>([]);
 
   // WhatsApp
   const [waPhone, setWaPhone] = useState("");
@@ -260,58 +274,106 @@ export function OutreachPage(): JSX.Element {
           </section>
         )}
 
-        {/* EMAIL */}
+        
+        {/* EMAIL — P1: tick contacts + editable template */}
         {tab === "email" && (
           <section className="mt-6 space-y-4">
-            <p className="text-[12px] text-white/40">
-              Approach email (listing invitation). Max 50 per send. Skips unsubscribed / do-not-contact.
+            <p className="text-[12px] text-white/45 leading-relaxed">
+              <strong className="text-white/70">P1 Email desk.</strong> All contacts with email (newsletter import,
+              Places import, CSV, manual) appear below. Tick rows, edit template, send.
+              Placeholders: <code className="text-orange-200/90">{"{{greeting}}"}</code>{" "}
+              <code className="text-orange-200/90">{"{{name}}"}</code>{" "}
+              <code className="text-orange-200/90">{"{{offer}}"}</code>. Max 50 per send. Skips unsubscribed / do-not-contact.
             </p>
-            <input
-              value={emailSubject}
-              onChange={(e) => setEmailSubject(e.target.value)}
-              className="h-9 w-full rounded-md border border-white/15 bg-[#121816] px-3 text-[12px]"
-              placeholder="Subject"
-            />
-            <input
-              value={emailOffer}
-              onChange={(e) => setEmailOffer(e.target.value)}
-              className="h-9 w-full rounded-md border border-white/15 bg-[#121816] px-3 text-[12px]"
-              placeholder="Offer line e.g. independent resorts in Lonavala"
-            />
-            <textarea
-              value={extraEmails}
-              onChange={(e) => setExtraEmails(e.target.value)}
-              rows={2}
-              className="w-full rounded-md border border-white/15 bg-[#121816] px-3 py-2 text-[12px]"
-              placeholder="Extra emails (comma or newline separated) — optional"
-            />
-            <div className="max-h-40 overflow-y-auto rounded-lg border border-white/10">
+
+            <div className="flex flex-wrap gap-2 items-center">
+              <button
+                type="button"
+                className="rounded-md border border-white/15 bg-white/5 px-3 py-1.5 text-[11px] text-white/80 hover:bg-white/10"
+                onClick={() => {
+                  const next: Record<string, boolean> = { ...picked };
+                  contacts.filter((c) => c.email && !c.do_not_contact && !c.unsubscribed).forEach((c) => {
+                    next[c.id] = true;
+                  });
+                  setPicked(next);
+                }}
+              >
+                Select all with email
+              </button>
+              <button
+                type="button"
+                className="rounded-md border border-white/15 bg-white/5 px-3 py-1.5 text-[11px] text-white/80 hover:bg-white/10"
+                onClick={() => setPicked({})}
+              >
+                Clear selection
+              </button>
+              <span className="text-[11px] text-orange-200/90">
+                {pickedIds.length} selected · {contacts.filter((c) => c.email).length} with email · {contacts.length} total contacts
+              </span>
+            </div>
+
+            <div className="max-h-56 overflow-y-auto rounded-lg border border-white/10">
               {contacts.filter((c) => c.email).length === 0 ? (
-                <p className="px-3 py-4 text-[11px] text-white/35">No contacts with email yet.</p>
+                <p className="px-3 py-4 text-[11px] text-white/35">
+                  No contacts with email yet. Use Data intake (Places import), newsletter import, or CSV — then refresh.
+                </p>
               ) : (
                 contacts
                   .filter((c) => c.email)
                   .map((c) => (
                     <label
                       key={c.id}
-                      className="flex cursor-pointer items-center gap-2 border-b border-white/5 px-3 py-2 text-[11px] text-white/70"
+                      className="flex cursor-pointer items-center gap-2 border-b border-white/5 px-3 py-2 text-[11px] text-white/70 hover:bg-white/[0.03]"
                     >
                       <input
                         type="checkbox"
+                        className="rounded border-white/30"
                         checked={!!picked[c.id]}
+                        disabled={!!c.do_not_contact || !!c.unsubscribed}
                         onChange={() => setPicked((p) => ({ ...p, [c.id]: !p[c.id] }))}
                       />
-                      <span className="truncate">{c.name || c.company || "—"}</span>
-                      <span className="text-white/35">{c.email}</span>
+                      <span className="min-w-0 flex-1 truncate font-medium text-white/85">{c.name || c.company || "—"}</span>
+                      <span className="truncate text-white/40 max-w-[180px]">{c.email}</span>
+                      <span className="shrink-0 rounded bg-white/10 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-white/45">
+                        {c.source || c.contact_type || "contact"}
+                      </span>
                     </label>
                   ))
               )}
             </div>
+
+            <input
+              value={emailSubject}
+              onChange={(e) => setEmailSubject(e.target.value)}
+              className="h-9 w-full rounded-md border border-white/15 bg-[#121816] px-3 text-[12px] text-white"
+              placeholder="Subject"
+            />
+            <input
+              value={emailOffer}
+              onChange={(e) => setEmailOffer(e.target.value)}
+              className="h-9 w-full rounded-md border border-white/15 bg-[#121816] px-3 text-[12px] text-white"
+              placeholder="Offer line → fills {{offer}} e.g. independent resorts in Lonavala"
+            />
+            <textarea
+              value={emailBody}
+              onChange={(e) => setEmailBody(e.target.value)}
+              rows={10}
+              className="w-full rounded-md border border-white/15 bg-[#121816] px-3 py-2 text-[12px] text-white/90 leading-relaxed font-mono"
+              placeholder="Email body template"
+            />
+            <textarea
+              value={extraEmails}
+              onChange={(e) => setExtraEmails(e.target.value)}
+              rows={2}
+              className="w-full rounded-md border border-white/15 bg-[#121816] px-3 py-2 text-[12px] text-white"
+              placeholder="Extra emails (comma or newline) — optional, for quick tests"
+            />
+
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
-                disabled={emailBusy}
-                className="h-9 rounded-full bg-orange-700 px-4 text-[11px] text-white"
+                disabled={emailBusy || (pickedIds.length === 0 && !extraEmails.includes("@"))}
+                className="h-9 rounded-full bg-orange-700 px-4 text-[11px] text-white hover:bg-orange-600"
                 onClick={async () => {
                   setEmailBusy(true);
                   try {
@@ -324,13 +386,16 @@ export function OutreachPage(): JSX.Element {
                       to_emails: extras,
                       subject: emailSubject,
                       property_or_offer: emailOffer,
+                      body_template: emailBody,
                       dry_run: false,
                     });
                     const data = await res.json();
+                    setLastSendLog(data.results || []);
                     toast({
                       title: "Approach email",
                       description: `Sent ${data.sent}, failed ${data.failed}`,
                     });
+                    await qc.invalidateQueries({ queryKey: ["/api/growth/contacts"] });
                   } catch (e) {
                     toast({
                       title: "Email failed",
@@ -345,10 +410,20 @@ export function OutreachPage(): JSX.Element {
                 {emailBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Send approach emails"}
               </Button>
             </div>
+
+            {lastSendLog.length > 0 && (
+              <div className="max-h-32 overflow-y-auto rounded-lg border border-white/10 p-2 text-[10px] text-white/50">
+                {lastSendLog.map((r, i) => (
+                  <div key={i} className={r.status === "sent" ? "text-emerald-400/80" : "text-red-300/80"}>
+                    {r.email}: {r.status}{r.error ? ` — ${r.error}` : ""}
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
         )}
 
-        {/* WHATSAPP */}
+{/* WHATSAPP */}
         {tab === "whatsapp" && (
           <section className="mt-6 space-y-4">
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-100/90">

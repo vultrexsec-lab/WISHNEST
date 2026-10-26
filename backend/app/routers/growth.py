@@ -1978,7 +1978,21 @@ class OutreachApproachIn(BaseModel):
     to_emails: list[str] = Field(default_factory=list)
     subject: str | None = None
     property_or_offer: str | None = None
+    body_template: str | None = None  # plain text; use {{name}} {{greeting}} {{offer}}
     dry_run: bool = False
+
+
+DEFAULT_APPROACH_BODY = """{{greeting}}
+
+WishNest is a hospitality discovery and design-intelligence platform. We feature properties and explore thoughtful before-and-after design directions with participating partners.
+
+We are inviting selected {{offer}} to consider a complimentary property listing on WishNest.info — no listing fee and no booking commission for this programme.
+
+If useful, we can also share how a design evaluation conversation works (selection is not guaranteed; there is no obligation to purchase anything).
+
+Reply to this email if you would like listing details, or ask us not to contact you again.
+
+— WishNest"""
 
 
 @router.post("/api/growth/outreach/approach-email")
@@ -1988,13 +2002,13 @@ def outreach_approach_email(
     admin: str = Depends(require_admin),
 ):
     """
-    Send a short WishNest approach email (listing / before-after invitation).
-    Only contacts with email; respects do_not_contact / unsubscribed.
+    P1: Send editable approach email to ticked contacts + extra emails.
+    Respects do_not_contact / unsubscribed. Max 50 per request.
     """
     if not email_configured():
         raise HTTPException(503, "Email is not configured (Brevo / Resend / SMTP).")
 
-    recipients: list[tuple[str, str | None]] = []  # email, name
+    recipients: list[tuple[str, str | None]] = []
     for cid in body.contact_ids or []:
         try:
             uid = uuid.UUID(str(cid))
@@ -2012,9 +2026,8 @@ def outreach_approach_email(
         if e and "@" in e:
             recipients.append((e, None))
 
-    # dedupe
-    seen = set()
-    unique = []
+    seen: set[str] = set()
+    unique: list[tuple[str, str | None]] = []
     for em, name in recipients:
         if em in seen:
             continue
@@ -2026,24 +2039,21 @@ def outreach_approach_email(
 
     offer = (body.property_or_offer or "").strip() or "independent hotels and resorts"
     subject = (body.subject or "").strip() or "WishNest — complimentary listing & design conversation"
+    template = (body.body_template or "").strip() or DEFAULT_APPROACH_BODY
+
     sent = 0
     failed = 0
     results = []
-    for em, name in unique[:50]:  # hard cap per request
+    for em, name in unique[:50]:
         greet = f"Dear {name}," if name else "Hello,"
-        html = f"""
-        <p>{greet}</p>
-        <p>WishNest is a hospitality discovery and design-intelligence platform.
-        We feature properties like yours and explore thoughtful before-and-after design directions with participating partners.</p>
-        <p>We are inviting selected <strong>{offer}</strong> to consider a complimentary property listing on WishNest.info — no listing fee and no booking commission for this programme.</p>
-        <p>If useful, we can also share how a design evaluation conversation works (selection is not guaranteed; there is no obligation to purchase anything).</p>
-        <p>Reply to this email if you would like listing details, or ask us not to contact you again.</p>
-        <p>— WishNest</p>
-        """
         text = (
-            f"{greet}\n\nWishNest invites selected hospitality properties to a complimentary listing "
-            f"programme for {offer}. No listing fee. Reply if interested, or ask us not to contact you.\n\n— WishNest"
+            template.replace("{{greeting}}", greet)
+            .replace("{{name}}", name or "")
+            .replace("{{offer}}", offer)
         )
+        # simple HTML from paragraphs
+        paras = [p.strip() for p in text.split("\n\n") if p.strip()]
+        html = "".join(f"<p>{p.replace(chr(10), '<br/>')}</p>" for p in paras)
         if body.dry_run:
             results.append({"email": em, "status": "dry_run"})
             sent += 1
