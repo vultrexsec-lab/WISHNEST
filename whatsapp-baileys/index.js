@@ -197,55 +197,59 @@ async function startSocket() {
   });
 
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
-    if (type !== "notify") return;
-    for (const msg of messages) {
-      if (msg.key.fromMe) continue;
-      const remote = msg.key.remoteJid || "";
-      if (remote.endsWith("@g.us")) continue;
-      const phone = digits(remote.split("@")[0]);
-      const text =
-        msg.message?.conversation ||
-        msg.message?.extendedTextMessage?.text ||
-        msg.message?.imageMessage?.caption ||
-        "";
-      if (!phone || !text) continue;
+    logger.info({ type, count: messages?.length || 0 }, "messages.upsert");
+    for (const msg of messages || []) {
+      try {
+        if (msg.key?.fromMe) continue;
+        const remote = msg.key?.remoteJid || "";
+        if (!remote || remote === "status@broadcast" || remote.endsWith("@g.us")) continue;
 
-      logger.info({ phone, text: text.slice(0, 120) }, "inbound");
-
-      const backend = await notifyBackend({
-        phone,
-        text: text.trim(),
-        messageId: msg.key.id,
-        timestamp: msg.messageTimestamp,
-      });
-
-      // If backend handled send (returned auto_reply and likely sent), skip local
-      // Backend send_result may fail if BAILEYS_URL wrong — always ensure a reply
-      const backendSent =
-        backend.ok &&
-        backend.data &&
-        (backend.data.auto_reply || backend.data.ok);
-
-      // Always send from Baileys (backend only stores state / returns text)
-      let reply = null;
-      if (backend.ok && backend.data?.auto_reply) {
-        reply = backend.data.auto_reply;
-        if (typeof backend.data.next_step === "number") {
-          localState.set(phone, {
-            step: backend.data.next_step,
-            collected: backend.data.collected || {},
-          });
+        // phone from jid (s.whatsapp.net or legacy); LID may need alternate
+        let phone = digits(remote.split("@")[0]);
+        if (phone.length < 10 && msg.key?.participant) {
+          phone = digits(String(msg.key.participant).split("@")[0]);
         }
-      } else {
-        reply = nextLocalReply(phone, text.trim()).reply;
-      }
-      if (reply) {
-        try {
+        const text = (
+          msg.message?.conversation ||
+          msg.message?.extendedTextMessage?.text ||
+          msg.message?.imageMessage?.caption ||
+          msg.message?.buttonsResponseMessage?.selectedDisplayText ||
+          msg.message?.listResponseMessage?.title ||
+          msg.message?.templateButtonReplyMessage?.selectedDisplayText ||
+          ""
+        ).trim();
+
+        logger.info({ remote, phone, text: text.slice(0, 80), type }, "inbound raw");
+        if (!phone || phone.length < 8 || !text) continue;
+
+        const backend = await notifyBackend({
+          phone,
+          text,
+          messageId: msg.key?.id,
+          timestamp: msg.messageTimestamp,
+        });
+
+        let reply = null;
+        if (backend.ok && backend.data?.auto_reply) {
+          reply = backend.data.auto_reply;
+          if (typeof backend.data.next_step === "number") {
+            localState.set(phone, {
+              step: backend.data.next_step,
+              collected: backend.data.collected || {},
+            });
+          }
+        } else {
+          reply = nextLocalReply(phone, text).reply;
+        }
+
+        if (reply) {
+          // small delay feels natural + avoids race
+          await new Promise((r) => setTimeout(r, 600));
           await sendText(phone, reply);
           logger.info({ phone, via: backend.ok ? "backend-text" : "local" }, "auto-reply sent");
-        } catch (e) {
-          logger.error({ err: String(e) }, "auto-reply failed");
         }
+      } catch (e) {
+        logger.error({ err: String(e) }, "inbound handler error");
       }
     }
   });
@@ -282,6 +286,7 @@ ${lastQrDataUrl ? `<p>Scan QR:</p><img src="${lastQrDataUrl}" alt="QR"/>` : conn
 app.get("/health", (_req, res) => {
   res.json({
     ok: true,
+    rev: "auto-reply-v3",
     status: connectionStatus,
     connected: connectionStatus === "open",
     hasQr: Boolean(lastQrDataUrl),
