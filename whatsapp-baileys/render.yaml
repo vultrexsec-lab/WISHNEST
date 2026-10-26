@@ -1,0 +1,22 @@
+# Optional Blueprint — or create service manually in Render dashboard
+services:
+  - type: web
+    name: wishnest-baileys
+    runtime: node
+    rootDir: whatsapp-baileys
+    buildCommand: npm install
+    startCommand: node index.js
+    plan: free
+    envVars:
+      - key: BAILEYS_API_KEY
+        value: wishnest-baileys-secret
+      - key: BACKEND_WEBHOOK_URL
+        value: https://wishnest-backend-kgu2.onrender.com
+      - key: PORT
+        value: "10000"
+      - key: AUTH_DIR
+        value: /opt/render/project/src/auth_session
+    disk:
+      name: baileys-session
+      mountPath: /opt/render/project/src/auth_session
+      sizeGB: 1
