@@ -92,7 +92,7 @@ https://wishnest.info`,
   const [emailImageUrl, setEmailImageUrl] = useState("");
   const [emailWebsite, setEmailWebsite] = useState("https://wishnest.info");
   const [emailWhatsapp, setEmailWhatsapp] = useState("https://wa.me/91");
-  const [emailCallUrl, setEmailCallUrl] = useState("https://wishnest.info/get-reviewed");
+  const [emailCallUrl, setEmailCallUrl] = useState("https://wishnest.info/request-call");
   const [extraEmails, setExtraEmails] = useState("");
   const [emailBusy, setEmailBusy] = useState(false);
   const [lastSendLog, setLastSendLog] = useState<{ email: string; status: string; error?: string }[]>([]);

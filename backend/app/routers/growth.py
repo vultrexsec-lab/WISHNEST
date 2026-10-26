@@ -1934,6 +1934,104 @@ def whatsapp_send(
     return {"job_id": str(job.id), **result}
 
 
+
+# ── Public: request a call (from email CTA) ────────────────────────────────
+
+class PublicRequestCallIn(BaseModel):
+    phone: str
+    name: str | None = None
+    email: str | None = None
+    note: str | None = None
+
+
+@router.post("/api/public/request-call")
+def public_request_call(body: PublicRequestCallIn, db: Session = Depends(get_db)):
+    """
+    Public form: visitor enters number → we queue AI telecaller (Bolna/Vapi).
+    No admin auth. Phone is treated as consent for this callback request.
+    """
+    phone_raw = (body.phone or "").strip()
+    if not phone_raw or len("".join(c for c in phone_raw if c.isdigit())) < 10:
+        raise HTTPException(400, "Valid phone required (10+ digits, e.g. 9876543210)")
+
+    name = (body.name or "").strip() or None
+    email = (body.email or "").strip().lower() or None
+    if email and "@" not in email:
+        email = None
+
+    contact = None
+    if email:
+        contact = db.query(GrowthContact).filter(GrowthContact.email == email).first()
+    if contact is None:
+        digits = "".join(c for c in phone_raw if c.isdigit())
+        contact = (
+            db.query(GrowthContact)
+            .filter(GrowthContact.phone.isnot(None))
+            .filter(GrowthContact.phone.contains(digits[-10:]))
+            .first()
+        )
+    if contact is None:
+        contact = GrowthContact(
+            name=name,
+            email=email,
+            phone=phone_raw,
+            contact_type="inbound_call_request",
+            source="request_call_page",
+            phone_permission=True,
+            email_permission=bool(email),
+            tags="request_call,inbound",
+        )
+        db.add(contact)
+    else:
+        contact.phone = phone_raw or contact.phone
+        contact.phone_permission = True
+        if name and not contact.name:
+            contact.name = name
+        if email and not contact.email:
+            contact.email = email
+        tags = contact.tags or ""
+        if "request_call" not in tags:
+            contact.tags = (tags + ",request_call").strip(",")
+        meta = dict(contact.meta or {})
+        meta["outreach_status"] = "ready"
+        contact.meta = meta
+
+    script = (
+        (body.note or "").strip()
+        or "WishNest: visitor requested a short call from the listing email. Introduce WishNest complimentary listing and design conversation. Be polite; if not interested, thank them and end."
+    )
+    result = enqueue_call(
+        phone=phone_raw,
+        name=name or (contact.name if contact else None),
+        script_summary=script,
+        metadata={"source": "public_request_call", "contact_id": str(contact.id) if contact.id else None},
+    )
+    job = OutreachJob(
+        channel="telecaller",
+        status=result.get("status") or "error",
+        title=f"Inbound request {name or phone_raw}"[:255],
+        payload={"phone": phone_raw, "name": name, "email": email, "source": "public"},
+        result=result,
+    )
+    db.add(job)
+    db.commit()
+
+    st = result.get("status") or "error"
+    if st in ("error",):
+        return {
+            "ok": False,
+            "status": st,
+            "message": result.get("detail") or "Call could not be queued. We will try to reach you shortly.",
+            "result": result,
+        }
+    return {
+        "ok": True,
+        "status": st,
+        "message": "Thank you — we are connecting a short call to your number now. Please keep your phone nearby.",
+        "result": {k: result.get(k) for k in ("status", "provider", "to") if k in result},
+    }
+
+
 class TelecallerIn(BaseModel):
     contact_id: str | None = None
     phone: str | None = None
@@ -2159,7 +2257,7 @@ def outreach_approach_email(
     template = (body.body_template or "").strip() or DEFAULT_APPROACH_BODY
     website = (body.website_url or "").strip() or "https://wishnest.info"
     whatsapp = (body.whatsapp_url or "").strip() or "https://wa.me/"
-    call = (body.call_url or "").strip() or "https://wishnest.info/get-reviewed"
+    call = (body.call_url or "").strip() or "https://wishnest.info/request-call"
     image_url = (body.image_url or "").strip() or None
     if image_url and not image_url.startswith("http"):
         image_url = None

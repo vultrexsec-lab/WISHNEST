@@ -23,6 +23,7 @@ import { LoginPage } from "@/pages/LoginPage";
 import { ReimagingPage } from "@/pages/ReimagingPage";
 import { SocialPage } from "@/pages/SocialPage";
 import { GetReviewedPage } from "@/pages/GetReviewedPage";
+import { RequestCallPage } from "@/pages/RequestCallPage";
 import { SubmitProjectPage } from "@/pages/SubmitProjectPage";
 import { SubmissionsAdminPage } from "@/pages/SubmissionsAdminPage";
 import { OutreachPage } from "@/pages/OutreachPage";
@@ -91,6 +92,7 @@ function Router() {
         <Route path="/dashboard" component={ProtectedDashboard} />
         <Route path="/reimaging" component={ReimagingPage} />
         <Route path="/social" component={SocialPage} />
+        <Route path="/request-call" component={RequestCallPage} />
         <Route path="/get-reviewed" component={GetReviewedPage} />
         <Route path="/get-reviewed/submit" component={SubmitProjectPage} />
         <Route path="/submissions" component={SubmissionsAdminPage} />
