@@ -1,6 +1,6 @@
 /**
- * WishNest Baileys — send + multi-step auto-reply on inbound YES/STOP/CALL
- * rev: auto-reply-v4
+ * WishNest Baileys v5 — inbound auto-reply
+ * Uses msgRetryCounterCache (critical for decrypting inbound)
  */
 import express from "express";
 import makeWASocket, {
@@ -10,7 +10,9 @@ import makeWASocket, {
   makeCacheableSignalKeyStore,
   isJidBroadcast,
   isJidGroup,
+  Browsers,
 } from "@whiskeysockets/baileys";
+import NodeCache from "node-cache";
 import pino from "pino";
 import qrcode from "qrcode";
 import qrcodeTerminal from "qrcode-terminal";
@@ -24,7 +26,9 @@ const AUTH_DIR = process.env.AUTH_DIR || path.join(__dirname, "auth_session");
 const API_KEY = process.env.BAILEYS_API_KEY || "wishnest-baileys-secret";
 const BACKEND_WEBHOOK = (process.env.BACKEND_WEBHOOK_URL || "").replace(/\/$/, "");
 const logger = pino({ level: process.env.LOG_LEVEL || "info" });
-const REV = "auto-reply-v4";
+const REV = "auto-reply-v5";
+
+const msgRetryCounterCache = new NodeCache({ stdTTL: 600, checkperiod: 120, useClones: false });
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -35,41 +39,37 @@ let connectionStatus = "starting";
 let lastError = null;
 let lastInbound = null;
 let lastAutoReply = null;
+let eventCounts = {};
 const localState = new Map();
 const processedIds = new Set();
 
 const MSG = {
   afterYes:
-    "Thank you. Here's a quick overview:\n\n" +
-    "• Complimentary editorial listing on WishNest.info\n" +
-    "• Focus: architecture, hospitality & guest experience\n" +
-    "• No fees, no commission\n\n" +
-    "Please reply with your *property name and city* (e.g. Amanbagh, Rajasthan).",
+    "Thank you. Here's a quick overview:\n\n• Complimentary editorial listing on WishNest.info\n• Focus: architecture, hospitality & guest experience\n• No fees, no commission\n\nPlease reply with your *property name and city* (e.g. Amanbagh, Rajasthan).",
   askType:
     "Got it — thanks.\n\nWhat type of property is it?\nReply with one: hotel / resort / villa / retreat / other.",
   askCall:
-    "Perfect.\n\nWhen should our team call you for a short conversation?\n" +
-    "Reply with a preferred day/time (e.g. tomorrow 11am, or Thu 4pm IST).",
+    "Perfect.\n\nWhen should our team call you for a short conversation?\nReply with a preferred day/time (e.g. tomorrow 11am, or Thu 4pm IST).",
   scheduled:
-    "Thank you — we've noted your preferred time.\n\n" +
-    "Our team will call you shortly on this number about the complimentary listing. No obligation.\n\n— WishNest",
+    "Thank you — we've noted your preferred time.\n\nOur team will call you shortly on this number about the complimentary listing. No obligation.\n\n— WishNest",
   stop: "Understood. You won't receive further messages from WishNest. Thank you.",
   callNow: "Got it. Our team will call you shortly on this number. Thank you.",
   fallback0:
     "Thanks for your message. Reply *YES* for listing details, *CALL* for a callback, or *STOP* to opt out.",
   fallbackFlow:
-    "Thanks — please reply to the last question, or type *CALL* for a callback / *STOP* to opt out.",
+    "Thanks — please reply to the last question, or type *CALL* / *STOP*.",
 };
 
-function digits(phone) {
-  return String(phone || "").replace(/\D/g, "");
+function digits(p) {
+  return String(p || "").replace(/\D/g, "");
 }
-
 function authOk(req) {
   const h = req.headers["x-api-key"] || req.headers["authorization"] || "";
   return h.replace(/^Bearer\s+/i, "").trim() === API_KEY;
 }
-
+function bump(ev) {
+  eventCounts[ev] = (eventCounts[ev] || 0) + 1;
+}
 function extractText(msg) {
   const m = msg.message || {};
   return (
@@ -80,11 +80,9 @@ function extractText(msg) {
     m.buttonsResponseMessage?.selectedDisplayText ||
     m.templateButtonReplyMessage?.selectedDisplayText ||
     m.listResponseMessage?.title ||
-    m.reactiveMediaMessage?.text ||
     ""
   ).trim();
 }
-
 function classify(text) {
   const t = (text || "").trim().toLowerCase();
   if (!t) return "other";
@@ -94,7 +92,6 @@ function classify(text) {
     return "yes";
   return "other";
 }
-
 function nextLocalReply(phone, text) {
   const st = localState.get(phone) || { step: 0, collected: {} };
   let step = st.step || 0;
@@ -102,7 +99,6 @@ function nextLocalReply(phone, text) {
   const intent = classify(text);
   let reply = null;
   let next = step;
-
   if (intent === "stop") {
     reply = MSG.stop;
     next = 0;
@@ -130,15 +126,14 @@ function nextLocalReply(phone, text) {
     reply = MSG.scheduled;
     next = 4;
   } else {
-    reply =
-      "We've already noted your details. Our team will be in touch. Type STOP if you no longer wish to hear from us.";
+    reply = "We've already noted your details. Our team will be in touch. Type STOP to opt out.";
   }
   localState.set(phone, { step: next, collected });
   return { reply, next, intent, collected };
 }
 
 async function notifyBackend(payload) {
-  if (!BACKEND_WEBHOOK) return { ok: false, reason: "no_webhook" };
+  if (!BACKEND_WEBHOOK) return { ok: false };
   try {
     const r = await fetch(`${BACKEND_WEBHOOK}/api/growth/whatsapp/inbound`, {
       method: "POST",
@@ -146,11 +141,10 @@ async function notifyBackend(payload) {
       body: JSON.stringify(payload),
     });
     const data = await r.json().catch(() => ({}));
-    logger.info({ status: r.status, intent: data.intent, next: data.next_step }, "backend inbound");
-    return { ok: r.ok, status: r.status, data };
+    return { ok: r.ok, data };
   } catch (e) {
-    logger.warn({ err: String(e) }, "backend webhook failed");
-    return { ok: false, reason: String(e) };
+    logger.warn(String(e));
+    return { ok: false };
   }
 }
 
@@ -164,13 +158,10 @@ async function sendText(jidOrPhone, message) {
 
 async function handleIncoming(msg) {
   const id = msg.key?.id;
-  if (id && processedIds.has(id)) return;
   if (id) {
+    if (processedIds.has(id)) return;
     processedIds.add(id);
-    if (processedIds.size > 500) {
-      const first = processedIds.values().next().value;
-      processedIds.delete(first);
-    }
+    if (processedIds.size > 800) processedIds.delete(processedIds.values().next().value);
   }
   if (msg.key?.fromMe) return;
 
@@ -182,49 +173,44 @@ async function handleIncoming(msg) {
     phone = digits(String(msg.key.participant).split("@")[0]);
   }
   const text = extractText(msg);
-  lastInbound = { at: new Date().toISOString(), remote, phone, text: text.slice(0, 200), id };
+  lastInbound = {
+    at: new Date().toISOString(),
+    remote,
+    phone,
+    text: text.slice(0, 200),
+    id,
+    hasMsg: Boolean(msg.message),
+  };
+  logger.info(lastInbound, "INBOUND");
 
-  logger.info({ remote, phone, text: text.slice(0, 100) }, "INBOUND");
-  if (!phone || phone.length < 8 || !text) {
-    logger.warn({ phone, text }, "skip — no phone/text");
+  if (!text) {
+    logger.warn("empty text — may need decrypt retry");
     return;
   }
+  if (!phone || phone.length < 8) return;
 
-  const backend = await notifyBackend({
-    phone,
-    text,
-    messageId: id,
-    timestamp: msg.messageTimestamp,
-  });
-
-  let reply = null;
-  if (backend.ok && backend.data?.auto_reply) {
-    reply = backend.data.auto_reply;
-    if (typeof backend.data.next_step === "number") {
-      localState.set(phone, {
-        step: backend.data.next_step,
-        collected: backend.data.collected || {},
-      });
-    }
-  } else {
-    reply = nextLocalReply(phone, text).reply;
+  const backend = await notifyBackend({ phone, text, messageId: id, timestamp: msg.messageTimestamp });
+  let reply =
+    backend.ok && backend.data?.auto_reply
+      ? backend.data.auto_reply
+      : nextLocalReply(phone, text).reply;
+  if (backend.ok && typeof backend.data?.next_step === "number") {
+    localState.set(phone, {
+      step: backend.data.next_step,
+      collected: backend.data.collected || {},
+    });
   }
-
   if (!reply) return;
 
-  await new Promise((r) => setTimeout(r, 500));
-  // Prefer original jid for reply (handles @lid etc.)
+  await new Promise((r) => setTimeout(r, 400));
   try {
     await sock.sendMessage(remote, { text: reply.slice(0, 4000) });
-    lastAutoReply = { at: new Date().toISOString(), phone, remote, preview: reply.slice(0, 80) };
-    logger.info({ phone, remote }, "AUTO-REPLY SENT");
-  } catch (e1) {
-    logger.warn({ err: String(e1) }, "reply via remote jid failed, try phone jid");
+  } catch (e) {
+    logger.warn({ err: String(e) }, "send remote failed");
     await sendText(phone, reply);
-    lastAutoReply = { at: new Date().toISOString(), phone, remote: phone, preview: reply.slice(0, 80) };
-    logger.info({ phone }, "AUTO-REPLY SENT via phone");
   }
-
+  lastAutoReply = { at: new Date().toISOString(), phone, preview: reply.slice(0, 100) };
+  logger.info({ phone }, "AUTO-REPLY SENT");
   try {
     if (msg.key) await sock.readMessages([msg.key]);
   } catch (_) {}
@@ -242,48 +228,65 @@ async function startSocket() {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "silent" })),
     },
-    browser: ["WishNest", "Chrome", "122.0.0"],
+    browser: Browsers.appropriate("Desktop"),
     markOnlineOnConnect: true,
     syncFullHistory: false,
     generateHighQualityLinkPreview: false,
-    printQRInTerminal: false,
+    msgRetryCounterCache,
     getMessage: async () => undefined,
   });
 
   sock.ev.on("creds.update", saveCreds);
 
-  sock.ev.on("connection.update", async (update) => {
-    const { connection, lastDisconnect, qr } = update;
+  sock.ev.on("connection.update", async (u) => {
+    bump("connection.update");
+    const { connection, lastDisconnect, qr } = u;
     if (qr) {
       connectionStatus = "qr";
       lastQrDataUrl = await qrcode.toDataURL(qr);
       qrcodeTerminal.generate(qr, { small: true });
-      logger.info("QR ready");
     }
     if (connection === "open") {
       connectionStatus = "open";
       lastQrDataUrl = null;
       lastError = null;
-      logger.info({ rev: REV, webhook: BACKEND_WEBHOOK || null }, "WhatsApp OPEN");
+      logger.info({ rev: REV }, "OPEN");
     }
     if (connection === "close") {
       connectionStatus = "close";
       const code = lastDisconnect?.error?.output?.statusCode;
-      lastError = `closed code=${code}`;
-      logger.warn({ code }, "connection closed");
-      const reconnect = code !== DisconnectReason.loggedOut;
-      if (reconnect) setTimeout(() => startSocket().catch((e) => logger.error(e)), 2500);
-      else logger.error("Logged out — rescan QR");
+      lastError = `closed ${code}`;
+      if (code !== DisconnectReason.loggedOut) {
+        setTimeout(() => startSocket().catch((e) => logger.error(e)), 3000);
+      }
     }
   });
 
-  sock.ev.on("messages.upsert", async ({ messages, type }) => {
-    logger.info({ type, n: messages?.length || 0 }, "messages.upsert");
-    for (const msg of messages || []) {
-      try {
-        await handleIncoming(msg);
-      } catch (e) {
-        logger.error({ err: String(e) }, "handleIncoming error");
+  // Official pattern: process() catches all buffered events
+  sock.ev.process(async (events) => {
+    if (events["messages.upsert"]) {
+      bump("messages.upsert");
+      const { messages, type } = events["messages.upsert"];
+      logger.info({ type, n: messages?.length }, "upsert");
+      for (const msg of messages || []) {
+        try {
+          await handleIncoming(msg);
+        } catch (e) {
+          logger.error({ err: String(e) }, "handle err");
+        }
+      }
+    }
+    if (events["messages.update"]) bump("messages.update");
+    if (events["message-receipt.update"]) bump("message-receipt.update");
+    if (events["messaging-history.set"]) {
+      bump("messaging-history.set");
+      const hist = events["messaging-history.set"];
+      const msgs = hist?.messages || [];
+      logger.info({ n: msgs.length }, "history");
+      for (const msg of msgs.slice(-20)) {
+        try {
+          await handleIncoming(msg);
+        } catch (_) {}
       }
     }
   });
@@ -291,27 +294,26 @@ async function startSocket() {
 
 app.get("/", (_req, res) => {
   const connected = connectionStatus === "open";
-  res.set("Content-Type", "text/html; charset=utf-8");
-  res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"/><title>WishNest Baileys</title>
+  res.type("html").send(`<!DOCTYPE html><html><head><meta charset="utf-8"/><title>WishNest WA</title>
 <style>
-body{font-family:system-ui,sans-serif;background:#0c1210;color:#e8eee9;max-width:520px;margin:40px auto;padding:0 16px}
+body{font-family:system-ui;background:#0c1210;color:#e8eee9;max-width:560px;margin:32px auto;padding:0 16px}
 .card{border:1px solid #ffffff22;border-radius:16px;padding:20px;background:#ffffff08}
 .ok{color:#6ee7b7}.warn{color:#fbbf24}.err{color:#fca5a5}
+code{font-size:11px;word-break:break-all;background:#ffffff12;padding:2px 6px;border-radius:4px}
 img{max-width:100%;border-radius:12px;background:#fff}
-code{background:#ffffff15;padding:2px 6px;border-radius:4px;font-size:12px;word-break:break-all}
 </style></head><body>
 <h1>WishNest WhatsApp</h1>
 <div class="card">
 <p>Rev: <code>${REV}</code></p>
-<p>Status: <strong class="${connected ? "ok" : "warn"}">${connectionStatus}</strong></p>
-<p>Connected: ${connected ? "yes" : "no"}</p>
-<p>Webhook: <code>${BACKEND_WEBHOOK || "none"}</code></p>
-${lastError ? `<p class="err">${lastError}</p>` : ""}
-${lastInbound ? `<p>Last inbound: <code>${JSON.stringify(lastInbound)}</code></p>` : `<p class="warn">No inbound received yet this session</p>`}
-${lastAutoReply ? `<p class="ok">Last auto-reply: <code>${JSON.stringify(lastAutoReply)}</code></p>` : ""}
-${lastQrDataUrl ? `<p>Scan QR:</p><img src="${lastQrDataUrl}"/>` : ""}
+<p>Status: <strong class="${connected?"ok":"warn"}">${connectionStatus}</strong> · Connected: ${connected?"yes":"no"}</p>
+<p>Webhook: <code>${BACKEND_WEBHOOK||"none"}</code></p>
+${lastError?`<p class="err">${lastError}</p>`:""}
+${lastInbound?`<p>Last inbound: <code>${JSON.stringify(lastInbound)}</code></p>`:`<p class="warn">No inbound this session — send Yes from another phone</p>`}
+${lastAutoReply?`<p class="ok">Last auto-reply: <code>${JSON.stringify(lastAutoReply)}</code></p>`:""}
+<p>Events: <code>${JSON.stringify(eventCounts)}</code></p>
+${lastQrDataUrl?`<p>Scan:</p><img src="${lastQrDataUrl}"/>`:""}
 </div>
-<meta http-equiv="refresh" content="8"/>
+<meta http-equiv="refresh" content="6"/>
 </body></html>`);
 });
 
@@ -321,57 +323,44 @@ app.get("/health", (_req, res) => {
     rev: REV,
     status: connectionStatus,
     connected: connectionStatus === "open",
-    hasQr: Boolean(lastQrDataUrl),
     webhook: BACKEND_WEBHOOK || null,
     lastInbound,
     lastAutoReply,
+    eventCounts,
     error: lastError,
   });
 });
 
-app.get("/qr", (req, res) => {
-  if (!authOk(req)) return res.status(401).json({ error: "unauthorized" });
-  if (connectionStatus === "open") return res.json({ status: "open" });
-  if (!lastQrDataUrl) return res.status(404).json({ status: connectionStatus });
-  res.json({ status: "qr", qr: lastQrDataUrl });
-});
-
 app.post("/send", async (req, res) => {
   if (!authOk(req)) return res.status(401).json({ error: "unauthorized" });
-  if (connectionStatus !== "open" || !sock) {
+  if (connectionStatus !== "open" || !sock)
     return res.status(503).json({ status: "not_connected", detail: connectionStatus });
-  }
   const phone = digits(req.body?.phone);
   const message = String(req.body?.message || "").trim();
-  if (!phone || phone.length < 10) return res.status(400).json({ status: "error", detail: "invalid phone" });
+  if (phone.length < 10) return res.status(400).json({ status: "error", detail: "invalid phone" });
   if (!message) return res.status(400).json({ status: "error", detail: "message required" });
   try {
     const result = await sendText(phone, message);
     if (/reply yes/i.test(message) || /stop to opt out/i.test(message)) {
       localState.set(phone, { step: 0, collected: {} });
     }
-    res.json({ status: "sent", provider: "baileys", to: phone, messageId: result?.key?.id || null, rev: REV });
+    res.json({ status: "sent", to: phone, messageId: result?.key?.id || null, rev: REV });
   } catch (e) {
     res.status(500).json({ status: "error", detail: String(e) });
   }
 });
 
-/** Force the same auto-reply path as a real YES (debug) */
 app.post("/debug/fake-inbound", async (req, res) => {
   if (!authOk(req)) return res.status(401).json({ error: "unauthorized" });
   const phone = digits(req.body?.phone);
   const text = String(req.body?.text || "Yes").trim();
   if (!phone) return res.status(400).json({ error: "phone required" });
-  try {
-    await handleIncoming({
-      key: { id: `debug-${Date.now()}`, remoteJid: `${phone}@s.whatsapp.net`, fromMe: false },
-      message: { conversation: text },
-      messageTimestamp: Math.floor(Date.now() / 1000),
-    });
-    res.json({ ok: true, lastInbound, lastAutoReply });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e) });
-  }
+  await handleIncoming({
+    key: { id: `dbg-${Date.now()}`, remoteJid: `${phone}@s.whatsapp.net`, fromMe: false },
+    message: { conversation: text },
+    messageTimestamp: Math.floor(Date.now() / 1000),
+  });
+  res.json({ ok: true, lastInbound, lastAutoReply });
 });
 
 app.post("/logout", async (req, res) => {
@@ -383,15 +372,14 @@ app.post("/logout", async (req, res) => {
     fs.rmSync(AUTH_DIR, { recursive: true, force: true });
   } catch (_) {}
   connectionStatus = "close";
-  lastQrDataUrl = null;
   res.json({ status: "logged_out" });
   setTimeout(() => startSocket().catch((e) => logger.error(e)), 1000);
 });
 
 app.listen(PORT, () => {
-  logger.info(`Baileys ${REV} on :${PORT}`);
+  logger.info(`${REV} :${PORT}`);
   startSocket().catch((e) => {
-    logger.error(e);
     lastError = String(e);
+    logger.error(e);
   });
 });
