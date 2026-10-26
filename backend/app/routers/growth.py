@@ -2090,20 +2090,17 @@ class OutreachApproachIn(BaseModel):
 
 DEFAULT_APPROACH_BODY = """{{greeting}}
 
-I am writing from WishNest (wishnest.info) — an independent hospitality and design-intelligence platform. We publish property features and thoughtful design perspectives for owners and operators, not as a booking marketplace.
+My name is on the WishNest team (https://wishnest.info). We write about hospitality and design for independent properties — not a booking site.
 
-While reviewing {{offer}}, your property stood out as a strong fit for a complimentary editorial listing on WishNest (no listing fee and no booking commission for this invitation).
+I came across your place while looking at {{offer}} and thought a short note might be useful: if you ever want your property featured on WishNest, the listing side of this invitation has no fee and no commission.
 
-You are welcome to:
-• See the platform: {{website}}
-• Message us on WhatsApp: {{whatsapp}}
-• Request a short call: {{call}}
+Website: {{website}}
+If it is easier to message: {{whatsapp}}
+Or reply to this email with a yes or no.
 
-If this is not relevant, simply reply "no" or ignore this note — we will not follow up further.
-
-Warm regards,
-WishNest team
-https://wishnest.info"""
+Thanks for reading,
+WishNest
+"""
 
 
 def _plain_to_html(text: str) -> str:
@@ -2154,7 +2151,7 @@ def outreach_approach_email(
         raise HTTPException(400, "No valid email recipients.")
 
     offer = (body.property_or_offer or "").strip() or "independent hotels and resorts"
-    subject = (body.subject or "").strip() or "WishNest — complimentary listing invitation"
+    subject = (body.subject or "").strip() or "Quick note from WishNest"
     template = (body.body_template or "").strip() or DEFAULT_APPROACH_BODY
     website = (body.website_url or "").strip() or "https://wishnest.info"
     whatsapp = (body.whatsapp_url or "").strip() or "https://wa.me/"
@@ -2178,18 +2175,15 @@ def outreach_approach_email(
             .replace("{{whatsapp}}", whatsapp)
             .replace("{{call}}", call)
         )
+        # Minimal links — big marketing buttons push Gmail toward Promotions
         cta_html = f"""
-        <table role="presentation" cellpadding="0" cellspacing="0" style="margin:18px 0;">
-          <tr><td style="padding:0 0 8px 0;">
-            <a href="{website}" style="display:inline-block;background:#165948;color:#ffffff;text-decoration:none;padding:10px 16px;border-radius:8px;font-size:13px;font-weight:600;">Visit WishNest.info</a>
-          </td></tr>
-          <tr><td style="padding:0 0 8px 0;">
-            <a href="{whatsapp}" style="display:inline-block;background:#128C7E;color:#ffffff;text-decoration:none;padding:10px 16px;border-radius:8px;font-size:13px;font-weight:600;">WhatsApp us</a>
-          </td></tr>
-          <tr><td style="padding:0;">
-            <a href="{call}" style="display:inline-block;background:#1a2e28;color:#ffffff;text-decoration:none;padding:10px 16px;border-radius:8px;font-size:13px;font-weight:600;">Request a call</a>
-          </td></tr>
-        </table>
+        <p style="margin:16px 0;line-height:1.6;font-size:14px;color:#1a2e28;">
+          <a href="{website}" style="color:#165948;">wishnest.info</a>
+          &nbsp;·&nbsp;
+          <a href="{whatsapp}" style="color:#165948;">WhatsApp</a>
+          &nbsp;·&nbsp;
+          <a href="{call}" style="color:#165948;">Request a call</a>
+        </p>
         """
         img_html = ""
         if image_url:
