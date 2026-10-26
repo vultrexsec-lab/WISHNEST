@@ -158,7 +158,7 @@ Reply to this email if you would like listing details, or ask us not to contact 
         {tab === "intake" && (
           <section className="mt-6 space-y-4">
             <p className="text-[12px] text-white/40">
-              Google Maps public listings (name, phone, website). On Import we try each website for a public email. Duplicates skipped. Aim ~50/day for sends.
+              Area-wise Maps search (e.g. Dehradun, India). Already-imported hotels are hidden on re-search. Import pulls website emails when public. ~50/day recommended.
             </p>
             <div className="flex flex-wrap gap-2">
               <input
@@ -183,8 +183,7 @@ Reply to this email if you would like listing details, or ask us not to contact 
                   try {
                     const res = await apiRequest("POST", "/api/growth/places/search", {
                       region: region.trim(),
-                      category: category.trim() || "hotels",
-                      limit: 60,
+                      category: category.trim() || "hotels resorts villas",
                       limit: 50,
                     });
                     const data = await res.json();
@@ -195,9 +194,14 @@ Reply to this email if you would like listing details, or ask us not to contact 
                       sel[i] = true;
                     });
                     setSelectedPlaces(sel);
+                    const skipped = data.skipped_already_imported || 0;
                     toast({
                       title: "Search done",
-                      description: rows.length ? `${rows.length} listings` : "No results — check SERPAPI_KEY",
+                      description: rows.length
+                        ? `${rows.length} new listings` + (skipped ? ` (${skipped} already imported, hidden)` : "")
+                        : skipped
+                          ? `No new listings — ${skipped} already in contacts`
+                          : "No results — check SERPAPI_KEY / region",
                     });
                   } catch (e) {
                     toast({

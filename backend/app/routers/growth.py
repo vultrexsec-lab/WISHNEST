@@ -381,25 +381,75 @@ class PlacesSearchIn(BaseModel):
 @router.post("/api/growth/places/search")
 def places_search_for_crm(
     body: PlacesSearchIn,
+    db: Session = Depends(get_db),
     admin: str = Depends(require_admin),
 ):
     """
-    Search public hospitality / business listings (Google Maps via SerpApi).
-    Returns name, phone, website, address — not social network scrape.
-    Email is rarely present in Maps data.
+    Google Maps listings for a region. Already-imported contacts (phone / place_id / company)
+    are filtered out so re-search only shows new places.
     """
+    # Fetch extra then filter so area still fills up with new rows
+    want = max(1, min(int(body.limit or 50), 80))
     leads = search_hospitality_for_crm(
         region=body.region.strip(),
         category=(body.category or "hotels").strip(),
-        limit=body.limit,
+        limit=min(want * 2, 80),
     )
+
+    existing_phones = {
+        (r[0] or "").strip()
+        for r in db.query(GrowthContact.phone).filter(GrowthContact.phone.isnot(None)).all()
+        if r[0]
+    }
+    existing_companies = {
+        (r[0] or "").strip().lower()
+        for r in db.query(GrowthContact.company)
+        .filter(
+            GrowthContact.source == "google_places",
+            GrowthContact.company.isnot(None),
+        )
+        .all()
+        if r[0]
+    }
+    existing_place_ids: set[str] = set()
+    for (notes,) in db.query(GrowthContact.notes).filter(
+        GrowthContact.source == "google_places",
+        GrowthContact.notes.isnot(None),
+    ).all():
+        if not notes:
+            continue
+        if "place_id: " in notes:
+            part = notes.split("place_id: ", 1)[1]
+            existing_place_ids.add(part.split(";")[0].strip())
+
+    fresh = []
+    skipped_existing = 0
+    for L in leads:
+        phone = (L.phone or "").strip()
+        pid = (getattr(L, "place_id", None) or "").strip()
+        name_key = (L.name or "").strip().lower()
+        if phone and phone in existing_phones:
+            skipped_existing += 1
+            continue
+        if pid and pid in existing_place_ids:
+            skipped_existing += 1
+            continue
+        if name_key and name_key in existing_companies:
+            skipped_existing += 1
+            continue
+        fresh.append(L)
+        if len(fresh) >= want:
+            break
+
     return {
         "region": body.region.strip(),
         "category": body.category,
-        "count": len(leads),
+        "count": len(fresh),
+        "skipped_already_imported": skipped_existing,
         "note": (
-            "Public business listings only. Email is rarely available from Maps. "
-            "Import sets email_permission=false (cold outreach — use carefully)."
+            f"Area search for {body.region.strip()}. "
+            f"Hidden {skipped_existing} already in your contacts. "
+            "Import tries website emails; Maps itself rarely has email."
         ),
         "results": [
             {
@@ -414,7 +464,7 @@ def places_search_for_crm(
                 "place_id": L.place_id,
                 "category": L.category,
             }
-            for L in leads
+            for L in fresh
         ],
     }
 
