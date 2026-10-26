@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
@@ -109,6 +109,34 @@ https://wishnest.info`,
     () => Object.entries(picked).filter(([, v]) => v).map(([id]) => id),
     [picked],
   );
+
+
+  // Pull newsletter subscribers into growth_contacts so they appear on Email tab
+  const [newsletterSync, setNewsletterSync] = useState<string>("");
+  useEffect(() => {
+    if (tab !== "email") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiRequest("POST", "/api/growth/contacts/import-newsletter", {});
+        const data = await res.json();
+        if (cancelled) return;
+        setNewsletterSync(
+          `Newsletter: +${data.created ?? 0} new, ${data.skipped ?? 0} already in list (${data.total_subscribers ?? "?"} subscribers)`,
+        );
+        await qc.invalidateQueries({ queryKey: ["/api/growth/contacts"] });
+      } catch (e) {
+        if (!cancelled) {
+          setNewsletterSync(
+            e instanceof Error ? `Newsletter sync failed: ${e.message}` : "Newsletter sync failed",
+          );
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, qc]);
 
   const tabs: { id: Tab; label: string; icon: typeof Mail }[] = [
     { id: "intake", label: "Data intake", icon: MapPin },
@@ -298,11 +326,13 @@ https://wishnest.info`,
         {tab === "email" && (
           <section className="mt-6 space-y-4">
             <p className="text-[12px] text-white/45 leading-relaxed">
-              <strong className="text-white/70">P1 Email desk.</strong> All contacts with email (newsletter import,
-              Places import, CSV, manual) appear below. Tick rows, edit template, send.
+              <strong className="text-white/70">P1 Email desk.</strong> Newsletter subscribers sync automatically when you open this tab (plus Places / CSV). Tick rows, edit template, send.
               Placeholders: <code className="text-orange-200/90">{"{{greeting}}"}</code>{" "}
               <code className="text-orange-200/90">{"{{name}}"}</code>{" "}
               <code className="text-orange-200/90">{"{{offer}}"}</code>. Max 50 per send. Skips unsubscribed / do-not-contact.
+              {newsletterSync && (
+                <span className="mt-1 block text-emerald-400/80">{newsletterSync}</span>
+              )}
             </p>
 
             <div className="flex flex-wrap gap-2 items-center">
