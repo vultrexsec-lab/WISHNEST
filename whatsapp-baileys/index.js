@@ -226,14 +226,10 @@ async function startSocket() {
         backend.data &&
         (backend.data.auto_reply || backend.data.ok);
 
+      // Always send from Baileys (backend only stores state / returns text)
+      let reply = null;
       if (backend.ok && backend.data?.auto_reply) {
-        // Backend is responsible for sending via BAILEYS_URL; if that env is set, message should arrive.
-        // Fallback: if backend didn't actually send, we still local-send after short delay check — keep simple:
-        // Always local-send when webhook missing or not ok; when webhook ok, backend should send.
-        if (!BACKEND_WEBHOOK) {
-          await sendText(phone, backend.data.auto_reply);
-        }
-        // Sync local step from backend
+        reply = backend.data.auto_reply;
         if (typeof backend.data.next_step === "number") {
           localState.set(phone, {
             step: backend.data.next_step,
@@ -241,15 +237,14 @@ async function startSocket() {
           });
         }
       } else {
-        // Local multi-step auto-reply (webhook missing or failed)
-        const { reply } = nextLocalReply(phone, text.trim());
-        if (reply) {
-          try {
-            await sendText(phone, reply);
-            logger.info({ phone }, "local auto-reply sent");
-          } catch (e) {
-            logger.error({ err: String(e) }, "local auto-reply failed");
-          }
+        reply = nextLocalReply(phone, text.trim()).reply;
+      }
+      if (reply) {
+        try {
+          await sendText(phone, reply);
+          logger.info({ phone, via: backend.ok ? "backend-text" : "local" }, "auto-reply sent");
+        } catch (e) {
+          logger.error({ err: String(e) }, "auto-reply failed");
         }
       }
     }

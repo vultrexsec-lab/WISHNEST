@@ -265,9 +265,8 @@ def handle_inbound(
     if scheduled:
         meta["callback_status"] = "queued"
 
+    # Do not send here — Baileys service sends the auto_reply to avoid doubles / missed webhooks
     send_result = None
-    if auto_reply and phone:
-        send_result = send_whatsapp_text(to_phone=phone, body=auto_reply)
 
     return {
         "phone": phone,
