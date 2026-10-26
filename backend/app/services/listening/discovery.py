@@ -38,9 +38,16 @@ def run_discovery_job(db: Session, job_id: UUID) -> dict[str, Any]:
                 comment_count=int(pd.get("comment_count") or 0), like_count=int(pd.get("like_count") or 0),
                 share_count=int(pd.get("share_count") or 0), raw=pd.get("raw"))
             db.add(post); db.flush(); posts_found += 1
-            classified = classify_conversation(body, category_hint=category)
-            if classified["intent_score"] < 40 and not (pd.get("raw") or {}).get("stub"): continue
-            if (pd.get("raw") or {}).get("stub") and classified["intent_score"] < 50: continue
+            must = []
+            if isinstance(kw_blob, dict):
+                must = list(kw_blob.get("must_match_any") or kw_blob.get("primary") or [])[:12]
+            classified = classify_conversation(body, category_hint=category, must_terms=must)
+            if classified.get("intent_band") == "noise":
+                continue
+            if classified["intent_score"] < 55:
+                continue
+            if (pd.get("raw") or {}).get("stub"):
+                continue
             db.add(ListeningOpportunity(
                 campaign_id=campaign.id, post_id=post.id, platform=post.platform, source_url=post.url,
                 excerpt=(body[:500] if body else None), category=classified.get("category"),

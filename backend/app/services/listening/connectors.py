@@ -24,12 +24,31 @@ def search_all(keywords: list[str], platforms: list[str], limit_per: int = 8) ->
 
 def search_reddit(query: str, limit: int = 5) -> list[dict[str, Any]]:
     results = []
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; WishNestBot/1.0; +https://wishnest.info)",
+        "Accept": "application/json",
+    }
+    urls = (
+        "https://old.reddit.com/search.json",
+        "https://www.reddit.com/search.json",
+    )
     try:
-        r = requests.get("https://www.reddit.com/search.json",
-            params={"q": query, "sort": "new", "limit": limit, "t": "year"},
-            headers={"User-Agent": "WishNestListening/1.0 (research; contact admin@wishnest.info)"}, timeout=20)
-        if r.status_code != 200:
-            logger.warning("Reddit HTTP %s", r.status_code); return results
+        r = None
+        for url in urls:
+            r = requests.get(
+                url,
+                params={"q": query, "sort": "new", "limit": limit, "t": "year", "type": "link"},
+                headers=headers,
+                timeout=20,
+            )
+            if r.status_code == 200:
+                break
+        if r is None or r.status_code != 200:
+            if r is not None and r.status_code == 403:
+                logger.warning("Reddit HTTP 403 (blocked from this host — use Reddit API app later)")
+            else:
+                logger.warning("Reddit HTTP %s", getattr(r, "status_code", "?"))
+            return results
         for ch in (r.json().get("data") or {}).get("children") or []:
             d = ch.get("data") or {}
             permalink = d.get("permalink") or ""
