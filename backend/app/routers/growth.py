@@ -375,7 +375,7 @@ def import_newsletter_subscribers(
 class PlacesSearchIn(BaseModel):
     region: str = Field(..., min_length=2, max_length=200)
     category: str = Field(default="hotels resorts", max_length=200)
-    limit: int = Field(default=60, ge=1, le=80)
+    limit: int = Field(default=50, ge=1, le=80)
 
 
 @router.post("/api/growth/places/search")
@@ -407,6 +407,7 @@ def places_search_for_crm(
                 "address": L.address,
                 "phone": L.phone,
                 "website": L.website,
+                "email": getattr(L, "email", None),
                 "rating": L.rating,
                 "review_count": L.review_count,
                 "maps_url": L.maps_url,
@@ -430,52 +431,72 @@ def places_import_to_contacts(
     db: Session = Depends(get_db),
     admin: str = Depends(require_admin),
 ):
-    """Import selected Places results into growth_contacts (cold, no email opt-in)."""
+    """Import selected Places rows. Dedupe phone/email/place_id. Website email scrape."""
+    from app.services.places_service import extract_email_from_website
+
     ctype = (body.contact_type or "resort_owner").lower().replace(" ", "_")
     if ctype not in CONTACT_TYPES:
         ctype = "other"
     created = 0
     skipped = 0
+    emails_found = 0
     for row in body.results or []:
         name = (row.get("name") or "").strip()
         phone = (row.get("phone") or "").strip() or None
         website = (row.get("website") or "").strip() or None
         address = (row.get("address") or "").strip() or None
-        if not name and not phone:
+        place_id = (row.get("place_id") or "").strip() or None
+        email = (row.get("email") or "").strip().lower() or None
+        if not name and not phone and not email:
             skipped += 1
             continue
-        # Dedupe by phone or company+name
+
+        exists = None
         if phone:
+            exists = db.query(GrowthContact).filter(GrowthContact.phone == phone).first()
+        if not exists and email:
+            exists = db.query(GrowthContact).filter(GrowthContact.email == email).first()
+        if not exists and place_id:
             exists = (
                 db.query(GrowthContact)
-                .filter(GrowthContact.phone == phone)
+                .filter(GrowthContact.notes.ilike(f"%place_id: {place_id}%"))
                 .first()
             )
-            if exists:
-                skipped += 1
-                continue
-        if name:
+        if not exists and name:
             exists = (
                 db.query(GrowthContact)
                 .filter(
-                    GrowthContact.name == name,
                     GrowthContact.source == "google_places",
+                    GrowthContact.company == name,
                 )
                 .first()
             )
-            if exists:
-                skipped += 1
-                continue
+        if exists:
+            if not exists.email and website:
+                found = extract_email_from_website(website)
+                if found:
+                    exists.email = found
+                    emails_found += 1
+            skipped += 1
+            continue
+
+        if not email and website:
+            email = extract_email_from_website(website)
+            if email:
+                emails_found += 1
+
         notes_parts = []
+        if address:
+            notes_parts.append(address)
         if website:
             notes_parts.append(f"website: {website}")
-        if row.get("place_id"):
-            notes_parts.append(f"place_id: {row.get('place_id')}")
+        if place_id:
+            notes_parts.append(f"place_id: {place_id}")
         if row.get("rating") is not None:
             notes_parts.append(f"rating: {row.get('rating')}")
         contact = GrowthContact(
             name=name or None,
-            email=None,
+            email=email,
             phone=phone,
             company=name or None,
             contact_type=ctype,
@@ -496,9 +517,10 @@ def places_import_to_contacts(
     return {
         "created": created,
         "skipped": skipped,
+        "emails_found": emails_found,
         "message": (
-            f"Imported {created} public listings as cold contacts "
-            f"(no email opt-in). Skipped {skipped}."
+            f"Imported {created} listings ({emails_found} emails from websites). "
+            f"Skipped {skipped} duplicates/empty."
         ),
     }
 

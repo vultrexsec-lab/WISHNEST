@@ -32,6 +32,7 @@ type PlacesRow = {
   address?: string | null;
   phone?: string | null;
   website?: string | null;
+  email?: string | null;
   place_id?: string | null;
 };
 
@@ -157,7 +158,7 @@ Reply to this email if you would like listing details, or ask us not to contact 
         {tab === "intake" && (
           <section className="mt-6 space-y-4">
             <p className="text-[12px] text-white/40">
-              Google Maps public listings (name, phone, website). Not social scrape. Import → contacts.
+              Google Maps public listings (name, phone, website). On Import we try each website for a public email. Duplicates skipped. Aim ~50/day for sends.
             </p>
             <div className="flex flex-wrap gap-2">
               <input
@@ -184,6 +185,7 @@ Reply to this email if you would like listing details, or ask us not to contact 
                       region: region.trim(),
                       category: category.trim() || "hotels",
                       limit: 60,
+                      limit: 50,
                     });
                     const data = await res.json();
                     const rows = data.results || [];
@@ -226,7 +228,7 @@ Reply to this email if you would like listing details, or ask us not to contact 
                     });
                     const data = await res.json();
                     await qc.invalidateQueries({ queryKey: ["/api/growth/contacts"] });
-                    toast({ title: "Imported", description: data.message || `${data.created} contacts` });
+                    toast({ title: "Imported", description: data.message || `${data.created} contacts, ${data.emails_found ?? 0} emails` });
                   } catch (e) {
                     toast({
                       title: "Import failed",
@@ -240,13 +242,14 @@ Reply to this email if you would like listing details, or ask us not to contact 
               </Button>
             </div>
             {places.length > 0 && (
-              <div className="h-56 overflow-y-auto rounded-lg border border-white/10 bg-[#0a0e0c]">
+              <div className="h-72 overflow-y-auto rounded-lg border border-white/10 bg-[#0a0e0c]">
                 <table className="w-full text-left text-[10px]">
                   <thead className="sticky top-0 bg-[#121816] text-white/40">
                     <tr>
                       <th className="px-2 py-1">✓</th>
                       <th className="px-2 py-1">NAME</th>
                       <th className="px-2 py-1">PHONE</th>
+                      <th className="px-2 py-1">EMAIL</th>
                       <th className="px-2 py-1">WEB</th>
                     </tr>
                   </thead>
@@ -262,8 +265,9 @@ Reply to this email if you would like listing details, or ask us not to contact 
                             }
                           />
                         </td>
-                        <td className="max-w-[200px] truncate px-2 py-1">{r.name}</td>
+                        <td className="max-w-[160px] truncate px-2 py-1">{r.name}</td>
                         <td className="px-2 py-1 whitespace-nowrap">{r.phone || "—"}</td>
+                        <td className="max-w-[140px] truncate px-2 py-1 text-emerald-300/80">{r.email || "—"}</td>
                         <td className="max-w-[120px] truncate px-2 py-1">{r.website || "—"}</td>
                       </tr>
                     ))}
@@ -312,7 +316,7 @@ Reply to this email if you would like listing details, or ask us not to contact 
               </span>
             </div>
 
-            <div className="max-h-56 overflow-y-auto rounded-lg border border-white/10">
+            <div className="max-h-80 overflow-y-auto rounded-lg border border-white/10">
               {contacts.filter((c) => c.email).length === 0 ? (
                 <p className="px-3 py-4 text-[11px] text-white/35">
                   No contacts with email yet. Use Data intake (Places import), newsletter import, or CSV — then refresh.

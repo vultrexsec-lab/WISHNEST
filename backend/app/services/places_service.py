@@ -505,6 +505,40 @@ def fetch_premium_stays(location: str | None, limit: int = 8) -> list[PropertyLi
     return []
 
 
+
+def extract_email_from_website(url: str | None, timeout: float = 8.0) -> str | None:
+    """Best-effort public email from website homepage (mailto + regex)."""
+    if not url or not str(url).startswith("http"):
+        return None
+    try:
+        resp = requests.get(
+            url,
+            timeout=timeout,
+            headers={"User-Agent": "WishNestBot/1.0 (+https://wishnest.info)"},
+            allow_redirects=True,
+        )
+        if not resp.ok:
+            return None
+        html = resp.text[:200_000]
+        m = re.search(r"mailto:([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})", html, re.I)
+        if m:
+            em = m.group(1).lower()
+            if not any(x in em for x in ("example.com", "sentry.", "wixpress", "domain.com")):
+                return em
+        found = re.findall(r"\b([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})\b", html)
+        skip = ("example.", "sentry.", "wixpress", "domain.com", "email.com", "your@")
+        for em in found:
+            el = em.lower()
+            if any(s in el for s in skip):
+                continue
+            if el.endswith((".png", ".jpg", ".gif", ".css", ".js")):
+                continue
+            return el
+    except Exception as exc:
+        logger.debug("email extract failed %s: %s", url, exc)
+    return None
+
+
 @dataclass
 class BusinessLead:
     """Public business listing for CRM intake (not editorial photos)."""
@@ -517,6 +551,7 @@ class BusinessLead:
     maps_url: str | None = None
     place_id: str | None = None
     category: str | None = None
+    email: str | None = None
 
 
 def _lead_from_maps_place(place: dict, fallback_category: str) -> BusinessLead | None:
