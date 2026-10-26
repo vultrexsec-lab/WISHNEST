@@ -244,6 +244,9 @@ def list_contacts(
     limit: int = 100,
     offset: int = 0,
 ):
+    # Newsletter list must show every subscriber even after outreach "No"
+    if source and source.strip().lower() in ("newsletter", "wishnest_circle", "subscriber"):
+        exclude_suppressed = False
     query = db.query(GrowthContact).order_by(GrowthContact.created_at.desc())
     query = _apply_contact_filters(
         query,
@@ -360,15 +363,17 @@ def import_newsletter_subscribers(
             continue
         existing = db.query(GrowthContact).filter(GrowthContact.email == email).first()
         if existing:
-            # ensure tagged as newsletter so Email filter finds them
-            tags = existing.tags or ""
-            if "wishnest_circle" not in tags:
-                existing.tags = (tags + ",wishnest_circle").strip(",")
-            if existing.source != "newsletter" and not existing.source:
-                existing.source = "newsletter"
-            if existing.contact_type not in ("subscriber", "resort_owner"):
-                existing.contact_type = existing.contact_type or "subscriber"
+            # Always keep newsletter identity so Email → Newsletter only shows all subscribers
+            existing.source = "newsletter"
+            existing.contact_type = "subscriber"
             existing.email_permission = True
+            tags = (existing.tags or "").replace(",,", ",")
+            for need in ("wishnest_circle", "newsletter"):
+                if need not in tags:
+                    tags = (tags + "," + need).strip(",")
+            existing.tags = tags
+            if not existing.name:
+                existing.name = email.split("@")[0]
             skipped += 1
             continue
         interests = getattr(s, "interests", None)
