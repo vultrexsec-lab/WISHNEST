@@ -269,7 +269,10 @@ export function ListeningPage() {
             conversation; outreach only after opt-in / form / Outreach tools.
           </p>
           {opps.isLoading && <Loader2 className="h-5 w-5 animate-spin text-white/40" />}
-          <div className="space-y-3">
+          {(opps.data || []).length > 0 && (
+            <p className="text-[10px] text-white/30">{(opps.data || []).length} opportunities — scroll inside the box</p>
+          )}
+          <div className="max-h-[28rem] space-y-3 overflow-y-auto overscroll-contain rounded-xl border border-white/5 bg-black/20 p-3 pr-2">
             {(opps.data || []).map((o) => (
               <article key={o.id} className="rounded-xl border border-white/8 bg-black/25 px-4 py-3 space-y-1.5">
                 <div className="flex flex-wrap items-center gap-2 text-[11px]">
