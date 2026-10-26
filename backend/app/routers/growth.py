@@ -2195,7 +2195,7 @@ While reviewing {{offer}}, your property stood out as a strong fit for a complim
 You are welcome to:
 • See the platform: {{website}}
 • Message us on WhatsApp: {{whatsapp}}
-• Request a short call: {{call}}
+• Request a callback (WhatsApp): {{call}}
 
 If this is not relevant, simply reply "no" or ignore this note — we will not follow up further.
 
@@ -2257,7 +2257,7 @@ def outreach_approach_email(
     template = (body.body_template or "").strip() or DEFAULT_APPROACH_BODY
     website = (body.website_url or "").strip() or "https://wishnest.info"
     whatsapp = (body.whatsapp_url or "").strip() or "https://wa.me/"
-    call = (body.call_url or "").strip() or "https://wishnest.info/request-call"
+    call = (body.call_url or "").strip() or "https://wa.me/919199440961?text=Hi%20WishNest%2C%20please%20call%20me%20back."
     image_url = (body.image_url or "").strip() or None
     if image_url and not image_url.startswith("http"):
         image_url = None
@@ -2286,7 +2286,7 @@ def outreach_approach_email(
             <a href="{whatsapp}" style="display:inline-block;background:#128C7E;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-size:14px;font-weight:600;">WhatsApp us</a>
           </td></tr>
           <tr><td style="padding:0;">
-            <a href="{call}" style="display:inline-block;background:#1a2e28;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-size:14px;font-weight:600;">Request a call</a>
+            <a href="{call}" style="display:inline-block;background:#1a2e28;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-size:14px;font-weight:600;">Request a callback</a>
           </td></tr>
         </table>
         """

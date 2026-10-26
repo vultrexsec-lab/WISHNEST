@@ -81,7 +81,7 @@ While reviewing {{offer}}, your property stood out as a strong fit for a complim
 You are welcome to:
 • See the platform: {{website}}
 • Message us on WhatsApp: {{whatsapp}}
-• Request a short call: {{call}}
+• Request a callback (WhatsApp): {{call}}
 
 If this is not relevant, simply reply "no" or ignore this note — we will not follow up further.
 
@@ -92,7 +92,7 @@ https://wishnest.info`,
   const [emailImageUrl, setEmailImageUrl] = useState("");
   const [emailWebsite, setEmailWebsite] = useState("https://wishnest.info");
   const [emailWhatsapp, setEmailWhatsapp] = useState("https://wa.me/91");
-  const [emailCallUrl, setEmailCallUrl] = useState("https://wishnest.info/request-call");
+  const [emailCallUrl, setEmailCallUrl] = useState("https://wa.me/919199440961?text=Hi%20WishNest%2C%20please%20call%20me%20back.");
   const [extraEmails, setExtraEmails] = useState("");
   const [emailBusy, setEmailBusy] = useState(false);
   const [lastSendLog, setLastSendLog] = useState<{ email: string; status: string; error?: string }[]>([]);
@@ -527,7 +527,7 @@ https://wishnest.info`,
                 value={emailCallUrl}
                 onChange={(e) => setEmailCallUrl(e.target.value)}
                 className="h-9 w-full rounded-md border border-white/15 bg-[#121816] px-3 text-[12px] text-white"
-                placeholder="Call / form link"
+                placeholder="Callback link (WhatsApp or tel:+91...)"
               />
               <input
                 value={emailImageUrl}
