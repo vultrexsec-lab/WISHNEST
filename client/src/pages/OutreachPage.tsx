@@ -100,6 +100,8 @@ Reply to this email if you would like listing details, or ask us not to contact 
     "Hello from WishNest — we invite independent hotels & resorts to a complimentary listing on WishNest.info. Reply YES if you'd like details, or STOP to opt out.",
   );
   const [waBusy, setWaBusy] = useState(false);
+  const [waQueue, setWaQueue] = useState<{ name: string; phone: string }[]>([]);
+  const [waPicked, setWaPicked] = useState<Record<string, boolean>>({});
 
   // Call
   const [callPhone, setCallPhone] = useState("");
@@ -284,6 +286,53 @@ Reply to this email if you would like listing details, or ask us not to contact 
                 }}
               >
                 Import selected → contacts
+              </Button>
+              <Button
+                type="button"
+                disabled={!places.length}
+                variant="outline"
+                className="h-9 rounded-full border-emerald-500/40 bg-emerald-500/10 text-[11px] text-emerald-200 hover:bg-emerald-500/20"
+                onClick={async () => {
+                  const selected = places.filter((_, i) => selectedPlaces[i]);
+                  const withPhone = selected
+                    .map((r) => ({
+                      name: r.name || "—",
+                      phone: (r.phone || "").replace(/\s+/g, "").replace(/^\+/, ""),
+                    }))
+                    .filter((r) => r.phone && r.phone.length >= 10);
+                  if (!withPhone.length) {
+                    toast({
+                      title: "No phone numbers",
+                      description: "Selected rows have no phone. Search listings that show PHONE.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+                  // Also import to contacts for CRM continuity
+                  try {
+                    await apiRequest("POST", "/api/growth/places/import", {
+                      region: region.trim(),
+                      contact_type: "resort_owner",
+                      results: selected,
+                    });
+                    await qc.invalidateQueries({ queryKey: ["/api/growth/contacts"] });
+                  } catch {
+                    /* still transfer phones */
+                  }
+                  setWaQueue(withPhone);
+                  const pick: Record<string, boolean> = {};
+                  withPhone.forEach((r) => {
+                    pick[r.phone] = true;
+                  });
+                  setWaPicked(pick);
+                  setTab("whatsapp");
+                  toast({
+                    title: "Phones → WhatsApp",
+                    description: `${withPhone.length} numbers ready on WhatsApp tab`,
+                  });
+                }}
+              >
+                Phones → WhatsApp
               </Button>
             </div>
             {places.length > 0 && (
@@ -563,67 +612,147 @@ Reply to this email if you would like listing details, or ask us not to contact 
 {/* WHATSAPP */}
         {tab === "whatsapp" && (
           <section className="mt-6 space-y-4">
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-100/90">
-              <strong className="text-amber-200">Infobip free trial rules:</strong> messages only reach the
-              <em> one phone number verified when you created the Infobip account</em> — not any number you type.
-              Sender must be the connected test sender (e.g. 447860088970). Free-form text needs a 24h session
-              (recipient messages that sender first) or an approved template. Check Infobip → Analyze / Logs for DELIVERED vs REJECTED.
-            </div>
-            <p className="text-[12px] text-white/40">
-              Uses Infobip when INFOBIP_* is set on Render (else Meta Cloud). Put the verified trial number below.
+            <p className="text-[12px] text-white/45 leading-relaxed">
+              Numbers from <strong className="text-white/70">Data intake → Phones → WhatsApp</strong> or contacts with phone.
+              Template below — recipients can reply YES / STOP.
+              <span className="block mt-1 text-white/35">
+                Free Infobip trial usually delivers only to the single number you verified on signup.
+                To message any hotel number you need a paid WhatsApp provider (Infobip plan or Meta Cloud API with an approved business number).
+              </span>
             </p>
-            <input
-              value={waPhone}
-              onChange={(e) => setWaPhone(e.target.value)}
-              placeholder="Phone E.164 e.g. 9198XXXXXXXX"
-              className="h-9 w-full max-w-md rounded-md border border-white/15 bg-[#121816] px-3 text-[12px]"
-            />
+
+            <div className="flex flex-wrap gap-2 items-center">
+              <button
+                type="button"
+                className="rounded-md border border-white/15 bg-white/5 px-3 py-1.5 text-[11px] text-white/80 hover:bg-white/10"
+                onClick={() => {
+                  const next: Record<string, boolean> = { ...waPicked };
+                  const phones =
+                    waQueue.length > 0
+                      ? waQueue.map((q) => q.phone)
+                      : contacts.filter((c) => c.phone).map((c) => (c.phone || "").replace(/\s+/g, "").replace(/^\+/, ""));
+                  phones.forEach((ph) => {
+                    next[ph] = true;
+                  });
+                  setWaPicked(next);
+                }}
+              >
+                Select all numbers
+              </button>
+              <button
+                type="button"
+                className="rounded-md border border-white/15 bg-white/5 px-3 py-1.5 text-[11px] text-white/80 hover:bg-white/10"
+                onClick={() => setWaPicked({})}
+              >
+                Clear
+              </button>
+              <span className="text-[11px] text-emerald-300/80">
+                {Object.values(waPicked).filter(Boolean).length} selected
+              </span>
+            </div>
+
+            <div className="max-h-56 overflow-y-auto rounded-lg border border-white/10">
+              {(waQueue.length > 0
+                ? waQueue
+                : contacts
+                    .filter((c) => c.phone)
+                    .map((c) => ({
+                      name: c.name || c.company || "—",
+                      phone: (c.phone || "").replace(/\s+/g, "").replace(/^\+/, ""),
+                    }))
+              ).length === 0 ? (
+                <p className="px-3 py-4 text-[11px] text-white/35">
+                  No numbers yet. Data intake → search → tick rows → <strong>Phones → WhatsApp</strong>.
+                </p>
+              ) : (
+                (waQueue.length > 0
+                  ? waQueue
+                  : contacts
+                      .filter((c) => c.phone)
+                      .map((c) => ({
+                        name: c.name || c.company || "—",
+                        phone: (c.phone || "").replace(/\s+/g, "").replace(/^\+/, ""),
+                      }))
+                ).map((row) => (
+                  <label
+                    key={row.phone}
+                    className="flex cursor-pointer items-center gap-2 border-b border-white/5 px-3 py-2 text-[11px] text-white/70 hover:bg-white/[0.03]"
+                  >
+                    <input
+                      type="checkbox"
+                      className="rounded border-white/30"
+                      checked={!!waPicked[row.phone]}
+                      onChange={() =>
+                        setWaPicked((p) => ({ ...p, [row.phone]: !p[row.phone] }))
+                      }
+                    />
+                    <span className="min-w-0 flex-1 truncate font-medium text-white/85">{row.name}</span>
+                    <span className="font-mono text-emerald-300/90">{row.phone}</span>
+                  </label>
+                ))
+              )}
+            </div>
+
             <textarea
               value={waMsg}
               onChange={(e) => setWaMsg(e.target.value)}
               rows={4}
-              className="w-full rounded-md border border-white/15 bg-[#121816] px-3 py-2 text-[12px]"
+              className="w-full rounded-md border border-white/15 bg-[#121816] px-3 py-2 text-[12px] text-white leading-relaxed"
+            />
+            <input
+              value={waPhone}
+              onChange={(e) => setWaPhone(e.target.value)}
+              className="h-9 w-full max-w-md rounded-md border border-white/15 bg-[#121816] px-3 text-[12px]"
+              placeholder="Or one test phone E.164 e.g. 9198XXXXXXXX"
             />
             <Button
               type="button"
-              disabled={waBusy || !waPhone.trim() || !waMsg.trim()}
-              className="h-9 rounded-full bg-emerald-700 px-4 text-[11px] text-white"
+              disabled={waBusy || (!Object.values(waPicked).some(Boolean) && !waPhone.trim()) || !waMsg.trim()}
+              className="h-9 rounded-full bg-emerald-700 px-4 text-[11px] text-white hover:bg-emerald-600"
               onClick={async () => {
                 setWaBusy(true);
+                const targets = new Set<string>();
+                Object.entries(waPicked).forEach(([ph, on]) => {
+                  if (on && ph) targets.add(ph.replace(/\D/g, ""));
+                });
+                if (waPhone.trim()) targets.add(waPhone.trim().replace(/\D/g, ""));
+                let ok = 0;
+                let fail = 0;
+                const errors: string[] = [];
                 try {
-                  const res = await apiRequest("POST", "/api/growth/whatsapp/send", {
-                    phone: waPhone.trim(),
-                    message: waMsg.trim(),
-                    dry_run: false,
-                  });
-                  const data = await res.json();
-                  const st = data.status || "unknown";
-                  const hint = data.hint || data.detail || data.infobip_status || "";
-                  const desc = [
-                    `Status: ${st}`,
-                    data.infobip_status ? `Infobip: ${data.infobip_status}` : "",
-                    data.provider ? `via ${data.provider}` : "",
-                    typeof hint === "string" ? hint.slice(0, 180) : JSON.stringify(hint).slice(0, 180),
-                  ]
-                    .filter(Boolean)
-                    .join(" · ");
+                  for (const phone of Array.from(targets)) {
+                    try {
+                      const res = await apiRequest("POST", "/api/growth/whatsapp/send", {
+                        phone,
+                        message: waMsg.trim(),
+                      });
+                      const data = await res.json();
+                      const st = data.status || "";
+                      if (st === "accepted" || st === "sent" || st === "pending") ok += 1;
+                      else {
+                        fail += 1;
+                        if (data.hint || data.detail) {
+                          errors.push(String(data.hint || data.detail).slice(0, 120));
+                        }
+                      }
+                    } catch (e) {
+                      fail += 1;
+                      errors.push(e instanceof Error ? e.message.slice(0, 120) : "error");
+                    }
+                  }
                   toast({
-                    title: st === "accepted" || st === "sent" ? "WhatsApp accepted" : "WhatsApp result",
-                    description: desc || JSON.stringify(data).slice(0, 200),
-                    variant: st === "error" || st === "rejected" ? "destructive" : "default",
-                  });
-                } catch (e) {
-                  toast({
-                    title: "WhatsApp failed",
-                    description: e instanceof Error ? e.message : "Error",
-                    variant: "destructive",
+                    title: "WhatsApp batch",
+                    description:
+                      `Accepted ${ok}, failed ${fail}` +
+                      (errors[0] ? ` · ${errors[0]}` : ""),
+                    variant: fail && !ok ? "destructive" : "default",
                   });
                 } finally {
                   setWaBusy(false);
                 }
               }}
             >
-              {waBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Send WhatsApp"}
+              {waBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Send WhatsApp to selected"}
             </Button>
           </section>
         )}
