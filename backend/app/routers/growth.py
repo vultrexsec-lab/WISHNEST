@@ -2090,16 +2090,17 @@ class OutreachApproachIn(BaseModel):
 
 DEFAULT_APPROACH_BODY = """{{greeting}}
 
-My name is on the WishNest team (https://wishnest.info). We write about hospitality and design for independent properties — not a booking site.
+WishNest is a hospitality discovery and design-intelligence platform. We feature properties and explore thoughtful before-and-after design directions with participating partners.
 
-I came across your place while looking at {{offer}} and thought a short note might be useful: if you ever want your property featured on WishNest, the listing side of this invitation has no fee and no commission.
+We are inviting selected {{offer}} to consider a complimentary property listing on WishNest.info — no listing fee and no booking commission for this programme.
 
-Website: {{website}}
-If it is easier to message: {{whatsapp}}
-Or reply to this email with a yes or no.
+If useful, we can also share how a design evaluation conversation works (selection is not guaranteed; there is no obligation to purchase anything).
 
-Thanks for reading,
-WishNest
+You can see the site here: {{website}}
+
+Reply to this email if you would like listing details, or ask us not to contact you again.
+
+— WishNest
 """
 
 
@@ -2151,7 +2152,7 @@ def outreach_approach_email(
         raise HTTPException(400, "No valid email recipients.")
 
     offer = (body.property_or_offer or "").strip() or "independent hotels and resorts"
-    subject = (body.subject or "").strip() or "Quick note from WishNest"
+    subject = (body.subject or "").strip() or "WishNest — complimentary listing & design conversation"
     template = (body.body_template or "").strip() or DEFAULT_APPROACH_BODY
     website = (body.website_url or "").strip() or "https://wishnest.info"
     whatsapp = (body.whatsapp_url or "").strip() or "https://wa.me/"
@@ -2175,16 +2176,12 @@ def outreach_approach_email(
             .replace("{{whatsapp}}", whatsapp)
             .replace("{{call}}", call)
         )
-        # Minimal links — big marketing buttons push Gmail toward Promotions
-        cta_html = f"""
-        <p style="margin:16px 0;line-height:1.6;font-size:14px;color:#1a2e28;">
-          <a href="{website}" style="color:#165948;">wishnest.info</a>
-          &nbsp;·&nbsp;
-          <a href="{whatsapp}" style="color:#165948;">WhatsApp</a>
-          &nbsp;·&nbsp;
-          <a href="{call}" style="color:#165948;">Request a call</a>
+        cta_html = f'''
+        <p style="margin:12px 0;font-size:14px;line-height:1.5;color:#333;">
+          <a href="{website}" style="color:#1a5c4a;">{website}</a>
         </p>
-        """
+        '''
+
         img_html = ""
         if image_url:
             img_html = (
