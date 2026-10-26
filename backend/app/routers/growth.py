@@ -1972,9 +1972,23 @@ def whatsapp_invite(
     if not phone:
         raise HTTPException(400, "phone required")
     result = send_invite(to_phone=phone, dry_run=body.dry_run)
-    if contact and result.get("status") in ("sent", "accepted", "dry_run"):
-        # first invite does not require prior permission
-        pass
+    # Ensure contact exists + reset conversation to step 0
+    phone_digits = "".join(c for c in (phone or "") if c.isdigit())
+    if not contact and phone_digits:
+        contact = (
+            db.query(GrowthContact)
+            .filter(GrowthContact.phone.isnot(None))
+            .filter(GrowthContact.phone.ilike(f"%{phone_digits[-10:]}%"))
+            .first()
+        )
+    if not contact and phone_digits:
+        contact = GrowthContact(phone=phone_digits, source="whatsapp_invite", meta={})
+        db.add(contact)
+    if contact and result.get("status") in ("sent", "accepted", "dry_run", "sent"):
+        base = dict(contact.meta or {}) if isinstance(contact.meta, dict) else {}
+        base["whatsapp"] = {"wa_step": 0, "collected": {}, "last_invite_at": "now"}
+        contact.meta = base
+        db.add(contact)
     job = OutreachJob(
         channel="whatsapp",
         status=result.get("status") or "error",
@@ -2001,53 +2015,95 @@ def whatsapp_inbound(
     request: Request = None,
 ):
     """
-    Called by Baileys service when a message arrives.
-    Classifies YES/STOP/CALL/details, updates contact, auto-replies.
-    Auth: X-API-Key must match BAILEYS_API_KEY (or admin session).
+    Called by Baileys when a message arrives.
+    Multi-step auto conversation (YES → property → type → call time → scheduled).
+    Auth: X-API-Key must match BAILEYS_API_KEY.
     """
     import os
     key = (request.headers.get("x-api-key") or request.headers.get("authorization") or "").replace("Bearer ", "").strip()
     expected = (os.environ.get("BAILEYS_API_KEY") or "").strip()
     if expected and key != expected:
-        # also allow admin cookie/session via require_admin alternative — keep simple
         raise HTTPException(401, "unauthorized")
 
-    result = handle_inbound(body.phone, body.text)
-    phone = result["phone"]
-
-    # Best-effort contact update
+    phone_digits = "".join(c for c in (body.phone or "") if c.isdigit())
     contact = (
         db.query(GrowthContact)
         .filter(GrowthContact.phone.isnot(None))
-        .filter(GrowthContact.phone.ilike(f"%{phone[-10:]}%"))
+        .filter(GrowthContact.phone.ilike(f"%{phone_digits[-10:]}%"))
         .first()
     )
+    if not contact and phone_digits:
+        contact = GrowthContact(
+            phone=phone_digits,
+            source="whatsapp_inbound",
+            meta={},
+        )
+        db.add(contact)
+        db.flush()
+
+    wa_meta = {}
+    if contact and isinstance(contact.meta, dict):
+        wa_meta = dict(contact.meta.get("whatsapp") or contact.meta or {})
+    current_step = int(wa_meta.get("wa_step") or 0)
+
+    result = handle_inbound(
+        body.phone,
+        body.text,
+        current_step=current_step,
+        wa_meta=wa_meta,
+    )
+    phone = result["phone"]
+
     if contact:
         if result["set_permission"] is True:
             contact.whatsapp_permission = True
         elif result["set_permission"] is False:
             contact.whatsapp_permission = False
             contact.unsubscribed = True
-        if result["callback_requested"]:
-            # store a lightweight note in existing fields if present
-            note = (contact.notes or "") + f"\n[callback requested via WA] {body.text[:200]}"
-            if hasattr(contact, "notes"):
-                contact.notes = note[-4000:]
-        if result["details_received"] and hasattr(contact, "notes"):
-            note = (contact.notes or "") + f"\n[details] {body.text[:500]}"
+
+        # Persist conversation state in meta.whatsapp
+        base_meta = dict(contact.meta or {}) if isinstance(contact.meta, dict) else {}
+        base_meta["whatsapp"] = result.get("meta") or {}
+        contact.meta = base_meta
+
+        bits = []
+        coll = result.get("collected") or {}
+        if coll.get("property"):
+            bits.append(f"property={coll['property']}")
+            if not contact.company:
+                contact.company = coll["property"][:255]
+        if coll.get("property_type"):
+            bits.append(f"type={coll['property_type']}")
+        if coll.get("preferred_call_time"):
+            bits.append(f"call_time={coll['preferred_call_time']}")
+        if result.get("callback_requested"):
+            bits.append("callback_queued")
+        if bits:
+            note = (contact.notes or "") + "\n[WA] " + "; ".join(bits)
             contact.notes = note[-4000:]
         db.add(contact)
 
     job = OutreachJob(
         channel="whatsapp",
         status="inbound",
-        title=f"WA in {phone} {result['intent']}"[:255],
+        title=f"WA in {phone} step{result.get('step')}->{result.get('next_step')} {result.get('intent')}"[:255],
         payload={"phone": phone, "text": body.text[:1000], "messageId": body.messageId},
-        result=result,
+        result={k: result[k] for k in result if k != "send_result"},
     )
     db.add(job)
     db.commit()
-    return {"ok": True, **{k: result[k] for k in ("intent", "phone", "auto_reply", "set_permission", "callback_requested")}}
+    return {
+        "ok": True,
+        "intent": result.get("intent"),
+        "phone": phone,
+        "step": result.get("step"),
+        "next_step": result.get("next_step"),
+        "auto_reply": result.get("auto_reply"),
+        "set_permission": result.get("set_permission"),
+        "callback_requested": result.get("callback_requested"),
+        "scheduled": result.get("scheduled"),
+        "collected": result.get("collected"),
+    }
 
 
 @router.get("/api/growth/whatsapp/status")

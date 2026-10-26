@@ -20,7 +20,7 @@ import requests
 
 logger = logging.getLogger("wishnest.whatsapp")
 
-# ---------- Invitation / reply templates ----------
+# ---------- Invitation / multi-step conversation templates ----------
 
 INVITE_MESSAGE = (
     "Hello from WishNest — we invite independent hotels & resorts to a "
@@ -28,25 +28,51 @@ INVITE_MESSAGE = (
     "Reply YES if you'd like details, or STOP to opt out."
 )
 
-REPLY_YES = (
+MSG_AFTER_YES = (
     "Thank you. Here's a quick overview:\n\n"
     "• Complimentary editorial listing on WishNest.info\n"
     "• Focus: architecture, hospitality & guest experience\n"
     "• No fees, no commission\n\n"
-    "Reply with your property name + city,\n"
-    "or type CALL if you'd like us to call you back."
+    "Please reply with your *property name and city* "
+    "(e.g. Amanbagh, Rajasthan)."
 )
 
-REPLY_STOP = "Understood. You won't receive further messages from WishNest. Thank you."
-
-REPLY_CALL = "Got it. Our team will call you shortly on this number. Thank you."
-
-REPLY_DETAILS = "Received. We'll review and get back to you soon. Thank you."
-
-REPLY_FALLBACK = (
-    "Thanks for your message. Reply YES for listing details, "
-    "CALL for a callback, or STOP to opt out."
+MSG_ASK_TYPE = (
+    "Got it — thanks.\n\n"
+    "What type of property is it?\n"
+    "Reply with one: hotel / resort / villa / retreat / other."
 )
+
+MSG_ASK_CALL = (
+    "Perfect.\n\n"
+    "When should our team call you for a short conversation?\n"
+    "Reply with a preferred day/time "
+    "(e.g. tomorrow 11am, or Thu 4pm IST)."
+)
+
+MSG_SCHEDULED = (
+    "Thank you — we've noted your preferred time.\n\n"
+    "Our team will call you shortly on this number about the complimentary listing. "
+    "No obligation.\n\n"
+    "— WishNest"
+)
+
+MSG_STOP = "Understood. You won't receive further messages from WishNest. Thank you."
+MSG_CALL_NOW = "Got it. Our team will call you shortly on this number. Thank you."
+MSG_FALLBACK_STEP0 = (
+    "Thanks for your message. Reply *YES* for listing details, "
+    "*CALL* for a callback, or *STOP* to opt out."
+)
+MSG_FALLBACK_IN_FLOW = (
+    "Thanks — please reply to the last question, "
+    "or type *CALL* for a callback / *STOP* to opt out."
+)
+
+REPLY_YES = MSG_AFTER_YES
+REPLY_STOP = MSG_STOP
+REPLY_CALL = MSG_CALL_NOW
+REPLY_DETAILS = MSG_ASK_TYPE
+REPLY_FALLBACK = MSG_FALLBACK_STEP0
 
 
 def _digits(phone: str) -> str:
@@ -140,42 +166,104 @@ def send_invite(to_phone: str, *, dry_run: bool = False) -> dict[str, Any]:
     return send_whatsapp_text(to_phone=to_phone, body=INVITE_MESSAGE, dry_run=dry_run)
 
 
+
 def classify_inbound(text: str) -> str:
-    """Return intent: yes | stop | call | details | other."""
+    """Return intent: yes | stop | call | other."""
     t = (text or "").strip().lower()
     if not t:
         return "other"
-    # STOP first
     if re.search(r"\b(stop|unsubscribe|opt\s*out|रोको|बंद)\b", t):
         return "stop"
+    if re.search(r"\b(call|callback|call\s*me|call\s*back)\b", t):
+        return "call"
     if re.search(r"\b(yes|yeah|yep|ok|okay|interested|हाँ|हां|जी)\b", t) or t in ("y", "ha", "haan"):
         return "yes"
-    if re.search(r"\b(call|callback|call\s*me|call\s*back|phone)\b", t):
-        return "call"
-    # Heuristic: looks like property + place
-    if len(t) > 8 and any(c.isalpha() for c in t):
-        return "details"
     return "other"
 
 
-def handle_inbound(phone: str, text: str) -> dict[str, Any]:
+def handle_inbound(
+    phone: str,
+    text: str,
+    *,
+    current_step: int = 0,
+    wa_meta: dict | None = None,
+) -> dict[str, Any]:
     """
-    Classify reply, optionally auto-reply, return intent + actions for router/DB.
-    Does not write to DB itself — caller should persist.
+    Multi-step conversation (auto-reply, no human needed):
+
+      0  await YES/STOP/CALL
+      1  await property name + city
+      2  await property type
+      3  await preferred call time
+      4  done (scheduled)
+
+    Returns fields for the router to persist on contact.meta / flags.
     """
     phone = _digits(phone)
-    intent = classify_inbound(text)
+    raw = (text or "").strip()
+    intent = classify_inbound(raw)
+    step = int(current_step or 0)
+    meta = dict(wa_meta or {})
+    collected = dict(meta.get("collected") or {})
+
     auto_reply: str | None = None
-    if intent == "yes":
-        auto_reply = REPLY_YES
-    elif intent == "stop":
-        auto_reply = REPLY_STOP
+    next_step = step
+    set_permission: bool | None = None
+    callback_requested = False
+    details_received = False
+    scheduled = False
+
+    # Global overrides
+    if intent == "stop":
+        auto_reply = MSG_STOP
+        next_step = 0
+        set_permission = False
     elif intent == "call":
-        auto_reply = REPLY_CALL
-    elif intent == "details":
-        auto_reply = REPLY_DETAILS
+        auto_reply = MSG_CALL_NOW
+        next_step = 4
+        set_permission = True if step >= 1 else None
+        callback_requested = True
+        scheduled = True
+    elif step == 0:
+        if intent == "yes":
+            auto_reply = MSG_AFTER_YES
+            next_step = 1
+            set_permission = True
+        else:
+            auto_reply = MSG_FALLBACK_STEP0
+    elif step == 1:
+        # property name + city
+        if len(raw) < 3:
+            auto_reply = MSG_FALLBACK_IN_FLOW
+        else:
+            collected["property"] = raw[:500]
+            auto_reply = MSG_ASK_TYPE
+            next_step = 2
+            details_received = True
+            set_permission = True
+    elif step == 2:
+        collected["property_type"] = raw[:200]
+        auto_reply = MSG_ASK_CALL
+        next_step = 3
+        set_permission = True
+    elif step == 3:
+        collected["preferred_call_time"] = raw[:300]
+        auto_reply = MSG_SCHEDULED
+        next_step = 4
+        callback_requested = True
+        scheduled = True
+        set_permission = True
     else:
-        auto_reply = REPLY_FALLBACK
+        # step >= 4 done
+        auto_reply = (
+            "We've already noted your details. Our team will be in touch. "
+            "Type STOP if you no longer wish to hear from us."
+        )
+
+    meta["wa_step"] = next_step
+    meta["collected"] = collected
+    if scheduled:
+        meta["callback_status"] = "queued"
 
     send_result = None
     if auto_reply and phone:
@@ -184,16 +272,19 @@ def handle_inbound(phone: str, text: str) -> dict[str, Any]:
     return {
         "phone": phone,
         "intent": intent,
-        "text": text,
+        "text": raw,
+        "step": step,
+        "next_step": next_step,
         "auto_reply": auto_reply,
         "send_result": send_result,
-        "set_permission": True if intent == "yes" else False if intent == "stop" else None,
-        "callback_requested": intent == "call",
-        "details_received": intent == "details",
+        "set_permission": set_permission,
+        "callback_requested": callback_requested,
+        "details_received": details_received,
+        "scheduled": scheduled,
+        "meta": meta,
+        "collected": collected,
     }
 
-
-# ---------- Baileys ----------
 
 def _send_baileys(to_phone: str, text: str) -> dict[str, Any]:
     base = os.environ["BAILEYS_URL"].rstrip("/")
