@@ -137,7 +137,7 @@ def _resolve_query_to_property(query: str) -> tuple[str, str | None]:
         "Generate a complete WishNest article package including: headline, subtitle, "
         "full_article (rich HTML), executive_summary, pull_quotes, FAQ section, "
         "SEO fields (seo_title 50-60 chars, meta_description 150-160 chars, focus_keyword, keywords), "
-        "WishNest ABCDE scoring (numeric scores 1.0-10.0 AND letter grades), key_takeaways, "
+        "WishNest ABCDE Intelligence Brain (numeric-first 1.0-10.0 then letters; claim vs evidence; A+ rare), key_takeaways, "
         "wishnest_verdict, developer_lessons, and the full social media package.\n\n"
         f"Set article_type to \"review\".\n"
         f"Set location to \"{address}\"."
