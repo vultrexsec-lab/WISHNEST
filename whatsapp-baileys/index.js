@@ -26,9 +26,21 @@ const AUTH_DIR = process.env.AUTH_DIR || path.join(__dirname, "auth_session");
 const API_KEY = process.env.BAILEYS_API_KEY || "wishnest-baileys-secret";
 const BACKEND_WEBHOOK = (process.env.BACKEND_WEBHOOK_URL || "").replace(/\/$/, "");
 const logger = pino({ level: process.env.LOG_LEVEL || "info" });
-const REV = "auto-reply-v6";
+const REV = "auto-reply-v7";
 
 const msgRetryCounterCache = new NodeCache({ stdTTL: 600, checkperiod: 120, useClones: false });
+/** recent messages for getMessage decrypt retries */
+const msgStore = new Map();
+function storeMsg(msg) {
+  const id = msg?.key?.id;
+  if (!id || !msg?.message) return;
+  const jid = msg.key.remoteJid || "";
+  msgStore.set(id, msg);
+  if (msgStore.size > 200) {
+    const k = msgStore.keys().next().value;
+    msgStore.delete(k);
+  }
+}
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -311,7 +323,11 @@ async function startSocket() {
     syncFullHistory: false,
     generateHighQualityLinkPreview: false,
     msgRetryCounterCache,
-    getMessage: async () => undefined,
+    getMessage: async (key) => {
+      const id = key?.id;
+      if (id && msgStore.has(id)) return msgStore.get(id).message;
+      return undefined;
+    },
   });
 
   sock.ev.on("creds.update", saveCreds);
@@ -348,13 +364,30 @@ async function startSocket() {
       logger.info({ type, n: messages?.length }, "upsert");
       for (const msg of messages || []) {
         try {
+          storeMsg(msg);
           await handleIncoming(msg);
         } catch (e) {
           logger.error({ err: String(e) }, "handle err");
         }
       }
     }
-    if (events["messages.update"]) bump("messages.update");
+    if (events["messages.update"]) {
+      bump("messages.update");
+      for (const item of events["messages.update"] || []) {
+        try {
+          const key = item.key;
+          const update = item.update || {};
+          // Merge decrypted content into a full msg shape
+          if (update.message && key) {
+            const full = { key, message: update.message, messageTimestamp: update.messageTimestamp };
+            storeMsg(full);
+            await handleIncoming(full);
+          }
+        } catch (e) {
+          logger.error({ err: String(e) }, "messages.update err");
+        }
+      }
+    }
     if (events["message-receipt.update"]) bump("message-receipt.update");
     if (events["messaging-history.set"]) {
       bump("messaging-history.set");
