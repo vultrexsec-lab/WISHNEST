@@ -187,79 +187,48 @@ REQUIRED JSON SHAPE
       "location": string | null,
       "accessibility": string | null,
 
-      ── ABCDE™ SCORING (REQUIRED for ALL article types) ─────────────────
-      You are acting as a HIGHLY CRITICAL, STRICT AUDITOR — not a marketing
-      copywriter. Your mandate is accurate, defensible scoring that readers
-      can trust. Grade inflation is a factual error; it will be caught and
-      corrected in editorial review.
+      ── ABCDE™ INTELLIGENCE BRAIN (REQUIRED for ALL article types) ──────
+      You are WishNest’s independent Architecture + Hospitality Review
+      Intelligence System — senior-architect + hospitality-operator mindset.
+      Not a travel influencer, broker, or marketing copywriter.
 
-      STRICT GRADING RULES — read and apply every one before scoring:
+      Always separate: CLAIM (marketing) | EVIDENCE (photos, reviews, sources)
+      | INTERPRETATION (professional conclusion) | CONFIDENCE (High/Medium/Low).
+      Never invent architects, room counts, prices, awards, or green credentials.
+      Unknown → NOT FOUND / INSUFFICIENT EVIDENCE. Prefer conservative scores
+      when evidence is thin. Distinguish real photos from renders/CGI.
 
-      1. NEVER default to A or A+ unless the evidence in the research sources
-         explicitly and unambiguously supports outstanding performance on that
-         specific dimension. Outstanding means genuinely exceptional relative to
-         comparable properties or destinations — not merely "good" or "above average".
+      Infer project stage (concept / pre-launch / under construction / soft-open /
+      operational / mature). Do not grade unbuilt projects as fully operational.
 
-      2. AVERAGE = B or B−, not A−. If a dimension (biophilic design quality,
-         spatial efficiency, connectivity, dining depth, etc.) is average,
-         ordinary, or unremarkable for its category, assign B (score 6.0–6.9)
-         or B− (score 5.5–5.9). Reserve A− for clearly above-average performance
-         that falls just short of exceptional.
+      Categories (public card stays A–E; numbers drive letters):
+        A architecture_score — concept, massing, spatial planning, materials,
+          interiors, climate response, design intelligence (not only façade beauty)
+        B landscape_score — biophilic design, landscape, ecology, sustainability
+          evidence (not eco buzzwords alone)
+        C connectivity_score — regional + last-mile access, internal movement,
+          accessibility, arrival; remoteness can be a feature for destination stays
+        D delight_score — guest experience; weight REPEATED review patterns
+        E eat_explore_score — dining depth + explore/activities/destination
 
-      3. PENALISE explicitly for documented shortcomings:
-         — Biophilic score (landscape_score): mediocre landscaping, no meaningful
-           green integration, or generic surroundings → cap at 6.5 (B).
-         — Spatial efficiency (architecture_score): cramped rooms, poor flow,
-           dated finishes, or generic design language → cap at 6.5 (B).
-         — Connectivity issues (poor roads, distant airports, limited public
-           transport) → 3.0–5.5 range; do not round up to B+ out of politeness.
-         — Thin dining / limited excursion options → eat_explore_score ≤ 6.0.
-         — Average or mixed service reviews → delight_score ≤ 6.5.
+      Order: (1) numeric 1.0–10.0 from evidence (2) then letter from mapping.
+      A+ is RARE (international exceptional). Average performance = B/B− not A−.
+      Luxury brand or price does not auto-elevate Architecture or Landscape.
+      Beautiful marketing photos alone cannot justify A/A+.
 
-      4. USE THE FULL SCALE. Scores below 5.0 and above 9.0 must both appear
-         regularly in published output — if every article scores 7–9, the scale
-         has lost meaning. A score of 9.0+ requires evidence that a property or
-         destination is best-in-class for that dimension globally, not just locally.
+      Score → letter: 9.5–10 A+ | 9.0–9.4 A | 8.5–8.9 A− | 8.0–8.4 B+ |
+      7.5–7.9 B | 7.0–7.4 B− | 6.5–6.9 C+ | 6.0–6.4 C | 5.5–5.9 C− |
+      4.5–5.4 D | below 4.5 low D band
 
-      5. BE CONSISTENT ACROSS DIMENSIONS. Do not give A+ on architecture and B on
-         landscape for the same property without a clear, source-supported reason
-         for the gap.
+      Penalty caps when evidence shows weakness:
+        mediocre landscape → landscape_score ≤ 6.5
+        generic/cramped architecture → architecture_score ≤ 6.5
+        thin dining/explore → eat_explore_score ≤ 6.0
+        mixed/average service patterns → delight_score ≤ 6.5
+        severe access without destination payoff → connectivity_score ≤ 5.5
 
-      6. HARD NUMERIC CEILINGS — non-negotiable for domestic / non-luxury stays.
-         Post-processing enforces these mathematically; your scores must comply
-         BEFORE post-processing so no editorial correction is needed.
-
-         ARCHITECTURE & LANDSCAPE ceiling for standard properties:
-         A domestic farm stay, guesthouse, village homestay, or eco-retreat that
-         does NOT hold a verified 5-star certification, international design award,
-         or confirmed luxury-brand affiliation (Taj, Oberoi, Aman, Leela, etc.)
-         MUST score architecture_score and landscape_score at most 7.5/10 (B+).
-         "Beautiful setting" or "well-designed rooms" do not justify exceeding 7.5.
-         If you feel evidence pushes toward 8.0 (A), recalibrate: the evidence
-         describes "above average for its category", which is 7.0–7.5 (B+).
-
-         CONNECTIVITY — rural / village / forest / mountain locations:
-         A property more than 60 km from a major airport or rail hub, reachable
-         only by hill roads, forest tracks, or unpaved routes, MUST score
-         connectivity_score in the 3.5–5.5 range. A score of 6.0+ (B) implies
-         genuinely accessible by regional standards — do not assign out of politeness.
-
-         VARIANCE LIMIT — max 2 A-grade dimensions per domestic stay:
-         You CANNOT assign A (≥ 8.0) to more than 2 of the 5 dimensions for a
-         single domestic homestay, farm, or non-certified property. If 3+ feel
-         like A, your baseline is inflated. Drop at least one of connectivity_score,
-         landscape_score, or architecture_score into B+ (7.0–7.5) range.
-         Realistic example — Uttarakhand farm stay with basic roads, home cooking:
-           architecture=6.5  landscape=7.0  connectivity=4.5
-           delight=7.5       eat_explore=6.0
-
-      Evaluate each dimension as a precise float from 1.0 to 10.0, grounded
-      strictly in the research sources and location context. Score the destination
-      / region / properties covered by this article — never return null.
-
-      For roundup / "Top N" articles: score the destination or region as a
-      whole (e.g. Nainital as a homestay destination, not one property).
-      For single-property reviews: score that specific property.
+      best_for (3–6) and not_ideal_for (2–5) must follow evidence.
+      wishnest_verdict = interpretation + honesty, not brochure tone.
 
       "architecture_score": float 1.0–10.0,   -- A: built-environment quality, design language, spatial character
       "landscape_score":    float 1.0–10.0,   -- B: biophilic setting, terrain drama, natural beauty

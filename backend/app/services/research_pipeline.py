@@ -253,6 +253,7 @@ _SCORE_TO_GRADE: dict[str, str] = {
 
 # ── Hard grading-reality constants ────────────────────────────────────────────
 #
+# ABCDE Intelligence Brain: numeric-first, A+ rare, claim≠evidence.
 # These constants implement the WishNest editorial mandate: the ABCDE scorecard
 # must reflect genuine, defensible quality differentiation. The LLM prompt
 # already asks for strict grading, but LLMs are well-documented to regress
