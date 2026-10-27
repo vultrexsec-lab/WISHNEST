@@ -7,7 +7,8 @@ import io
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter
+from fastapi.responses import HTMLResponse, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -2324,6 +2325,80 @@ def list_outreach_jobs(
 
 
 # ── Public survey (no admin auth) ───────────────────────────────────────────
+
+
+
+
+@router.get("/api/public/wa-yes")
+def public_wa_yes(p: str, db: Session = Depends(get_db)):
+    """One-tap YES from invite link — works when WA inbound decrypt fails."""
+    from app.services.whatsapp_service import (
+        handle_inbound,
+        send_whatsapp_text,
+        normalize_wa_phone,
+        MSG_AFTER_YES,
+    )
+    phone = normalize_wa_phone(p or "")
+    if len(phone) < 10:
+        return HTMLResponse("<h2>Invalid link</h2>", status_code=400)
+
+    contact = (
+        db.query(GrowthContact)
+        .filter(GrowthContact.phone.isnot(None))
+        .filter(GrowthContact.phone.ilike(f"%{phone[-10:]}%"))
+        .first()
+    )
+    if not contact:
+        contact = GrowthContact(phone=phone, source="wa_yes_link", meta={}, whatsapp_permission=True)
+        db.add(contact)
+        db.flush()
+
+    wa_meta = {}
+    if isinstance(contact.meta, dict):
+        wa_meta = dict(contact.meta.get("whatsapp") or {})
+    step = int(wa_meta.get("wa_step") or 0)
+    result = handle_inbound(phone, "YES", current_step=step, wa_meta=wa_meta)
+    reply = result.get("auto_reply") or MSG_AFTER_YES
+    send_result = send_whatsapp_text(to_phone=phone, body=reply)
+
+    base_meta = dict(contact.meta or {}) if isinstance(contact.meta, dict) else {}
+    base_meta["whatsapp"] = result.get("meta") or {"wa_step": 1}
+    contact.meta = base_meta
+    contact.whatsapp_permission = True
+    db.add(contact)
+    job = OutreachJob(
+        channel="whatsapp",
+        status="inbound_link",
+        title=f"WA YES link {phone}"[:255],
+        payload={"phone": phone, "via": "wa-yes-link"},
+        result={"send": send_result, "next_step": result.get("next_step")},
+    )
+    db.add(job)
+    db.commit()
+
+    ok = send_result.get("status") in ("sent", "accepted", "dry_run")
+    title = "You are in" if ok else "Something went wrong"
+    body = (
+        "We sent the next details to your WhatsApp. You can close this tab."
+        if ok
+        else "Please reply YES on WhatsApp, or try again later."
+    )
+    color = "#6ee7b7" if ok else "#fca5a5"
+    html = (
+        "<!DOCTYPE html><html><head><meta charset='utf-8'/>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'/>"
+        "<title>WishNest</title><style>"
+        "body{font-family:system-ui;background:#0c1210;color:#e8eee9;display:flex;"
+        "min-height:100vh;align-items:center;justify-content:center;margin:0}"
+        ".card{max-width:420px;padding:28px;border-radius:16px;border:1px solid #ffffff22;"
+        "background:#ffffff0a}</style></head><body><div class='card'>"
+        f"<h2 style='color:{color}'>{title}</h2><p>{body}</p>"
+        "<p style='opacity:.6;font-size:13px'>WishNest.info</p>"
+        "</div></body></html>"
+    )
+    return HTMLResponse(html)
+
+
 
 @router.get("/api/public/surveys/{survey_id}")
 def public_get_survey(survey_id: uuid.UUID, db: Session = Depends(get_db)):

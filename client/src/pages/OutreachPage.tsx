@@ -730,9 +730,15 @@ https://wishnest.info`,
                 try {
                   for (const phone of Array.from(targets)) {
                     try {
+                      const baseMsg = waMsg.trim();
+                      const link = `https://wishnest-backend-kgu2.onrender.com/api/public/wa-yes?p=${phone}`;
+                      const message =
+                        /reply yes/i.test(baseMsg) && !baseMsg.includes("wa-yes")
+                          ? `${baseMsg}\n\nOr tap here for YES: ${link}`
+                          : baseMsg;
                       const res = await apiRequest("POST", "/api/growth/whatsapp/send", {
                         phone,
-                        message: waMsg.trim(),
+                        message,
                       });
                       const data = await res.json();
                       const st = data.status || "";

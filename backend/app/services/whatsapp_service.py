@@ -79,12 +79,24 @@ def _digits(phone: str) -> str:
     return "".join(c for c in (phone or "") if c.isdigit())
 
 
+
 def normalize_wa_phone(phone: str) -> str:
     """E.164 digits. 10-digit Indian numbers get 91 prefix."""
     d = _digits(phone)
     if len(d) == 10 and d[0] in "6789":
         d = "91" + d
     return d
+
+
+def yes_link_for(phone: str) -> str:
+    import os
+    base = (
+        os.environ.get("PUBLIC_API_BASE")
+        or os.environ.get("BACKEND_PUBLIC_URL")
+        or "https://wishnest-backend-kgu2.onrender.com"
+    ).rstrip("/")
+    d = normalize_wa_phone(phone)
+    return f"{base}/api/public/wa-yes?p={d}"
 
 
 
@@ -170,9 +182,22 @@ def send_whatsapp_text(
     return _send_meta(phone, text)
 
 
+def build_invite_message(to_phone: str) -> str:
+    """Invite text + one-tap YES link (backup when WA inbound decrypt fails)."""
+    phone = normalize_wa_phone(to_phone)
+    link = yes_link_for(phone)
+    return (
+        "Hello from WishNest — we invite independent hotels & resorts to a "
+        "complimentary listing on WishNest.info (no listing fee, no booking commission).\n\n"
+        "Reply *YES* if you'd like details, or *STOP* to opt out.\n\n"
+        f"Or tap here for YES: {link}"
+    )
+
+
 def send_invite(to_phone: str, *, dry_run: bool = False) -> dict[str, Any]:
-    """Send the standard YES/STOP invitation."""
-    return send_whatsapp_text(to_phone=to_phone, body=INVITE_MESSAGE, dry_run=dry_run)
+    """Send the standard YES/STOP invitation (with web YES backup link)."""
+    body = build_invite_message(to_phone)
+    return send_whatsapp_text(to_phone=to_phone, body=body, dry_run=dry_run)
 
 
 
