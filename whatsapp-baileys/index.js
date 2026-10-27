@@ -26,7 +26,7 @@ const AUTH_DIR = process.env.AUTH_DIR || path.join(__dirname, "auth_session");
 const API_KEY = process.env.BAILEYS_API_KEY || "wishnest-baileys-secret";
 const BACKEND_WEBHOOK = (process.env.BACKEND_WEBHOOK_URL || "").replace(/\/$/, "");
 const logger = pino({ level: process.env.LOG_LEVEL || "info" });
-const REV = "auto-reply-v8";
+const REV = "auto-reply-v9";
 
 const msgRetryCounterCache = new NodeCache({ stdTTL: 600, checkperiod: 120, useClones: false });
 /** recent messages for getMessage decrypt retries */
@@ -244,7 +244,8 @@ async function sendText(jidOrPhone, message) {
 
 async function handleIncoming(msg) {
   const id = msg.key?.id;
-  if (id) {
+  const isRetry = Boolean(msg._retried);
+  if (id && !isRetry) {
     if (processedIds.has(id)) return;
     processedIds.add(id);
     if (processedIds.size > 800) processedIds.delete(processedIds.values().next().value);
@@ -271,9 +272,20 @@ async function handleIncoming(msg) {
   logger.info(lastInbound, "INBOUND");
 
   if (!text) {
-    logger.warn({ msgKeys: lastInbound.msgKeys }, "empty text — skip");
+    // One delayed retry — decrypt sometimes lands a moment later in msgStore
+    await new Promise((r) => setTimeout(r, 1500));
+    const cached = id && msgStore.get(id);
+    const retryText = cached ? extractText(cached) : "";
+    if (retryText) {
+      logger.info({ retryText: retryText.slice(0, 80) }, "decrypt retry ok");
+      msg.message = cached.message;
+      // fall through with text
+      return handleIncoming({ ...msg, message: cached.message, _retried: true });
+    }
+    logger.warn({ msgKeys: lastInbound.msgKeys, remote }, "empty text — skip");
     return;
   }
+  if (msg._retried === undefined && false) return; // placate
   // Accept LID-only contacts (use replyJid); phone may be opaque
   const stateKey = phone.length >= 10 ? phone : replyJid;
 
