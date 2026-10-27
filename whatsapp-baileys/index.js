@@ -26,7 +26,7 @@ const AUTH_DIR = process.env.AUTH_DIR || path.join(__dirname, "auth_session");
 const API_KEY = process.env.BAILEYS_API_KEY || "wishnest-baileys-secret";
 const BACKEND_WEBHOOK = (process.env.BACKEND_WEBHOOK_URL || "").replace(/\/$/, "");
 const logger = pino({ level: process.env.LOG_LEVEL || "info" });
-const REV = "auto-reply-v5";
+const REV = "auto-reply-v6";
 
 const msgRetryCounterCache = new NodeCache({ stdTTL: 600, checkperiod: 120, useClones: false });
 
@@ -63,6 +63,77 @@ const MSG = {
 function digits(p) {
   return String(p || "").replace(/\D/g, "");
 }
+
+/** phone <-> jid maps learned from outbound sends + inbound alts */
+const phoneToJid = new Map();
+const jidToPhone = new Map();
+
+function rememberJid(phone, jid) {
+  if (!phone || !jid) return;
+  phoneToJid.set(phone, jid);
+  jidToPhone.set(jid, phone);
+  const d = digits(phone);
+  if (d) phoneToJid.set(d, jid);
+}
+
+async function resolvePhoneFromMsg(msg) {
+  const key = msg.key || {};
+  const remote = key.remoteJid || "";
+  // Prefer explicit phone alt
+  const alt = key.remoteJidAlt || key.participantAlt || "";
+  if (alt.includes("@s.whatsapp.net") || alt.includes("@c.us")) {
+    const ph = digits(alt.split("@")[0]);
+    if (ph.length >= 10) {
+      rememberJid(ph, remote.endsWith("@lid") ? remote : alt);
+      return { phone: ph, replyJid: remote || alt };
+    }
+  }
+  if (remote.includes("@s.whatsapp.net") || remote.includes("@c.us")) {
+    const ph = digits(remote.split("@")[0]);
+    return { phone: ph, replyJid: remote };
+  }
+  // LID → try mapping store
+  if (remote.endsWith("@lid") && sock?.signalRepository?.lidMapping?.getPNForLID) {
+    try {
+      const pn = await sock.signalRepository.lidMapping.getPNForLID(remote);
+      if (pn) {
+        const ph = digits(String(pn).split("@")[0]);
+        if (ph.length >= 10) {
+          rememberJid(ph, remote);
+          return { phone: ph, replyJid: remote };
+        }
+      }
+    } catch (e) {
+      logger.warn({ err: String(e) }, "getPNForLID failed");
+    }
+  }
+  // learned map
+  if (jidToPhone.has(remote)) {
+    return { phone: jidToPhone.get(remote), replyJid: remote };
+  }
+  const fallback = digits(remote.split("@")[0]);
+  return { phone: fallback, replyJid: remote };
+}
+
+async function resolveSendJid(phone) {
+  const d = digits(phone);
+  if (phoneToJid.has(d)) return phoneToJid.get(d);
+  if (sock?.onWhatsApp) {
+    try {
+      const res = await sock.onWhatsApp(d);
+      const hit = Array.isArray(res) ? res[0] : res;
+      if (hit?.jid) {
+        rememberJid(d, hit.jid);
+        return hit.jid;
+      }
+    } catch (e) {
+      logger.warn({ err: String(e) }, "onWhatsApp failed");
+    }
+  }
+  return d + "@s.whatsapp.net";
+}
+
+
 function authOk(req) {
   const h = req.headers["x-api-key"] || req.headers["authorization"] || "";
   return h.replace(/^Bearer\s+/i, "").trim() === API_KEY;
@@ -150,10 +221,13 @@ async function notifyBackend(payload) {
 
 async function sendText(jidOrPhone, message) {
   if (!sock || connectionStatus !== "open") throw new Error("not_connected");
-  const jid = String(jidOrPhone).includes("@")
-    ? jidOrPhone
-    : `${digits(jidOrPhone)}@s.whatsapp.net`;
-  return sock.sendMessage(jid, { text: String(message).slice(0, 4000) });
+  let jid;
+  if (String(jidOrPhone).includes("@")) jid = jidOrPhone;
+  else jid = await resolveSendJid(digits(jidOrPhone));
+  const result = await sock.sendMessage(jid, { text: String(message).slice(0, 4000) });
+  const ph = digits(jidOrPhone);
+  if (ph.length >= 10) rememberJid(ph, jid);
+  return result;
 }
 
 async function handleIncoming(msg) {
@@ -168,49 +242,53 @@ async function handleIncoming(msg) {
   const remote = msg.key?.remoteJid || "";
   if (!remote || isJidBroadcast(remote) || isJidGroup(remote)) return;
 
-  let phone = digits(remote.split("@")[0]);
-  if (phone.length < 10 && msg.key?.participant) {
-    phone = digits(String(msg.key.participant).split("@")[0]);
-  }
+  const { phone, replyJid } = await resolvePhoneFromMsg(msg);
   const text = extractText(msg);
   lastInbound = {
     at: new Date().toISOString(),
     remote,
+    remoteJidAlt: msg.key?.remoteJidAlt || null,
     phone,
+    replyJid,
     text: text.slice(0, 200),
     id,
     hasMsg: Boolean(msg.message),
+    msgKeys: msg.message ? Object.keys(msg.message) : [],
   };
   logger.info(lastInbound, "INBOUND");
 
   if (!text) {
-    logger.warn("empty text — may need decrypt retry");
+    logger.warn({ msgKeys: lastInbound.msgKeys }, "empty text — skip");
     return;
   }
-  if (!phone || phone.length < 8) return;
+  // Accept LID-only contacts (use replyJid); phone may be opaque
+  const stateKey = phone.length >= 10 ? phone : replyJid;
 
-  const backend = await notifyBackend({ phone, text, messageId: id, timestamp: msg.messageTimestamp });
+  const backend = await notifyBackend({ phone: stateKey, text, messageId: id, timestamp: msg.messageTimestamp });
   let reply =
     backend.ok && backend.data?.auto_reply
       ? backend.data.auto_reply
-      : nextLocalReply(phone, text).reply;
+      : nextLocalReply(stateKey, text).reply;
   if (backend.ok && typeof backend.data?.next_step === "number") {
-    localState.set(phone, {
+    localState.set(stateKey, {
       step: backend.data.next_step,
       collected: backend.data.collected || {},
     });
   }
   if (!reply) return;
 
-  await new Promise((r) => setTimeout(r, 400));
+  await new Promise((r) => setTimeout(r, 500));
   try {
-    await sock.sendMessage(remote, { text: reply.slice(0, 4000) });
+    await sock.sendMessage(replyJid || remote, { text: reply.slice(0, 4000) });
   } catch (e) {
-    logger.warn({ err: String(e) }, "send remote failed");
-    await sendText(phone, reply);
+    logger.warn({ err: String(e) }, "send replyJid failed");
+    if (phone.length >= 10) {
+      const jid = await resolveSendJid(phone);
+      await sock.sendMessage(jid, { text: reply.slice(0, 4000) });
+    } else throw e;
   }
-  lastAutoReply = { at: new Date().toISOString(), phone, preview: reply.slice(0, 100) };
-  logger.info({ phone }, "AUTO-REPLY SENT");
+  lastAutoReply = { at: new Date().toISOString(), phone: stateKey, replyJid, preview: reply.slice(0, 100) };
+  logger.info({ phone: stateKey, replyJid }, "AUTO-REPLY SENT");
   try {
     if (msg.key) await sock.readMessages([msg.key]);
   } catch (_) {}
