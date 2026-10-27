@@ -15,10 +15,26 @@ const footerLinks = [
 ];
 
 const socialLinks = [
-  { label: "LI", href: "#", title: "LinkedIn" },
-  { label: "TW", href: "#", title: "X / Twitter" },
-  { label: "IN", href: "#", title: "Instagram" },
-  { label: "YO", href: "#", title: "YouTube" },
+  {
+    label: "LI",
+    href: "https://www.linkedin.com/in/wishnest-wishnest-41a274447/",
+    title: "LinkedIn",
+  },
+  {
+    label: "X",
+    href: "https://x.com/WishNestwt",
+    title: "X (Twitter)",
+  },
+  {
+    label: "IG",
+    href: "https://www.instagram.com/wishnest40/",
+    title: "Instagram",
+  },
+  {
+    label: "FB",
+    href: "https://www.facebook.com/profile.php?id=61595565826948",
+    title: "Facebook",
+  },
 ];
 
 export const SiteFooter = () => {
@@ -45,7 +61,9 @@ export const SiteFooter = () => {
                   key={s.label}
                   href={s.href}
                   title={s.title}
-                  className="[font-family:'Inter',Helvetica] text-[11px] tracking-[1px] text-white/30 transition hover:text-white/70"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="[font-family:'Inter',Helvetica] text-[11px] tracking-[1.2px] text-white/35 transition hover:text-white/80"
                 >
                   {s.label}
                 </a>
