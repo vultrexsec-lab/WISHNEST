@@ -26,7 +26,7 @@ const AUTH_DIR = process.env.AUTH_DIR || path.join(__dirname, "auth_session");
 const API_KEY = process.env.BAILEYS_API_KEY || "wishnest-baileys-secret";
 const BACKEND_WEBHOOK = (process.env.BACKEND_WEBHOOK_URL || "").replace(/\/$/, "");
 const logger = pino({ level: process.env.LOG_LEVEL || "info" });
-const REV = "auto-reply-v7";
+const REV = "auto-reply-v8";
 
 const msgRetryCounterCache = new NodeCache({ stdTTL: 600, checkperiod: 120, useClones: false });
 /** recent messages for getMessage decrypt retries */
@@ -253,6 +253,7 @@ async function handleIncoming(msg) {
 
   const remote = msg.key?.remoteJid || "";
   if (!remote || isJidBroadcast(remote) || isJidGroup(remote)) return;
+  if (remote.endsWith("@newsletter") || remote === "status@broadcast") return;
 
   const { phone, replyJid } = await resolvePhoneFromMsg(msg);
   const text = extractText(msg);
