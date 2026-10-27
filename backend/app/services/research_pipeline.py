@@ -279,14 +279,16 @@ _SCORE_TO_GRADE: dict[str, str] = {
 #       claims a luxury tier and must be scored against that benchmark instead).
 #
 _STANDARD_SCORE_CEILING: float = 7.5   # B+ — max for non-luxury architecture/landscape
-_A_GRADE_THRESHOLD:      float = 8.0   # minimum score that maps to "A"
+_A_GRADE_THRESHOLD:      float = 8.5   # minimum score that maps to A-range
 _MAX_A_GRADES_STANDARD:  int   = 2     # variance limit for domestic stays
 
 _LUXURY_KEYWORDS: frozenset[str] = frozenset([
-    "luxury", "5-star", "five-star", "5 star", "five star",
-    "resort", "premium", "ultra-luxury", "exclusive", "signature resort",
-    "palace", "oberoi", "taj ", "leela", "aman", "four seasons",
-    "ritz", "bulgari", "raffles", "banyan tree",
+    # NOT generic "resort"/"premium"/"luxury" alone — those caused wall-to-wall A+
+    "ultra-luxury", "ultra luxury", "5-star", "five-star", "5 star", "five star",
+    "oberoi", "taj ", "leela", "aman ", "four seasons",
+    "ritz-carlton", "ritz carlton", "bulgari", "raffles", "banyan tree",
+    "one&only", "six senses", "rosewood", "mandarin oriental",
+    "st. regis", "st regis", "peninsula", "capella",
 ])
 
 # Reverse map: canonical letter grade → approximate numeric midpoint score.
@@ -318,16 +320,16 @@ def _score_to_grade(score: float) -> str:
       D+  ≥ 3.0   — very poor
       D   < 3.0   — failing
     """
-    if score >= 9.0:  return "A+"
-    if score >= 8.5:  return "A"
-    if score >= 8.0:  return "A-"
-    if score >= 7.5:  return "B+"  # KEY FIX: 7.5 → B+, not A-
-    if score >= 7.0:  return "B"
-    if score >= 6.0:  return "B-"
-    if score >= 5.5:  return "C+"
-    if score >= 5.0:  return "C"
-    if score >= 4.0:  return "C-"
-    if score >= 3.0:  return "D+"
+    if score >= 9.5:  return "A+"
+    if score >= 9.0:  return "A"
+    if score >= 8.5:  return "A-"
+    if score >= 8.0:  return "B+"
+    if score >= 7.5:  return "B"
+    if score >= 7.0:  return "B-"
+    if score >= 6.5:  return "C+"
+    if score >= 6.0:  return "C"
+    if score >= 5.5:  return "C-"
+    if score >= 4.5:  return "D+"
     return "D"
 
 
@@ -405,6 +407,40 @@ def _enforce_grade_reality(raw: dict) -> None:
         except (TypeError, ValueError):
             pass
 
+    # RULE 2b — A+ rarity (all properties): at most one dimension ≥ 9.5
+    a_plus = []
+    for field in _SCORE_FIELDS:
+        try:
+            if raw.get(field) is not None and float(raw[field]) >= 9.5:
+                a_plus.append(field)
+        except (TypeError, ValueError):
+            pass
+    for field in a_plus[1:]:
+        logger.info("A+ rarity: %s %.1f → 9.0", field, float(raw[field]))
+        raw[field] = 9.0
+        raw[_SCORE_TO_GRADE[field]] = _score_to_grade(9.0)
+
+    # RULE 2c — max 3 of 5 dimensions in A-range (≥ 8.5) even for "luxury"
+    a_range = []
+    for field in _SCORE_FIELDS:
+        try:
+            if raw.get(field) is not None and float(raw[field]) >= 8.5:
+                a_range.append(field)
+        except (TypeError, ValueError):
+            pass
+    if len(a_range) > 3:
+        order = [
+            f for f in (
+                "connectivity_score", "eat_explore_score", "landscape_score",
+                "architecture_score", "delight_score",
+            )
+            if f in a_range
+        ]
+        for field in order[: len(a_range) - 3]:
+            logger.info("A-range cap: %s %.1f → 7.8", field, float(raw[field]))
+            raw[field] = 7.8
+            raw[_SCORE_TO_GRADE[field]] = _score_to_grade(7.8)
+
     if not luxury and len(a_grade_fields) > _MAX_A_GRADES_STANDARD:
         # Priority order: penalize the dimensions most likely to be inflated
         # for a typical domestic stay (connectivity last because it's the
@@ -464,7 +500,32 @@ def _apply_grade_ceilings_to_article(article: Article) -> None:
                 setattr(article, field, _STANDARD_SCORE_CEILING)
                 setattr(article, grade_field, _score_to_grade(_STANDARD_SCORE_CEILING))
 
-    # Rule 2 — variance (exempt luxury properties)
+    # Rule 2b — A+ rarity on article object
+    a_plus = [
+        f for f in _SCORE_TO_GRADE
+        if getattr(article, f) is not None and getattr(article, f) >= 9.5
+    ]
+    for field in a_plus[1:]:
+        setattr(article, field, 9.0)
+        setattr(article, _SCORE_TO_GRADE[field], _score_to_grade(9.0))
+
+    a_range = [
+        f for f in _SCORE_TO_GRADE
+        if getattr(article, f) is not None and getattr(article, f) >= 8.5
+    ]
+    if len(a_range) > 3:
+        order = [
+            f for f in (
+                "connectivity_score", "eat_explore_score", "landscape_score",
+                "architecture_score", "delight_score",
+            )
+            if f in a_range
+        ]
+        for field in order[: len(a_range) - 3]:
+            setattr(article, field, 7.8)
+            setattr(article, _SCORE_TO_GRADE[field], _score_to_grade(7.8))
+
+    # Rule 2 — variance (exempt only true ultra-luxury keyword matches)
     a_fields = [
         f for f in _SCORE_TO_GRADE
         if getattr(article, f) is not None
