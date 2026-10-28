@@ -699,8 +699,27 @@ def regenerate_article_images(article: Article, db: Session) -> bool:
     available, without re-running the (expensive, non-idempotent) research +
     drafting steps.
 
+    For Reimagined™ articles, rebuilds paired before/after design reading + ABCDE
+    instead of the generic Maps photo pipeline.
+
     Returns True if the article row was changed and committed.
     """
+    snap = article.property_snapshot if isinstance(article.property_snapshot, dict) else {}
+    is_reimagined = bool(snap.get("reimaging")) or (article.category or "").lower() == "reimagined"
+    if is_reimagined:
+        try:
+            from app.services.reimaging_service import rebuild_reimagined_article_body
+            changed = rebuild_reimagined_article_body(article)
+            if changed:
+                db.add(article)
+                db.commit()
+                db.refresh(article)
+                logger.info("Rebuilt reimagined body+scores for %r", (article.headline or "")[:50])
+            return changed
+        except Exception:
+            logger.exception("Reimagined rebuild failed for %s", article.id)
+            return False
+
     hero_url, section_urls, enriched_html, property_matches = generate_article_images(
         headline=article.headline,
         focus_keyword=article.focus_keyword,

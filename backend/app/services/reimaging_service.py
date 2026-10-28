@@ -813,6 +813,7 @@ def _save_as_draft(
                 "reimaging": True,
                 "user_prompt": user_prompt,
                 "original_photo_urls": original_urls,
+                "redesigned_photo_urls": redesigned_urls,
                 "source": "reimaging_studio",
                 "maps_place_id": listing.place_id if listing else None,
                 "google_rating": listing.rating if listing else None,
@@ -839,6 +840,198 @@ def _compact_image_url(url: str | None) -> str | None:
     if url.startswith("data:") and len(url) > 2000:
         return None  # client should open Dashboard to view full images
     return url
+
+
+def rebuild_reimagined_article_body(article: "Article") -> bool:
+    """
+    Rebuild paired before/after design reading + ensure ABCDE for an existing
+    reimaging article (used by dashboard Regenerate Images).
+    """
+    from app.models.article import Article  # noqa: F401
+
+    snap = article.property_snapshot if isinstance(article.property_snapshot, dict) else {}
+    if not snap.get("reimaging") and (article.category or "").lower() != "reimagined":
+        return False
+
+    originals = [u for u in (snap.get("original_photo_urls") or []) if u]
+    afters = [u for u in (snap.get("redesigned_photo_urls") or []) if u]
+    # Fallback: first half section = before, second half = after
+    if not originals or not afters:
+        sections = list(article.section_image_urls or [])
+        if len(sections) >= 2:
+            mid = len(sections) // 2
+            if not originals:
+                originals = sections[:mid]
+            if not afters:
+                afters = sections[mid:]
+    if not originals and not afters:
+        return False
+
+    hotel = article.location or (article.headline or "the property")
+    prompt = str(snap.get("user_prompt") or "refined hospitality design")
+    n_pairs = max(len(originals), len(afters), 1)
+
+    # Ask Grok for space readings + scores (text only)
+    readings: list[dict] = []
+    package: dict = {}
+    try:
+        client = _xai_client()
+        user = (
+            f"Property: {hotel}\nBrief: {prompt}\n"
+            f"There are {n_pairs} before/after image pairs.\n"
+            "Return JSON only with keys: space_readings (array of "
+            "{title, before_text, after_text} length matching pairs), "
+            "best_for, not_ideal_for, keywords, architecture_score, landscape_score, "
+            "connectivity_score, delight_score, eat_explore_score, "
+            "architecture_grade, landscape_grade, connectivity_grade, delight_grade, "
+            "eat_explore_grade, executive_summary, wishnest_verdict.\n"
+            "before_text = 2-4 sentences on existing condition; after_text = redesign of same space."
+        )
+        resp = client.chat.completions.create(
+            model=os.environ.get("XAI_MODEL", "grok-2-latest"),
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "WishNest senior editor. JSON only. ABCDE numeric-first, A+ rare. "
+                        "No markdown fences."
+                    ),
+                },
+                {"role": "user", "content": user},
+            ],
+            temperature=0.4,
+        )
+        raw = (resp.choices[0].message.content or "").strip()
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:].lstrip()
+        import json as _json
+        package = _json.loads(raw)
+        readings = package.get("space_readings") or []
+    except Exception as e:
+        logger.warning("rebuild reimagined LLM failed: %s", e)
+        package = {}
+        readings = []
+
+    def _img_tag(url: str, alt: str, kind: str) -> str:
+        src = _public_media_url(url)
+        return (
+            f'<figure class="wishnest-{kind}" data-ba="{kind}">'
+            f'<img src="{src}" alt="{alt}" loading="lazy" '
+            f'style="max-width:100%;height:auto;border-radius:8px;display:block;margin:0.75rem 0;" />'
+            f"<figcaption>{alt}</figcaption></figure>"
+        )
+
+    parts = [
+        "<p><em>WishNest Reimagined™ — paired before / after design reading.</em></p>"
+    ]
+    for i in range(n_pairs):
+        before_u = originals[i] if i < len(originals) else None
+        after_u = afters[i] if i < len(afters) else None
+        r = readings[i] if i < len(readings) and isinstance(readings[i], dict) else {}
+        title = (r.get("title") or f"Space {i+1}").strip()
+        before_txt = (r.get("before_text") or "").strip() or (
+            f"Existing condition of this area at {hotel}, from public listing imagery."
+        )
+        after_txt = (r.get("after_text") or "").strip() or (
+            f"Redesign concept for the same space: refined materials, light, and hospitality atmosphere."
+        )
+        parts.append(f"<h2>{title}</h2>")
+        if before_u:
+            parts.append(_img_tag(before_u, f"Before {i+1} — existing condition", "before"))
+        parts.append(f"<h3>Before — existing condition</h3><p>{before_txt}</p>")
+        if after_u:
+            parts.append(_img_tag(after_u, f"After {i+1} — redesign concept", "after"))
+        parts.append(f"<h3>After — redesign concept</h3><p>{after_txt}</p>")
+
+    article.full_article = "\n".join(parts)
+    if package.get("executive_summary"):
+        article.executive_summary = package["executive_summary"]
+    if package.get("wishnest_verdict"):
+        article.wishnest_verdict = package["wishnest_verdict"]
+    if package.get("best_for"):
+        article.best_for = package["best_for"] if isinstance(package["best_for"], list) else [str(package["best_for"])]
+    if package.get("not_ideal_for"):
+        article.not_ideal_for = (
+            package["not_ideal_for"]
+            if isinstance(package["not_ideal_for"], list)
+            else [str(package["not_ideal_for"])]
+        )
+    if package.get("keywords"):
+        article.keywords = (
+            package["keywords"] if isinstance(package["keywords"], list) else [str(package["keywords"])]
+        )
+
+    def _fs(k: str, d: float = 7.2) -> float:
+        try:
+            return float(package.get(k, d))
+        except (TypeError, ValueError):
+            return d
+
+    article.architecture_score = _fs("architecture_score", 7.2)
+    article.landscape_score = _fs("landscape_score", 7.0)
+    article.connectivity_score = _fs("connectivity_score", 7.4)
+    article.delight_score = _fs("delight_score", 7.5)
+    article.eat_explore_score = _fs("eat_explore_score", 7.0)
+    try:
+        from app.services.research_pipeline import _score_to_grade, _enforce_grade_reality
+        raw = {
+            "architecture_score": article.architecture_score,
+            "landscape_score": article.landscape_score,
+            "connectivity_score": article.connectivity_score,
+            "delight_score": article.delight_score,
+            "eat_explore_score": article.eat_explore_score,
+            "headline": article.headline or "",
+        }
+        _enforce_grade_reality(raw)
+        article.architecture_score = raw["architecture_score"]
+        article.landscape_score = raw["landscape_score"]
+        article.connectivity_score = raw["connectivity_score"]
+        article.delight_score = raw["delight_score"]
+        article.eat_explore_score = raw["eat_explore_score"]
+        article.architecture_grade = _score_to_grade(float(article.architecture_score))
+        article.landscape_grade = _score_to_grade(float(article.landscape_score))
+        article.connectivity_grade = _score_to_grade(float(article.connectivity_score))
+        article.delight_grade = _score_to_grade(float(article.delight_score))
+        article.eat_explore_grade = _score_to_grade(float(article.eat_explore_score))
+        article.abcde_overall = raw.get("abcde_overall") or _score_to_grade(
+            (
+                float(article.architecture_score)
+                + float(article.landscape_score)
+                + float(article.connectivity_score)
+                + float(article.delight_score)
+                + float(article.eat_explore_score)
+            )
+            / 5.0
+        )
+    except Exception:
+        article.architecture_grade = package.get("architecture_grade") or "B"
+        article.landscape_grade = package.get("landscape_grade") or "B"
+        article.connectivity_grade = package.get("connectivity_grade") or "B+"
+        article.delight_grade = package.get("delight_grade") or "B+"
+        article.eat_explore_grade = package.get("eat_explore_grade") or "B"
+
+    # Keep gallery ordered before then after
+    gallery = []
+    for u in originals + afters:
+        if u and u not in gallery:
+            gallery.append(u)
+    if gallery:
+        article.section_image_urls = gallery
+        article.hero_image_url = afters[0] if afters else originals[0]
+    if not article.best_for:
+        article.best_for = [
+            "owners exploring design-led repositioning",
+            "architects studying intervention options",
+        ]
+    if not article.not_ideal_for:
+        article.not_ideal_for = ["readers seeking only an operational stay review"]
+    if not article.keywords:
+        article.keywords = ["reimagined", "hospitality design", str(hotel)[:40]]
+
+    return True
+
 
 
 def run_reimaging_hotel(
