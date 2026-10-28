@@ -68,26 +68,45 @@ export function OutreachPage(): JSX.Element {
 
   // Email
   const [emailSubject, setEmailSubject] = useState(
-    "WishNest — complimentary listing & design conversation",
+    "WishNest Reimagined™ — complimentary design perspective for {{offer}}",
   );
-  const [emailOffer, setEmailOffer] = useState("independent hotels and resorts");
+  const [emailOffer, setEmailOffer] = useState("your property");
   const [emailBody, setEmailBody] = useState(
     `{{greeting}}
 
-I am writing from WishNest (wishnest.info) — an independent hospitality and design-intelligence platform. We publish property features and thoughtful design perspectives for owners and operators, not as a booking marketplace.
+Greetings from WishNest!
 
-While reviewing {{offer}}, your property stood out as a strong fit for a complimentary editorial listing on WishNest (no listing fee and no booking commission for this invitation).
+We are excited to invite {{offer}} to participate in WishNest Reimagined™, a complimentary initiative exploring the untapped potential of existing hospitality properties.
 
-You are welcome to:
-• See the platform: {{website}}
-• Message us on WhatsApp: {{whatsapp}}
-• Request a callback (WhatsApp): {{call}}
+Every resort has its own character and strengths. Yet sometimes, a fresh architectural perspective can reveal opportunities that may not have been previously considered.
 
-If this is not relevant, simply reply "no" or ignore this note — we will not follow up further.
+Powered by our architectural design partner, ArrowX (Arrow Design), which is already consulting with hospitality brands, our initiative explores how thoughtful design could help your property:
+
+• Unlock new revenue opportunities through additional accommodation, premium facilities, dining, wellness or better utilization of existing spaces.
+• Enhance guest experiences by reimagining key touchpoints — from arrival and reception to guest rooms, landscapes and recreational areas.
+• Create a distinctive, share-worthy identity with memorable spaces that encourage guests to photograph and share their experiences.
+• Strengthen market positioning and explore opportunities to attract new guest segments and potentially improve room-rate realization.
+
+What do you receive?
+Absolutely free: a preliminary assessment highlighting three potential architectural or guest-experience improvements for your property.
+
+Selected properties may also receive a Before & After conceptual transformation, illustrating what the resort could become. With your permission, these explorations may be featured in our WishNest Reimagined™ editorial series.
+
+Explore WishNest: {{website}}
+
+There is no cost, no obligation to undertake any project, and no requirement to publish your assessment.
+
+Whether or not you are presently considering an expansion or renovation, we believe a fresh perspective on your property's potential may be of interest.
+
+Would you like us to include {{offer}} in our complimentary review initiative?
+
+Simply reply "Interested", and we will share the next steps — or use the buttons below to message us on WhatsApp or request a short callback.
 
 Warm regards,
-WishNest team
-https://wishnest.info`,
+The WishNest Team
+Hospitality | Design | Destinations
+{{website}}
+Architectural Design Partner: ArrowX (Arrow Design)`,
   );
   const [emailImageUrl, setEmailImageUrl] = useState("");
   const [emailWebsite, setEmailWebsite] = useState("https://wishnest.info");
@@ -100,7 +119,7 @@ https://wishnest.info`,
   // WhatsApp
   const [waPhone, setWaPhone] = useState("");
   const [waMsg, setWaMsg] = useState(
-    "Hello from WishNest — we invite independent hotels & resorts to a complimentary listing on WishNest.info. Reply YES if you'd like details, or STOP to opt out.",
+    "Hello from WishNest — we invite your property to WishNest Reimagined™ (complimentary design perspective with ArrowX). Reply Interested for next steps, or STOP to opt out. www.wishnest.info",
   );
   const [waBusy, setWaBusy] = useState(false);
   const [waQueue, setWaQueue] = useState<{ name: string; phone: string }[]>([]);
@@ -108,7 +127,7 @@ https://wishnest.info`,
 
   // Call
   const [callPhone, setCallPhone] = useState("");
-  const [callNotes, setCallNotes] = useState("WishNest free listing invitation");
+  const [callNotes, setCallNotes] = useState("WishNest Reimagined complimentary review invitation");
   const [callBusy, setCallBusy] = useState(false);
 
   const pickedIds = useMemo(
