@@ -2474,20 +2474,41 @@ class OutreachApproachIn(BaseModel):
 
 DEFAULT_APPROACH_BODY = """{{greeting}}
 
-I am writing from WishNest (wishnest.info) — an independent hospitality and design-intelligence platform. We publish property features and thoughtful design perspectives for owners and operators, not as a booking marketplace.
+What if a fresh design perspective could reveal new revenue opportunities for your property—without any cost or commitment?
 
-While reviewing {{offer}}, your property stood out as a strong fit for a complimentary editorial listing on WishNest (no listing fee and no booking commission for this invitation).
+Greetings from WishNest!
 
-You are welcome to:
-• See the platform: {{website}}
-• Message us on WhatsApp: {{whatsapp}}
-• Request a callback (WhatsApp): {{call}}
+We are delighted to invite {{offer}} to participate in WishNest Reimagined™, our complimentary initiative exploring the untapped design and commercial potential of hospitality properties.
 
-If this is not relevant, simply reply "no" or ignore this note — we will not follow up further.
+Every resort has its own character and strengths. Sometimes, thoughtful architectural interventions can reveal opportunities to enhance guest experiences, create memorable spaces and improve revenue potential.
+
+Powered by our architectural design partner ArrowX (Arrow Design), which is already consulting with hospitality brands, the initiative explores how your property could benefit from:
+
+• New Revenue Opportunities: Identify potential for additional accommodation, premium experiences, wellness facilities or better utilisation of existing spaces.
+• Enhanced Guest Experiences: Reimagine arrival areas, rooms, landscapes, pools and recreational spaces to improve guest appeal.
+• A More Instagrammable Identity: Create distinctive, photogenic spaces that encourage guests to share their experiences and strengthen your property's visibility.
+• Stronger Market Positioning: Explore ways to attract new guest segments, encourage repeat visits and potentially improve room-rate realisation.
+
+What Will You Receive?
+Absolutely free: A preliminary assessment identifying three potential architectural or guest-experience improvements for your property.
+
+Selected properties may also receive an illustrative Before & After design transformation, showing what their property could become.
+
+With your separate permission, selected transformations may be featured in our WishNest Reimagined™ editorial series, offering additional exposure to your property.
+
+There is no cost, no obligation to undertake any project, and no requirement to publish your assessment.
+
+Whether or not you are currently considering renovation or expansion, a fresh perspective on your property's potential may be valuable.
+
+Would You Like Your Property to Be Considered?
+Simply reply "Interested", and we will share the next steps.
+
+You can also connect with us through WhatsApp or request a short callback using the buttons below — or visit {{website}}.
 
 Warm regards,
-WishNest team
-https://wishnest.info
+The WishNest Team
+Hospitality | Architecture | Destinations
+{{website}}
 """
 
 
@@ -2554,7 +2575,7 @@ def outreach_approach_email(
     failed = 0
     results = []
     for em, name, cobj in unique[:50]:
-        greet = f"Dear {name}," if name else "Hello,"
+        greet = f"Dear {name}," if name else "Dear Hotelier,"
         text = (
             template.replace("{{greeting}}", greet)
             .replace("{{name}}", name or "")
@@ -2563,10 +2584,11 @@ def outreach_approach_email(
             .replace("{{whatsapp}}", whatsapp)
             .replace("{{call}}", call)
         )
+        review_url = website.rstrip("/") + "/get-reviewed" if "wishnest" in website.lower() else website
         cta_html = f"""
         <table role="presentation" cellpadding="0" cellspacing="0" style="margin:20px 0;">
           <tr><td style="padding:0 0 10px 0;">
-            <a href="{website}" style="display:inline-block;background:#165948;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-size:14px;font-weight:600;">Visit WishNest.info</a>
+            <a href="{review_url}" style="display:inline-block;background:#165948;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-size:14px;font-weight:600;">Request My Complimentary Review</a>
           </td></tr>
           <tr><td style="padding:0 0 10px 0;">
             <a href="{whatsapp}" style="display:inline-block;background:#128C7E;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-size:14px;font-weight:600;">WhatsApp us</a>

@@ -68,46 +68,49 @@ export function OutreachPage(): JSX.Element {
 
   // Email
   const [emailSubject, setEmailSubject] = useState(
-    "WishNest Reimagined™ — complimentary design perspective for {{offer}}",
+    "WishNest Reimagined™ — complimentary design perspective for your property",
   );
   const [emailOffer, setEmailOffer] = useState("your property");
   const [emailBody, setEmailBody] = useState(
     `{{greeting}}
 
+What if a fresh design perspective could reveal new revenue opportunities for your property—without any cost or commitment?
+
 Greetings from WishNest!
 
-We are excited to invite {{offer}} to participate in WishNest Reimagined™, a complimentary initiative exploring the untapped potential of existing hospitality properties.
+We are delighted to invite {{offer}} to participate in WishNest Reimagined™, our complimentary initiative exploring the untapped design and commercial potential of hospitality properties.
 
-Every resort has its own character and strengths. Yet sometimes, a fresh architectural perspective can reveal opportunities that may not have been previously considered.
+Every resort has its own character and strengths. Sometimes, thoughtful architectural interventions can reveal opportunities to enhance guest experiences, create memorable spaces and improve revenue potential.
 
-Powered by our architectural design partner, ArrowX (Arrow Design), which is already consulting with hospitality brands, our initiative explores how thoughtful design could help your property:
+Powered by our architectural design partner ArrowX (Arrow Design), which is already consulting with hospitality brands, the initiative explores how your property could benefit from:
 
-• Unlock new revenue opportunities through additional accommodation, premium facilities, dining, wellness or better utilization of existing spaces.
-• Enhance guest experiences by reimagining key touchpoints — from arrival and reception to guest rooms, landscapes and recreational areas.
-• Create a distinctive, share-worthy identity with memorable spaces that encourage guests to photograph and share their experiences.
-• Strengthen market positioning and explore opportunities to attract new guest segments and potentially improve room-rate realization.
+• New Revenue Opportunities: Identify potential for additional accommodation, premium experiences, wellness facilities or better utilisation of existing spaces.
+• Enhanced Guest Experiences: Reimagine arrival areas, rooms, landscapes, pools and recreational spaces to improve guest appeal.
+• A More Instagrammable Identity: Create distinctive, photogenic spaces that encourage guests to share their experiences and strengthen your property's visibility.
+• Stronger Market Positioning: Explore ways to attract new guest segments, encourage repeat visits and potentially improve room-rate realisation.
 
-What do you receive?
-Absolutely free: a preliminary assessment highlighting three potential architectural or guest-experience improvements for your property.
+What Will You Receive?
+Absolutely free: A preliminary assessment identifying three potential architectural or guest-experience improvements for your property.
 
-Selected properties may also receive a Before & After conceptual transformation, illustrating what the resort could become. With your permission, these explorations may be featured in our WishNest Reimagined™ editorial series.
+Selected properties may also receive an illustrative Before & After design transformation, showing what their property could become.
 
-Explore WishNest: {{website}}
+With your separate permission, selected transformations may be featured in our WishNest Reimagined™ editorial series, offering additional exposure to your property.
 
 There is no cost, no obligation to undertake any project, and no requirement to publish your assessment.
 
-Whether or not you are presently considering an expansion or renovation, we believe a fresh perspective on your property's potential may be of interest.
+Whether or not you are currently considering renovation or expansion, a fresh perspective on your property's potential may be valuable.
 
-Would you like us to include {{offer}} in our complimentary review initiative?
+Would You Like Your Property to Be Considered?
+Simply reply "Interested", and we will share the next steps.
 
-Simply reply "Interested", and we will share the next steps — or use the buttons below to message us on WhatsApp or request a short callback.
+You can also connect with us through WhatsApp or request a short callback using the buttons below — or visit {{website}}.
 
 Warm regards,
 The WishNest Team
-Hospitality | Design | Destinations
-{{website}}
-Architectural Design Partner: ArrowX (Arrow Design)`,
+Hospitality | Architecture | Destinations
+{{website}}`,
   );
+
   const [emailImageUrl, setEmailImageUrl] = useState("");
   const [emailWebsite, setEmailWebsite] = useState("https://wishnest.info");
   const [emailWhatsapp, setEmailWhatsapp] = useState("https://wa.me/91");
