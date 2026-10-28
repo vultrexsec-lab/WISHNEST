@@ -14,6 +14,7 @@ import { ArticleDetailPage } from "@/pages/ArticleDetailPage";
 import { DestinationsPage } from "@/pages/DestinationsPage";
 import { BestOfPage } from "@/pages/BestOfPage";
 import { IntelligencePage } from "@/pages/IntelligencePage";
+import { IntelligenceReportPage } from "@/pages/IntelligenceReportPage";
 import { ReviewDashboard } from "@/pages/ReviewDashboard";
 import { ReviewsPage } from "@/pages/ReviewsPage";
 import { ContributorsPage } from "@/pages/ContributorsPage";
@@ -84,6 +85,7 @@ function Router() {
         <Route path="/entity/:slug" component={BrandEntityPage} />
         <Route path="/market-network" component={MarketNetworkPage} />
         <Route path="/best-of" component={BestOfPage} />
+        <Route path="/intelligence/:kind" component={IntelligenceReportPage} />
         <Route path="/intelligence" component={IntelligencePage} />
         <Route path="/contributors" component={ContributorsPage} />
         <Route path="/reimagined/:id" component={ReimaginedProjectPage} />

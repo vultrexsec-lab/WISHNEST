@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Menu, X, Search } from "lucide-react";
+import { Menu, X, Search, ChevronDown } from "lucide-react";
 import { SearchModal } from "@/components/SearchModal";
 import { NewsletterModal } from "@/components/NewsletterModal";
 
@@ -9,7 +9,15 @@ const navLinks = [
   { label: "REVIEWS", href: "/reviews" },
   { label: "DESTINATIONS", href: "/destinations" },
   { label: "BEST OF", href: "/best-of" },
-  { label: "INTELLIGENCE", href: "/intelligence" },
+  {
+    label: "INTELLIGENCE",
+    href: "/intelligence",
+    children: [
+      { label: "Overview", href: "/intelligence" },
+      { label: "Hospitality Intelligence", href: "/intelligence/hospitality" },
+      { label: "Villa Intelligence", href: "/intelligence/villa" },
+    ],
+  },
   { label: "CONTRIBUTORS", href: "/contributors" },
   { label: "REIMAGINED™", href: "/reimagined" },
   { label: "GET REVIEWED", href: "/get-reviewed" },
@@ -20,6 +28,10 @@ export const SiteNav = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [newsletterOpen, setNewsletterOpen] = useState(false);
+  const [intelOpen, setIntelOpen] = useState(false);
+
+  const isActive = (href: string) =>
+    location === href || (href !== "/" && location.startsWith(href + "/"));
 
   return (
     <>
@@ -41,77 +53,122 @@ export const SiteNav = () => {
             </div>
           </Link>
 
-          {/* Desktop nav */}
           <nav className="hidden items-center gap-5 lg:flex" aria-label="Primary">
-            {navLinks.map((item) => (
-              <Link key={item.label} href={item.href}>
-                <span
-                  className={`cursor-pointer whitespace-nowrap [font-family:'Inter',Helvetica] text-[11px] font-medium leading-[16.5px] tracking-[1.10px] transition-opacity hover:opacity-70 ${
-                    location === item.href ? "text-[#2e4a3f]" : "text-[#1e1e1e]"
-                  }`}
+            {navLinks.map((item) =>
+              item.children ? (
+                <div
+                  key={item.label}
+                  className="relative"
+                  onMouseEnter={() => setIntelOpen(true)}
+                  onMouseLeave={() => setIntelOpen(false)}
                 >
-                  {item.label}
-                </span>
-              </Link>
-            ))}
+                  <Link href={item.href}>
+                    <span
+                      className={`inline-flex cursor-pointer items-center gap-0.5 whitespace-nowrap [font-family:'Inter',Helvetica] text-[11px] font-medium leading-[16.5px] tracking-[1.10px] transition-opacity hover:opacity-70 ${
+                        location.startsWith("/intelligence")
+                          ? "text-[#2e4a3f]"
+                          : "text-[#1e1e1e]"
+                      }`}
+                    >
+                      {item.label}
+                      <ChevronDown className="h-3 w-3 opacity-50" />
+                    </span>
+                  </Link>
+                  {intelOpen && (
+                    <div className="absolute left-0 top-full z-50 min-w-[220px] border border-[#1e1e1e14] bg-[#f8f7f4] py-2 shadow-lg">
+                      {item.children.map((c) => (
+                        <Link key={c.href + c.label} href={c.href}>
+                          <span
+                            className={`block cursor-pointer px-4 py-2.5 [font-family:'Inter',Helvetica] text-[12px] transition hover:bg-[#2e4a3f]/8 ${
+                              location === c.href
+                                ? "text-[#2e4a3f]"
+                                : "text-[#1e1e1e]"
+                            }`}
+                          >
+                            {c.label}
+                          </span>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <Link key={item.label} href={item.href}>
+                  <span
+                    className={`cursor-pointer whitespace-nowrap [font-family:'Inter',Helvetica] text-[11px] font-medium leading-[16.5px] tracking-[1.10px] transition-opacity hover:opacity-70 ${
+                      isActive(item.href) ? "text-[#2e4a3f]" : "text-[#1e1e1e]"
+                    }`}
+                  >
+                    {item.label}
+                  </span>
+                </Link>
+              ),
+            )}
           </nav>
 
-          <div className="flex items-center gap-2 sm:gap-3">
-            {/* Search icon */}
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => setSearchOpen(true)}
-              className="flex h-9 w-9 items-center justify-center text-[#1e1e1e] transition-opacity hover:opacity-60"
+              type="button"
               aria-label="Search"
+              onClick={() => setSearchOpen(true)}
+              className="rounded-full p-2 text-[#1e1e1e] hover:bg-[#1e1e1e0a]"
             >
-              <Search className="h-[18px] w-[18px]" />
+              <Search className="h-4 w-4" />
             </button>
-
-            {/* Newsletter — hidden on small mobile */}
             <Button
               variant="outline"
               onClick={() => setNewsletterOpen(true)}
-              className="hidden h-auto rounded-none border-[0.8px] border-[#2e4a3f] bg-transparent px-4 py-2 [font-family:'Inter',Helvetica] text-[11px] font-medium leading-[16.5px] tracking-[1.32px] text-[#2e4a3f] hover:bg-[#2e4a3f] hover:text-white sm:inline-flex sm:px-5 sm:py-2.5"
+              className="hidden h-9 rounded-none border-[#1e1e1e] px-4 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1.2px] sm:inline-flex"
             >
               NEWSLETTER
             </Button>
-
-            {/* Hamburger — mobile only */}
             <button
+              type="button"
+              className="p-2 lg:hidden"
+              aria-label="Menu"
               onClick={() => setMobileOpen((o) => !o)}
-              className="flex h-9 w-9 items-center justify-center text-[#1e1e1e] lg:hidden"
-              aria-label={mobileOpen ? "Close menu" : "Open menu"}
             >
               {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
           </div>
         </div>
 
-        {/* Mobile slide-down menu */}
         {mobileOpen && (
-          <div className="border-t border-[#1e1e1e14] bg-[#f8f7f4] px-4 pb-6 pt-2 lg:hidden">
-            <nav className="flex flex-col" aria-label="Mobile navigation">
+          <div className="border-t border-[#1e1e1e14] bg-[#f8f7f4] px-4 py-4 lg:hidden">
+            <div className="flex flex-col gap-1">
               {navLinks.map((item) => (
-                <Link key={item.label} href={item.href}>
-                  <span
-                    onClick={() => setMobileOpen(false)}
-                    className={`block cursor-pointer border-b border-[#1e1e1e0a] py-3.5 [font-family:'Inter',Helvetica] text-[13px] font-medium tracking-[1.10px] transition-opacity hover:opacity-70 ${
-                      location === item.href ? "text-[#2e4a3f]" : "text-[#1e1e1e]"
-                    }`}
-                  >
-                    {item.label}
-                  </span>
-                </Link>
+                <div key={item.label}>
+                  <Link href={item.href}>
+                    <span
+                      onClick={() => setMobileOpen(false)}
+                      className="block cursor-pointer py-2.5 [font-family:'Inter',Helvetica] text-[13px] font-medium tracking-[1px] text-[#1e1e1e]"
+                    >
+                      {item.label}
+                    </span>
+                  </Link>
+                  {item.children?.map((c) => (
+                    <Link key={c.href + c.label} href={c.href}>
+                      <span
+                        onClick={() => setMobileOpen(false)}
+                        className="block cursor-pointer py-2 pl-4 text-[12px] text-[#6b6b6b]"
+                      >
+                        {c.label}
+                      </span>
+                    </Link>
+                  ))}
+                </div>
               ))}
-              <div className="pt-5">
-                <Button
-                  variant="outline"
-                  onClick={() => { setMobileOpen(false); setNewsletterOpen(true); }}
-                  className="h-auto w-full rounded-none border-[0.8px] border-[#2e4a3f] bg-transparent py-3 [font-family:'Inter',Helvetica] text-[11px] font-medium tracking-[1.32px] text-[#2e4a3f] hover:bg-[#2e4a3f] hover:text-white"
-                >
-                  NEWSLETTER
-                </Button>
-              </div>
-            </nav>
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileOpen(false);
+                  setNewsletterOpen(true);
+                }}
+                className="mt-2 py-2 text-left text-[12px] font-medium tracking-[1px] text-[#2e4a3f]"
+              >
+                NEWSLETTER
+              </button>
+            </div>
           </div>
         )}
       </header>
