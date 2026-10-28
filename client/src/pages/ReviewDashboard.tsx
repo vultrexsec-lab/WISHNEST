@@ -1701,6 +1701,12 @@ function ArticleCard({
 }) {
   const [open, setOpen] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [editBusy, setEditBusy] = useState(false);
+  const [editHeadline, setEditHeadline] = useState(article.headline || "");
+  const [editSubtitle, setEditSubtitle] = useState(article.subtitle || "");
+  const [editSummary, setEditSummary] = useState(article.executive_summary || "");
+  const [editBody, setEditBody] = useState(article.full_article || "");
   const [scheduleDate, setScheduleDate] = useState("");
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const { toast } = useToast();
@@ -1892,7 +1898,94 @@ function ArticleCard({
         </AlertDialogContent>
       </AlertDialog>
 
-      {showPreview && (
+            {showEdit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-white/15 bg-[#121816] p-5 shadow-xl">
+            <div className="mb-4 flex items-center justify-between">
+              <p className="text-[11px] font-medium tracking-[1.4px] text-sky-300">EDIT ARTICLE</p>
+              <button
+                type="button"
+                className="text-[12px] text-white/50 hover:text-white"
+                onClick={() => setShowEdit(false)}
+              >
+                Close
+              </button>
+            </div>
+            <div className="space-y-3">
+              <input
+                value={editHeadline}
+                onChange={(e) => setEditHeadline(e.target.value)}
+                className="h-9 w-full rounded-md border border-white/15 bg-[#0c1210] px-3 text-[13px] text-white"
+                placeholder="Headline"
+              />
+              <input
+                value={editSubtitle}
+                onChange={(e) => setEditSubtitle(e.target.value)}
+                className="h-9 w-full rounded-md border border-white/15 bg-[#0c1210] px-3 text-[13px] text-white"
+                placeholder="Subtitle"
+              />
+              <textarea
+                value={editSummary}
+                onChange={(e) => setEditSummary(e.target.value)}
+                rows={3}
+                className="w-full rounded-md border border-white/15 bg-[#0c1210] px-3 py-2 text-[13px] text-white"
+                placeholder="Executive summary"
+              />
+              <textarea
+                value={editBody}
+                onChange={(e) => setEditBody(e.target.value)}
+                rows={16}
+                className="w-full rounded-md border border-white/15 bg-[#0c1210] px-3 py-2 font-mono text-[12px] leading-relaxed text-white/90"
+                placeholder="Full article HTML (you can remove image tags or rewrite text)"
+              />
+              <p className="text-[10px] text-white/35">
+                Tip: photos are in the HTML as &lt;img src=&quot;...&quot;&gt; — delete a figure/img block to remove a photo from the article body.
+              </p>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Button
+                  type="button"
+                  disabled={editBusy}
+                  className="h-9 rounded-xl bg-sky-700 px-4 text-[11px] text-white hover:bg-sky-600"
+                  onClick={async () => {
+                    setEditBusy(true);
+                    try {
+                      await apiRequest("PATCH", `/api/articles/${article.id}`, {
+                        headline: editHeadline,
+                        subtitle: editSubtitle || null,
+                        executive_summary: editSummary || null,
+                        full_article: editBody || null,
+                      });
+                      toast({ title: "Article saved" });
+                      invalidateArticleQueries();
+                      setShowEdit(false);
+                    } catch (e) {
+                      toast({
+                        title: "Save failed",
+                        description: e instanceof Error ? e.message : "Error",
+                        variant: "destructive",
+                      });
+                    } finally {
+                      setEditBusy(false);
+                    }
+                  }}
+                >
+                  {editBusy ? "Saving…" : "Save changes"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowEdit(false)}
+                  className="h-9 rounded-xl border-white/20 text-[11px] text-white/70"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+{showPreview && (
         <ArticlePreviewModal
           article={article}
           isTrash={isTrash}
@@ -2056,6 +2149,20 @@ function ArticleCard({
                     <RefreshCw className="h-3.5 w-3.5" />
                   )}
                   <span className="ml-1.5">REGENERATE IMAGES</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setEditHeadline(article.headline || "");
+                    setEditSubtitle(article.subtitle || "");
+                    setEditSummary(article.executive_summary || "");
+                    setEditBody(article.full_article || "");
+                    setShowEdit(true);
+                  }}
+                  className="h-8 rounded-xl border-sky-500/40 bg-transparent px-3 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-sky-300 hover:bg-sky-500/10"
+                  data-testid={`button-edit-${article.id}`}
+                >
+                  <span className="ml-0">EDIT</span>
                 </Button>
                 <Button
                   variant="outline"
