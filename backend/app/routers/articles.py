@@ -223,6 +223,46 @@ def edit_article(
     return article
 
 
+
+
+@router.post("/api/articles/{article_id}/editor-in-chief")
+def run_eic(
+    article_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """Phase 1 Editor-in-Chief: editorial QA report + revised draft (human still approves)."""
+    article = db.query(Article).filter(Article.id == article_id).first()
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+    try:
+        from app.services.editor_in_chief_service import run_editor_in_chief
+        report = run_editor_in_chief(article, db)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Editor-in-Chief failed: {exc}") from exc
+    return report
+
+
+@router.post("/api/articles/{article_id}/editor-in-chief/apply", response_model=ArticleOut)
+def apply_eic(
+    article_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """Apply EIC revised headline/body/metadata onto the article draft."""
+    article = db.query(Article).filter(Article.id == article_id).first()
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+    try:
+        from app.services.editor_in_chief_service import apply_eic_revision
+        article = apply_eic_revision(article, db)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return article
+
+
 @router.delete("/api/articles/{article_id}", status_code=204)
 def delete_article(
     article_id: uuid.UUID,

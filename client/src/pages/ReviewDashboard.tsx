@@ -1703,6 +1703,9 @@ function ArticleCard({
   const [showPreview, setShowPreview] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [editBusy, setEditBusy] = useState(false);
+  const [eicBusy, setEicBusy] = useState(false);
+  const [eicApplyBusy, setEicApplyBusy] = useState(false);
+  const [eicReport, setEicReport] = useState<Record<string, unknown> | null>(null);
   const [editHeadline, setEditHeadline] = useState(article.headline || "");
   const [editSubtitle, setEditSubtitle] = useState(article.subtitle || "");
   const [editSummary, setEditSummary] = useState(article.executive_summary || "");
@@ -2166,6 +2169,47 @@ function ArticleCard({
                 </Button>
                 <Button
                   variant="outline"
+                  disabled={eicBusy}
+                  onClick={async () => {
+                    setEicBusy(true);
+                    try {
+                      const res = await apiRequest(
+                        "POST",
+                        `/api/articles/${article.id}/editor-in-chief`,
+                      );
+                      if (!res.ok) {
+                        const err = await res.json().catch(() => ({}));
+                        throw new Error(
+                          (err as { detail?: string })?.detail || "EIC failed",
+                        );
+                      }
+                      const report = await res.json();
+                      setEicReport(report as Record<string, unknown>);
+                      invalidateArticleQueries();
+                      toast({
+                        title: "Editor-in-Chief complete",
+                        description: `Decision: ${String((report as { editorial_decision?: string }).editorial_decision || "—")} · Score ${String((report as { revised_quality_score?: number }).revised_quality_score ?? "—")}/100`,
+                      });
+                    } catch (e) {
+                      toast({
+                        title: "Editor-in-Chief failed",
+                        description: e instanceof Error ? e.message : "Error",
+                        variant: "destructive",
+                      });
+                    } finally {
+                      setEicBusy(false);
+                    }
+                  }}
+                  className="h-8 rounded-xl border-amber-500/40 bg-transparent px-3 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-amber-300 hover:bg-amber-500/10"
+                  data-testid={`button-eic-${article.id}`}
+                >
+                  {eicBusy ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : null}
+                  <span className="ml-1">EDITOR-IN-CHIEF</span>
+                </Button>
+                <Button
+                  variant="outline"
                   onClick={requestDelete}
                   disabled={approveMutation.isPending || trashMutation.isPending}
                   className="h-8 rounded-xl border-red-500/30 bg-transparent px-3 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-red-400 hover:bg-red-500/10"
@@ -2182,6 +2226,106 @@ function ArticleCard({
             )}
           </div>
         </div>
+
+
+      {(eicReport ||
+        (article.property_snapshot as Record<string, unknown> | null)?.eic) && (
+        <div className="border-t border-white/10 bg-amber-500/5 px-5 py-4">
+          {(() => {
+            const r = (eicReport ||
+              (article.property_snapshot as Record<string, unknown>)?.eic) as Record<
+              string,
+              unknown
+            >;
+            const decision = String(r.editorial_decision || "—");
+            const score = r.revised_quality_score ?? r.original_quality_score;
+            const eligible = Boolean(r.publish_eligible);
+            const notes = String(r.editorial_notes || "");
+            const issues = Array.isArray(r.unresolved_issues)
+              ? (r.unresolved_issues as string[])
+              : [];
+            const claims = Array.isArray(r.unsupported_claims)
+              ? (r.unsupported_claims as string[])
+              : [];
+            return (
+              <div className="space-y-2">
+                <p className="text-[10px] font-medium tracking-[1.4px] text-amber-300/90">
+                  EDITOR-IN-CHIEF REPORT
+                </p>
+                <p className="text-[13px] text-white/80">
+                  Decision: <span className="text-amber-200">{decision}</span>
+                  {" · "}
+                  Score: <span className="text-white">{String(score ?? "—")}/100</span>
+                  {" · "}
+                  Publish eligible:{" "}
+                  <span className={eligible ? "text-emerald-300" : "text-red-300"}>
+                    {eligible ? "Yes (still needs your Approve)" : "No"}
+                  </span>
+                </p>
+                {r.recommended_title ? (
+                  <p className="text-[12px] text-white/60">
+                    Recommended title: {String(r.recommended_title)}
+                  </p>
+                ) : null}
+                {notes ? (
+                  <p className="text-[12px] leading-relaxed text-white/55">{notes}</p>
+                ) : null}
+                {issues.length > 0 && (
+                  <ul className="list-disc pl-4 text-[12px] text-white/50">
+                    {issues.slice(0, 6).map((x, i) => (
+                      <li key={i}>{x}</li>
+                    ))}
+                  </ul>
+                )}
+                {claims.length > 0 && (
+                  <ul className="list-disc pl-4 text-[12px] text-amber-200/70">
+                    {claims.slice(0, 4).map((x, i) => (
+                      <li key={i}>Unsupported: {x}</li>
+                    ))}
+                  </ul>
+                )}
+                <div className="flex flex-wrap gap-2 pt-2">
+                  <Button
+                    type="button"
+                    disabled={eicApplyBusy}
+                    className="h-8 rounded-xl bg-amber-700/90 px-3 text-[10px] text-white hover:bg-amber-600"
+                    onClick={async () => {
+                      setEicApplyBusy(true);
+                      try {
+                        const res = await apiRequest(
+                          "POST",
+                          `/api/articles/${article.id}/editor-in-chief/apply`,
+                        );
+                        if (!res.ok) {
+                          const err = await res.json().catch(() => ({}));
+                          throw new Error(
+                            (err as { detail?: string })?.detail || "Apply failed",
+                          );
+                        }
+                        toast({ title: "EIC revision applied to draft" });
+                        invalidateArticleQueries();
+                      } catch (e) {
+                        toast({
+                          title: "Apply failed",
+                          description: e instanceof Error ? e.message : "Error",
+                          variant: "destructive",
+                        });
+                      } finally {
+                        setEicApplyBusy(false);
+                      }
+                    }}
+                  >
+                    {eicApplyBusy ? "Applying…" : "APPLY REVISION TO DRAFT"}
+                  </Button>
+                  <span className="self-center text-[10px] text-white/35">
+                    Then review and Approve as usual
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
         {/* Collapsible for SEO/admin package (kept for quick reference) */}
         <Collapsible open={open} onOpenChange={setOpen}>
