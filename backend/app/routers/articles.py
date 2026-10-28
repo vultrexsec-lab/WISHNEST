@@ -9,6 +9,7 @@ DELETE /api/articles/{id}                  - permanently delete an article (admi
 """
 import uuid
 
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -174,6 +175,50 @@ def regenerate_images(
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
     regenerate_article_images(article, db)
+    db.refresh(article)
+    return article
+
+
+
+
+class ArticleEditIn(BaseModel):
+    headline: str | None = None
+    subtitle: str | None = None
+    executive_summary: str | None = None
+    full_article: str | None = None
+    wishnest_verdict: str | None = None
+    location: str | None = None
+    best_for: list[str] | None = None
+    not_ideal_for: list[str] | None = None
+    keywords: list[str] | None = None
+    architecture_grade: str | None = None
+    landscape_grade: str | None = None
+    connectivity_grade: str | None = None
+    delight_grade: str | None = None
+    eat_explore_grade: str | None = None
+    architecture_score: float | None = None
+    landscape_score: float | None = None
+    connectivity_score: float | None = None
+    delight_score: float | None = None
+    eat_explore_score: float | None = None
+
+
+@router.patch("/api/articles/{article_id}", response_model=ArticleOut)
+def edit_article(
+    article_id: uuid.UUID,
+    body: ArticleEditIn,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """Admin edit of editorial fields after draft / before or after approve."""
+    article = db.query(Article).filter(Article.id == article_id).first()
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+    data = body.model_dump(exclude_unset=True)
+    for key, val in data.items():
+        if val is not None:
+            setattr(article, key, val)
+    db.commit()
     db.refresh(article)
     return article
 

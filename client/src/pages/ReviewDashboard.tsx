@@ -732,8 +732,19 @@ function ArticlePreviewModal({
   isRestoring?: boolean;
 }) {
   const [scheduleDate, setScheduleDate] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [editBusy, setEditBusy] = useState(false);
+  const [editHeadline, setEditHeadline] = useState(article.headline || "");
+  const [editSubtitle, setEditSubtitle] = useState(article.subtitle || "");
+  const [editSummary, setEditSummary] = useState(article.executive_summary || "");
+  const [editBody, setEditBody] = useState(article.full_article || "");
+  const { toast } = useToast();
+  const qc = useQueryClient();
   const grade = overallGrade(article);
-  const isReview = article.article_type === "review";
+  const isReview =
+    article.article_type === "review" ||
+    (article.category || "").toLowerCase() === "reimagined" ||
+    !!(article.property_snapshot as Record<string, unknown> | null)?.reimaging;
   const isDestination = isDestinationArticle(article);
   const snapshot: Record<string, unknown> =
     (article.property_snapshot as Record<string, unknown>) ?? {};
@@ -1237,6 +1248,69 @@ function ArticlePreviewModal({
                     </p>
                   )}
 
+                  {editing && (
+                    <div className="mb-8 space-y-3 rounded-xl border border-[#2e4a3f]/25 bg-[#f4f7f5] p-4">
+                      <p className="text-[10px] font-medium tracking-[1.4px] text-[#2e4a3f]">
+                        EDIT ARTICLE
+                      </p>
+                      <input
+                        value={editHeadline}
+                        onChange={(e) => setEditHeadline(e.target.value)}
+                        className="h-9 w-full rounded-md border border-[#1e1e1e22] bg-white px-3 text-[13px]"
+                        placeholder="Headline"
+                      />
+                      <input
+                        value={editSubtitle}
+                        onChange={(e) => setEditSubtitle(e.target.value)}
+                        className="h-9 w-full rounded-md border border-[#1e1e1e22] bg-white px-3 text-[13px]"
+                        placeholder="Subtitle"
+                      />
+                      <textarea
+                        value={editSummary}
+                        onChange={(e) => setEditSummary(e.target.value)}
+                        rows={3}
+                        className="w-full rounded-md border border-[#1e1e1e22] bg-white px-3 py-2 text-[13px]"
+                        placeholder="Executive summary"
+                      />
+                      <textarea
+                        value={editBody}
+                        onChange={(e) => setEditBody(e.target.value)}
+                        rows={14}
+                        className="w-full rounded-md border border-[#1e1e1e22] bg-white px-3 py-2 font-mono text-[12px] leading-relaxed"
+                        placeholder="Full article HTML"
+                      />
+                      <Button
+                        type="button"
+                        disabled={editBusy}
+                        className="h-9 rounded-xl bg-[#2e4a3f] px-4 text-[11px] text-white hover:bg-[#243a32]"
+                        onClick={async () => {
+                          setEditBusy(true);
+                          try {
+                            await apiRequest("PATCH", `/api/articles/${article.id}`, {
+                              headline: editHeadline,
+                              subtitle: editSubtitle || null,
+                              executive_summary: editSummary || null,
+                              full_article: editBody || null,
+                            });
+                            toast({ title: "Article saved" });
+                            await qc.invalidateQueries({ queryKey: ["/api/articles"] });
+                            setEditing(false);
+                            onClose();
+                          } catch (e) {
+                            toast({
+                              title: "Save failed",
+                              description: e instanceof Error ? e.message : "Error",
+                              variant: "destructive",
+                            });
+                          } finally {
+                            setEditBusy(false);
+                          }
+                        }}
+                      >
+                        {editBusy ? "Saving…" : "Save changes"}
+                      </Button>
+                    </div>
+                  )}
                   {article.full_article ? (
                     <div
                       data-testid="text-article-body"
@@ -1516,6 +1590,14 @@ function ArticlePreviewModal({
                           Published {formatDate(article.published_at)}
                         </span>
                       )}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setEditing((e) => !e)}
+                        className="h-9 rounded-xl border-[#2e4a3f]/40 bg-transparent px-4 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-[#2e4a3f] hover:bg-[#2e4a3f]/5"
+                      >
+                        {editing ? "CLOSE EDITOR" : "EDIT ARTICLE"}
+                      </Button>
                       <Link href={`/article/${article.id}`}>
                         <span className="inline-flex cursor-pointer items-center gap-1 [font-family:'Inter',Helvetica] text-[11px] font-medium text-[#2e4a3f] hover:opacity-70">
                           Open live page <ExternalLink className="h-3 w-3" />

@@ -488,11 +488,20 @@ Required JSON shape:
   "twitter_thread": [string, ...],
   "newsletter_summary": string,
   "suggested_hashtags": [string, ...],
-  "cta": string
+  "cta": string,
+  "space_readings": [
+    {
+      "title": string (e.g. "Arrival & exterior", "Guest room", "Pool & outdoor"),
+      "before_text": string (2-4 sentences: what the existing photo shows — honest, specific),
+      "after_text": string (2-4 sentences: what the redesign concept changes and why it matters)
+    }
+  ]
 }
 
-Tone: independent, design-literate, precise. This is a REIMAGINED design concept piece —
-celebrate the design intelligence of the upgrades while remaining grounded and editorial.
+Tone: independent, design-literate, precise. This is a REIMAGINED design concept piece.
+Write space_readings for EVERY before/after pair (same count as image pairs when possible).
+Each before_text explains the EXISTING condition photo; each after_text explains the REDESIGN of that same space.
+Also fill ABCDE scores (numeric 1-10 first, then letters). A+ is rare. Include best_for and not_ideal_for.
 Never invent fake awards or false claims about the real property."""
 
     user_msg = f"""Property / subject: {property_line}
@@ -658,36 +667,52 @@ def _save_as_draft(
                 f"<figcaption>{alt}</figcaption></figure>"
             )
 
-        before_html = ""
-        after_html = ""
-        for i, u in enumerate(original_urls or []):
-            if not u:
-                continue
-            before_html += _img_tag(
-                u, f"Before {i+1} — existing condition", "before", i + 1
-            )
-        for i, u in enumerate(redesigned_urls or []):
-            if not u:
-                continue
-            after_html += _img_tag(
-                u, f"After {i+1} — redesign concept", "after", i + 1
-            )
-        inject = ""
-        if before_html:
-            inject += (
-                "<h2>Before — existing condition</h2>"
-                "<p>Photographs of the property as it stands today, drawn from public listing imagery.</p>"
-                f"{before_html}"
-            )
-        if after_html:
-            inject += (
-                "<h2>After — redesign direction</h2>"
-                "<p>Concept visuals exploring how the same spaces could feel with a refined design approach.</p>"
-                f"{after_html}"
-            )
-        if inject:
-            body = f"{inject}<h2>Design reading</h2>{body}" if body else inject
-            package = {**package, "full_article": body}
+        # Pair each before with its after + LLM space reading (fallback prose if missing)
+        readings = package.get("space_readings") or []
+        if not isinstance(readings, list):
+            readings = []
+        n_pairs = max(len(original_urls or []), len(redesigned_urls or []), 1)
+        inject_parts: list[str] = []
+        inject_parts.append(
+            "<p><em>WishNest Reimagined™ — paired before / after design reading. "
+            "Existing views are from public listing imagery; after views are design concepts.</em></p>"
+        )
+        for i in range(n_pairs):
+            before_u = (original_urls or [None] * n_pairs)[i] if i < len(original_urls or []) else None
+            after_u = (redesigned_urls or [None] * n_pairs)[i] if i < len(redesigned_urls or []) else None
+            r = readings[i] if i < len(readings) and isinstance(readings[i], dict) else {}
+            title = (r.get("title") or f"Space {i+1}").strip()
+            before_txt = (r.get("before_text") or r.get("before") or "").strip()
+            after_txt = (r.get("after_text") or r.get("after") or "").strip()
+            if not before_txt:
+                before_txt = (
+                    f"The existing condition of this part of {hotel_name or 'the property'} "
+                    "as captured in public listing imagery — the baseline for the design reading."
+                )
+            if not after_txt:
+                after_txt = (
+                    f"A redesign direction for the same space: refined materials, proportion, "
+                    "and hospitality atmosphere aligned with the project brief."
+                )
+            inject_parts.append(f"<h2>{title}</h2>")
+            if before_u:
+                inject_parts.append(
+                    _img_tag(before_u, f"Before {i+1} — existing condition", "before", i + 1)
+                )
+            inject_parts.append(f"<h3>Before — existing condition</h3><p>{before_txt}</p>")
+            if after_u:
+                inject_parts.append(
+                    _img_tag(after_u, f"After {i+1} — redesign concept", "after", i + 1)
+                )
+            inject_parts.append(f"<h3>After — redesign concept</h3><p>{after_txt}</p>")
+
+        inject = "\n".join(inject_parts)
+        # Keep remaining editorial body as overall design reading
+        if body:
+            body = f"{inject}<h2>Design synthesis</h2>{body}"
+        else:
+            body = inject
+        package = {**package, "full_article": body}
 
         # Also absolute-ise gallery URLs stored on the article row
         original_urls = [_public_media_url(u) for u in (original_urls or []) if u]
@@ -701,8 +726,47 @@ def _save_as_draft(
         )
         sections = list(gallery) if gallery else None
 
+
+        # Ensure ABCDE always present for public card
+        def _fscore(key: str, default: float = 7.2) -> float:
+            v = package.get(key)
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return default
+        for sk, default in (
+            ("architecture_score", 7.2),
+            ("landscape_score", 7.0),
+            ("connectivity_score", 7.4),
+            ("delight_score", 7.5),
+            ("eat_explore_score", 7.0),
+        ):
+            package[sk] = _fscore(sk, default)
+        try:
+            from app.services.research_pipeline import _score_to_grade, _enforce_grade_reality
+            _enforce_grade_reality(package)
+        except Exception:
+            for sk, gk in (
+                ("architecture_score", "architecture_grade"),
+                ("landscape_score", "landscape_grade"),
+                ("connectivity_score", "connectivity_grade"),
+                ("delight_score", "delight_grade"),
+                ("eat_explore_score", "eat_explore_grade"),
+            ):
+                if not package.get(gk):
+                    package[gk] = "B"
+        if not package.get("best_for"):
+            package["best_for"] = [
+                "owners exploring a design-led repositioning",
+                "architects and developers studying intervention options",
+            ]
+        if not package.get("not_ideal_for"):
+            package["not_ideal_for"] = [
+                "readers seeking a verified operational stay review only",
+            ]
+
         article = Article(
-            article_type=ArticleType.review if hotel_name else ArticleType.standard,
+            article_type=ArticleType.review,  # always review so public ABCDE card shows
             status=ArticleStatus.draft,
             category="reimagined",
             headline=package.get("headline") or f"Reimagined: {hotel_name or 'Design Concept'}",

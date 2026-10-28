@@ -217,7 +217,10 @@ export const ArticleDetailPage = (): JSX.Element => {
     );
   }
 
-  const isReview = article.article_type === "review";
+  const isReview =
+    article.article_type === "review" ||
+    (article.category || "").toLowerCase() === "reimagined" ||
+    !!(article.property_snapshot as Record<string, unknown> | null)?.reimaging;
   // Keep the type as `Record<string, unknown>` — the old `string | number` cast
   // was a compile-time lie that caused TypeScript to lose the array/object shape
   // at the call site, making it impossible to detect the "[object Object]" case.
