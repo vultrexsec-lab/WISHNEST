@@ -395,14 +395,16 @@ export const PremiumEditorial = (): JSX.Element => {
       <NewsletterModal open={newsletterOpen} onClose={() => setNewsletterOpen(false)} />
       <header className="sticky top-0 z-50 border-b border-[#1e1e1e14] bg-[#f8f7f4]/95 backdrop-blur">
         <div className="mx-auto flex w-full max-w-[1166px] items-center justify-between gap-4 px-4 py-4 sm:px-8 sm:py-5">
-          <div className="flex min-w-0 flex-shrink-0 flex-col">
-            <div className="[font-family:'Playfair_Display',Helvetica] text-[22px] font-bold leading-[22px] tracking-[3px] text-[#1e1e1e] sm:text-[26px] sm:leading-[26px] sm:tracking-[3.90px]">WishNest</div>
-<div className="hidden pt-0.5 [font-family:'Inter',Helvetica] text-[8px] font-normal leading-[11px] tracking-[1.40px] text-[#6b6b6b] sm:block sm:text-[9px] sm:leading-[12px] sm:tracking-[1.60px]">
-                HOSPITALITY · ARCHITECTURE
-                <br />
-                SECOND HOME INTELLIGENCE
-              </div>
-          </div>
+          <Link href="/">
+            <div className="flex min-w-0 flex-shrink-0 cursor-pointer items-center">
+              <img
+                src="/brand/wishnest-logo-nav.png"
+                alt="WishNest"
+                className="h-9 w-auto max-w-[160px] object-contain object-left sm:h-11 sm:max-w-[200px]"
+              />
+              <span className="sr-only">WishNest</span>
+            </div>
+          </Link>
           <nav className="hidden items-center gap-5 lg:flex" aria-label="Primary">
             {navItems.map((item) => (
               <Link key={item.label} href={item.href}>
