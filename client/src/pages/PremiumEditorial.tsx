@@ -307,6 +307,7 @@ export const PremiumEditorial = (): JSX.Element => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [newsletterOpen, setNewsletterOpen] = useState(false);
+  const [reimaginedView, setReimaginedView] = useState<"current" | "reimagined">("current");
   const { data: liveArticles } = useQuery<Article[]>({
     queryKey: ["/api/articles"],
   });
@@ -947,19 +948,44 @@ export const PremiumEditorial = (): JSX.Element => {
           <div className="grid gap-14 pt-14 lg:grid-cols-[610px_minmax(0,436px)] lg:justify-between">
             <div>
               <div className="inline-flex border border-[#1e1e1e1a]">
-                <button className="bg-[#2e4a3f] px-7 py-3 [font-family:'Inter',Helvetica] text-[11px] font-medium leading-[16.5px] tracking-[1.32px] text-white">
+                <button
+                  type="button"
+                  onClick={() => setReimaginedView("current")}
+                  className={`px-7 py-3 [font-family:'Inter',Helvetica] text-[11px] font-medium leading-[16.5px] tracking-[1.32px] transition-colors ${
+                    reimaginedView === "current"
+                      ? "bg-[#2e4a3f] text-white"
+                      : "bg-transparent text-[#6b6b6b] hover:text-[#1e1e1e]"
+                  }`}
+                >
                   CURRENT STATE
                 </button>
-                <button className="px-7 py-3 [font-family:'Inter',Helvetica] text-[11px] font-medium leading-[16.5px] tracking-[1.32px] text-[#6b6b6b]">
+                <button
+                  type="button"
+                  onClick={() => setReimaginedView("reimagined")}
+                  className={`px-7 py-3 [font-family:'Inter',Helvetica] text-[11px] font-medium leading-[16.5px] tracking-[1.32px] transition-colors ${
+                    reimaginedView === "reimagined"
+                      ? "bg-[#2e4a3f] text-white"
+                      : "bg-transparent text-[#6b6b6b] hover:text-[#1e1e1e]"
+                  }`}
+                >
                   REIMAGINED™
                 </button>
               </div>
               <div className="relative mt-5 h-[240px] bg-[#e8e6e0] sm:h-[320px] md:h-[406.93px]">
-                <div className="h-full w-full bg-[url(/figmaAssets/image--property-as-it-currently-stands-.png)] bg-cover bg-center" />
+                <div
+                  className="h-full w-full bg-cover bg-center transition-[background-image] duration-300"
+                  style={{
+                    backgroundImage:
+                      reimaginedView === "current"
+                        ? "url(/figmaAssets/image--property-as-it-currently-stands-.png)"
+                        : "url(/figmaAssets/image--infinity-pool-overlooking-misty-mountain-valleys-at-a-lux.png)",
+                  }}
+                />
                 <div className="absolute inset-x-0 bottom-0 bg-[linear-gradient(180deg,rgba(0,0,0,0)_0%,rgba(20,20,20,0.65)_100%)] p-5">
                   <p className="max-w-[400px] [font-family:'Inter',Helvetica] text-xs font-normal leading-[16.5px] text-[#ffffffcc]">
-                    An underutilised hill property with unrealised structural
-                    and spatial potential.
+                    {reimaginedView === "current"
+                      ? "An underutilised hill property with unrealised structural and spatial potential."
+                      : "The same site after a WishNest Reimagined™ / ArrowX design study — landscape, arrival and hospitality programme unlocked."}
                   </p>
                 </div>
               </div>
@@ -996,14 +1022,16 @@ export const PremiumEditorial = (): JSX.Element => {
                 ))}
               </div>
               <div className="pt-8">
-                <Button className="h-auto rounded-none bg-[#2e4a3f] px-6 py-3.5 [font-family:'Inter',Helvetica] text-[11px] font-medium leading-[16.5px] tracking-[1.32px] text-white hover:bg-[#243a32]">
-                  <span>VIEW FULL CASE STUDY</span>
-                  <img
-                    className="ml-3 h-3.5 w-3.5"
-                    alt="Icon"
-                    src="/figmaAssets/icon-1.svg"
-                  />
-                </Button>
+                <Link href="/reimagined">
+                  <Button className="h-auto rounded-none bg-[#2e4a3f] px-6 py-3.5 [font-family:'Inter',Helvetica] text-[11px] font-medium leading-[16.5px] tracking-[1.32px] text-white hover:bg-[#243a32]">
+                    <span>VIEW FULL CASE STUDY</span>
+                    <img
+                      className="ml-3 h-3.5 w-3.5"
+                      alt="Icon"
+                      src="/figmaAssets/icon-1.svg"
+                    />
+                  </Button>
+                </Link>
               </div>
             </div>
           </div>
@@ -1018,14 +1046,19 @@ export const PremiumEditorial = (): JSX.Element => {
               </div>
               <div className="h-px w-16 bg-[#1e1e1e1a]" />
             </div>
-            <button className="inline-flex items-center gap-2 [font-family:'Inter',Helvetica] text-[11px] font-normal leading-[16.5px] tracking-[1.10px] text-[#1e1e1e]">
-              <span>ALL RANKINGS</span>
-              <img
-                className="h-3.5 w-3.5"
-                alt="Icon"
-                src="/figmaAssets/icon.svg"
-              />
-            </button>
+            <Link href="/best-of">
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 [font-family:'Inter',Helvetica] text-[11px] font-normal leading-[16.5px] tracking-[1.10px] text-[#1e1e1e] transition-opacity hover:opacity-70"
+              >
+                <span>ALL RANKINGS</span>
+                <img
+                  className="h-3.5 w-3.5"
+                  alt="Icon"
+                  src="/figmaAssets/icon.svg"
+                />
+              </button>
+            </Link>
           </div>
           <div className="grid gap-x-8 gap-y-8 pt-14 md:grid-cols-2">
             {bestOfItems.map((item) => (
