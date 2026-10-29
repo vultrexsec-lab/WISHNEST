@@ -488,20 +488,24 @@ export const PremiumEditorial = (): JSX.Element => {
               architectural insights — by people who actually care about design.
             </p>
             <div className="flex flex-wrap gap-4 pt-10">
-              <Button className="h-auto rounded-none bg-[#2e4a3f] px-8 py-4 [font-family:'Inter',Helvetica] text-[11px] font-medium leading-[16.5px] tracking-[1.32px] text-white hover:bg-[#243a32]">
-                <span>EXPLORE REVIEWS</span>
-                <img
-                  className="ml-3 h-3.5 w-3.5"
-                  alt="Icon"
-                  src="/figmaAssets/icon.svg"
-                />
-              </Button>
-              <Button
-                variant="outline"
-                className="h-auto rounded-none border-[0.8px] border-[#ffffff4c] bg-transparent px-8 py-4 [font-family:'Inter',Helvetica] text-[11px] font-medium leading-[16.5px] tracking-[1.32px] text-white hover:bg-white hover:text-[#1a1a1a]"
-              >
-                VIEW INTELLIGENCE
-              </Button>
+              <Link href="/reviews">
+                <Button className="h-auto rounded-none bg-[#2e4a3f] px-8 py-4 [font-family:'Inter',Helvetica] text-[11px] font-medium leading-[16.5px] tracking-[1.32px] text-white hover:bg-[#243a32]">
+                  <span>EXPLORE REVIEWS</span>
+                  <img
+                    className="ml-3 h-3.5 w-3.5"
+                    alt="Icon"
+                    src="/figmaAssets/icon.svg"
+                  />
+                </Button>
+              </Link>
+              <Link href="/intelligence">
+                <Button
+                  variant="outline"
+                  className="h-auto rounded-none border-[0.8px] border-[#ffffff4c] bg-transparent px-8 py-4 [font-family:'Inter',Helvetica] text-[11px] font-medium leading-[16.5px] tracking-[1.32px] text-white hover:bg-white hover:text-[#1a1a1a]"
+                >
+                  VIEW INTELLIGENCE
+                </Button>
+              </Link>
             </div>
           </div>
           <div className="mt-auto pt-16">
