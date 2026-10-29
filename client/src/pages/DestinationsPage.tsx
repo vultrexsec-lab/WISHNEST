@@ -17,6 +17,7 @@ const destinations = [
   {
     region: "HIMALAYA",
     name: "Uttarakhand",
+    slug: "uttarakhand",
     tagline: "Oak forests, valley retreats & alpine sanctuaries",
     count: "14 properties",
     bg: "bg-[#2e4a3f]",
@@ -24,6 +25,7 @@ const destinations = [
   {
     region: "RAJPUTANA",
     name: "Rajasthan",
+    slug: "rajasthan",
     tagline: "Heritage havelis, desert lodges & palace conversions",
     count: "11 properties",
     bg: "bg-[#3a3228]",
@@ -31,6 +33,7 @@ const destinations = [
   {
     region: "COASTAL SOUTH",
     name: "Kerala",
+    slug: "kerala",
     tagline: "Backwaters, spice gardens & biophilic retreats",
     count: "9 properties",
     bg: "bg-[#1e3a3a]",
@@ -38,6 +41,7 @@ const destinations = [
   {
     region: "WESTERN GHATS",
     name: "Coorg & Wayanad",
+    slug: "coorg-and-wayanad",
     tagline: "Coffee estates, mist valleys & jungle hideaways",
     count: "8 properties",
     bg: "bg-[#2d3a22]",
@@ -45,6 +49,7 @@ const destinations = [
   {
     region: "HIMALAYA",
     name: "Himachal Pradesh",
+    slug: "himachal-pradesh",
     tagline: "Apple orchards, pine forests & mountain villages",
     count: "10 properties",
     bg: "bg-[#33302a]",
@@ -52,6 +57,7 @@ const destinations = [
   {
     region: "NORTHEAST",
     name: "Meghalaya & Sikkim",
+    slug: "meghalaya-and-sikkim",
     tagline: "Living root bridges, cloud forests & sacred valleys",
     count: "6 properties",
     bg: "bg-[#1e2a3a]",
@@ -98,23 +104,24 @@ export const DestinationsPage = (): JSX.Element => {
         <div className="mx-auto w-full max-w-[1166px] px-4 sm:px-8">
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {destinations.map((dest) => (
-              <div
-                key={dest.name}
-                className={`${dest.bg} group cursor-pointer p-8 transition-opacity hover:opacity-90 sm:p-10`}
-              >
-                <p className="[font-family:'Inter',Helvetica] text-[9px] font-normal tracking-[1.98px] text-[#ffffff59]">
-                  {dest.region}
-                </p>
-                <h2 className="pt-3 [font-family:'Playfair_Display',Helvetica] text-[28px] font-normal text-white">
-                  {dest.name}
-                </h2>
-                <p className="pt-3 [font-family:'Inter',Helvetica] text-[13px] font-normal leading-[22px] text-[#ffffff8c]">
-                  {dest.tagline}
-                </p>
-                <p className="pt-6 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1.40px] text-[#ffffff59]">
-                  {dest.count} ↗
-                </p>
-              </div>
+              <Link key={dest.slug} href={`/destination/${dest.slug}`}>
+                <a
+                  className={`${dest.bg} group block cursor-pointer p-8 transition-opacity hover:opacity-90 sm:p-10`}
+                >
+                  <p className="[font-family:'Inter',Helvetica] text-[9px] font-normal tracking-[1.98px] text-[#ffffff59]">
+                    {dest.region}
+                  </p>
+                  <h2 className="pt-3 [font-family:'Playfair_Display',Helvetica] text-[28px] font-normal text-white">
+                    {dest.name}
+                  </h2>
+                  <p className="pt-3 [font-family:'Inter',Helvetica] text-[13px] font-normal leading-[22px] text-[#ffffff8c]">
+                    {dest.tagline}
+                  </p>
+                  <p className="pt-6 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1.40px] text-[#ffffff59]">
+                    {dest.count} ↗
+                  </p>
+                </a>
+              </Link>
             ))}
           </div>
         </div>

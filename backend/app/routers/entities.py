@@ -32,6 +32,10 @@ SEED_DESTINATIONS: list[dict[str, str]] = [
     {"slug": "kerala", "name": "Kerala", "region": "Coastal South", "tagline": "Backwaters, spice gardens & biophilic retreats"},
     {"slug": "coorg", "name": "Coorg", "region": "Western Ghats", "tagline": "Coffee estates & mist valleys"},
     {"slug": "wayanad", "name": "Wayanad", "region": "Western Ghats", "tagline": "Jungle hideaways & estate stays"},
+    {"slug": "coorg-and-wayanad", "name": "Coorg & Wayanad", "region": "Western Ghats", "tagline": "Coffee estates, mist valleys & jungle hideaways"},
+    {"slug": "meghalaya-and-sikkim", "name": "Meghalaya & Sikkim", "region": "Northeast", "tagline": "Living root bridges, cloud forests & sacred valleys"},
+    {"slug": "meghalaya", "name": "Meghalaya", "region": "Northeast", "tagline": "Cloud forests & living root bridges"},
+    {"slug": "sikkim", "name": "Sikkim", "region": "Northeast", "tagline": "Himalayan valleys & monastery towns"},
     {"slug": "himachal-pradesh", "name": "Himachal Pradesh", "region": "Himalaya", "tagline": "Orchards, pine forests & mountain villages"},
     {"slug": "goa", "name": "Goa", "region": "West Coast", "tagline": "Boutique hospitality & villa culture"},
 ]
@@ -119,8 +123,24 @@ def get_destination_entity(slug: str, db: Session = Depends(get_db)):
     seed = _seed_by_slug(slug)
     name = seed["name"] if seed else slug.replace("-", " ").title()
 
-    # Match location containing name or slug tokens
+    # Match location containing name or slug tokens (split "Coorg & Wayanad" etc.)
     tokens = [name, slug.replace("-", " ")]
+    for part in re.split(r"\s*(?:&|and|,)\s*", name, flags=re.I):
+        part = part.strip()
+        if len(part) >= 3:
+            tokens.append(part)
+    for part in slug.split("-"):
+        if part not in ("and", "or") and len(part) >= 3:
+            tokens.append(part)
+    # de-dupe
+    seen = set()
+    uniq = []
+    for tok in tokens:
+        k = tok.lower()
+        if k not in seen:
+            seen.add(k)
+            uniq.append(tok)
+    tokens = uniq
     clauses = []
     for tok in tokens:
         clauses.append(Article.location.ilike(f"%{tok}%"))
