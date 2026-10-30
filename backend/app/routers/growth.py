@@ -2581,19 +2581,18 @@ def outreach_approach_email(
             .replace("{{whatsapp}}", whatsapp)
             .replace("{{call}}", call)
         )
+        # Lightweight CTAs only: submission page + one WhatsApp (fewer promo signals)
         review_url = website.rstrip("/") + "/get-reviewed" if "wishnest" in website.lower() else website
+        wa = whatsapp if whatsapp and whatsapp.rstrip("/") != "https://wa.me" else "https://wa.me/919199440961"
         cta_html = f"""
-        <table role="presentation" cellpadding="0" cellspacing="0" style="margin:20px 0;">
-          <tr><td style="padding:0 0 10px 0;">
-            <a href="{review_url}" style="display:inline-block;background:#165948;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-size:14px;font-weight:600;">Explore My Resort's Potential</a>
-          </td></tr>
-          <tr><td style="padding:0 0 10px 0;">
-            <a href="{whatsapp}" style="display:inline-block;background:#128C7E;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-size:14px;font-weight:600;">WhatsApp us</a>
-          </td></tr>
-          <tr><td style="padding:0;">
-            <a href="{call}" style="display:inline-block;background:#1a2e28;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-size:14px;font-weight:600;">Request a callback</a>
-          </td></tr>
-        </table>
+        <p style="margin:18px 0 8px;line-height:1.6;color:#1a2e28;">
+          Submit a property for review:<br/>
+          <a href="{review_url}" style="color:#165948;">{review_url}</a>
+        </p>
+        <p style="margin:8px 0 18px;line-height:1.6;color:#1a2e28;">
+          WhatsApp:<br/>
+          <a href="{wa}" style="color:#165948;">{wa}</a>
+        </p>
         """
 
         img_html = ""

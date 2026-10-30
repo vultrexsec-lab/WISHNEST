@@ -110,7 +110,7 @@ Hospitality | Architecture | Destinations
 
   const [emailImageUrl, setEmailImageUrl] = useState("");
   const [emailWebsite, setEmailWebsite] = useState("https://wishnest.info");
-  const [emailWhatsapp, setEmailWhatsapp] = useState("https://wa.me/91");
+  const [emailWhatsapp, setEmailWhatsapp] = useState("https://wa.me/919199440961");
   const [emailCallUrl, setEmailCallUrl] = useState("https://wa.me/919199440961?text=Hi%20WishNest%2C%20please%20call%20me%20back.");
   const [extraEmails, setExtraEmails] = useState("");
   const [emailBusy, setEmailBusy] = useState(false);
@@ -556,7 +556,7 @@ Hospitality | Architecture | Destinations
               />
             </div>
             <p className="text-[10px] text-white/35">
-              Placeholders: {"{{greeting}}"} {"{{name}}"} {"{{offer}}"} {"{{website}}"} {"{{whatsapp}}"} {"{{call}}"}. Buttons for Visit / WhatsApp / Call are added automatically under the body.
+              Placeholders: {{greeting}} {{name}} {{offer}} {{website}} {{whatsapp}}. Under the body we append only: Get Reviewed (submission) link + one WhatsApp link.
             </p>
             <textarea
               value={extraEmails}
