@@ -556,7 +556,7 @@ Hospitality | Architecture | Destinations
               />
             </div>
             <p className="text-[10px] text-white/35">
-              Placeholders: {{greeting}} {{name}} {{offer}} {{website}} {{whatsapp}}. Under the body we append only: Get Reviewed (submission) link + one WhatsApp link.
+              Placeholders: <code className="text-orange-200/90">{"{{greeting}}"}</code>{" "}<code className="text-orange-200/90">{"{{offer}}"}</code>{" "}<code className="text-orange-200/90">{"{{website}}"}</code>. Under the body we append only: Get Reviewed (submission) link + one WhatsApp link.
             </p>
             <textarea
               value={extraEmails}
