@@ -750,7 +750,7 @@ Hospitality | Architecture | Destinations
                   for (const phone of Array.from(targets)) {
                     try {
                       const baseMsg = waMsg.trim();
-                      const link = `https://wishnest-backend-kgu2.onrender.com/api/public/wa-yes?p=${phone}`;
+                      const link = `https://wishnest-backend-b0vs.onrender.com/api/public/wa-yes?p=${phone}`;
                       const message =
                         /reply yes/i.test(baseMsg) && !baseMsg.includes("wa-yes")
                           ? `${baseMsg}\n\nOr tap here for YES: ${link}`

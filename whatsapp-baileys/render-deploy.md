@@ -13,7 +13,7 @@
 5. Environment:
    ```
    BAILEYS_API_KEY=wishnest-baileys-secret
-   BACKEND_WEBHOOK_URL=https://wishnest-backend-kgu2.onrender.com
+   BACKEND_WEBHOOK_URL=https://wishnest-backend-b0vs.onrender.com
    ```
 6. **Disk** (important for QR session):
    - Add Disk → Mount path: `/opt/render/project/src/auth_session` → 1 GB
