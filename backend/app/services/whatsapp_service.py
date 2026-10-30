@@ -346,16 +346,22 @@ def _send_baileys(to_phone: str, text: str) -> dict[str, Any]:
         )
         data = _safe_json(r)
         if r.status_code >= 400:
-            detail = data.get("error") or data.get("detail") or data.get("raw") or data
+            core = data.get("error") or data.get("detail") or data.get("status") or data.get("raw") or data
+            # Map common Baileys responses to actionable text (shown first in UI)
+            if r.status_code == 401:
+                msg = "HTTP 401 unauthorized — BAILEYS_API_KEY on WishNest backend must match Baileys service exactly."
+            elif r.status_code == 503 or str(core) in ("not_connected", "starting", "close", "connecting"):
+                msg = f"HTTP {r.status_code} WhatsApp not linked — open Baileys URL, scan QR, wait until status is open. ({core})"
+            elif r.status_code == 404:
+                msg = "HTTP 404 — BAILEYS_URL wrong (use service root only, e.g. https://xxx.onrender.com — not /send)."
+            else:
+                msg = f"HTTP {r.status_code}: {str(core)[:240]}"
             return {
                 "status": "error",
                 "provider": "baileys",
                 "http_status": r.status_code,
-                "detail": str(detail)[:400],
-                "hint": (
-                    "Baileys error: check BAILEYS_URL (service root), BAILEYS_API_KEY, "
-                    "QR linked on Baileys dashboard, and that POST /send exists."
-                ),
+                "detail": msg,
+                "hint": msg,
             }
         status = data.get("status")
         if not status:

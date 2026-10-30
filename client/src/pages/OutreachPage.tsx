@@ -773,7 +773,7 @@ Hospitality | Architecture | Destinations
                         ok += 1;
                       } else {
                         fail += 1;
-                        const d = data.hint || data.detail || data.status || "failed";
+                        const d = data.detail || data.hint || data.status || "failed";
                         errors.push(
                           (typeof d === "string" ? d : JSON.stringify(d)).slice(0, 180),
                         );
