@@ -20,6 +20,20 @@ import requests
 
 logger = logging.getLogger("wishnest.whatsapp")
 
+
+def _safe_json(resp: requests.Response) -> Any:
+    """Parse JSON only when body looks like JSON; never raise on empty/HTML."""
+    raw = (resp.text or "").strip()
+    if not raw:
+        return {}
+    if raw[0] not in "{[":
+        return {"raw": raw[:500], "http_status": resp.status_code}
+    try:
+        return resp.json()
+    except Exception as exc:  # noqa: BLE001
+        return {"parse_error": str(exc), "raw": raw[:500], "http_status": resp.status_code}
+
+
 # ---------- Invitation / multi-step conversation templates ----------
 
 INVITE_MESSAGE = (
@@ -322,31 +336,65 @@ def handle_inbound(
 def _send_baileys(to_phone: str, text: str) -> dict[str, Any]:
     base = os.environ["BAILEYS_URL"].rstrip("/")
     key = os.environ["BAILEYS_API_KEY"]
+    phone = normalize_wa_phone(to_phone)
     try:
         r = requests.post(
             f"{base}/send",
             headers={"X-API-Key": key, "Content-Type": "application/json"},
-            json={"phone": to_phone, "message": text},
-            timeout=45,
+            json={"phone": phone, "message": text},
+            timeout=60,
         )
-        data = r.json() if r.content else {}
+        data = _safe_json(r)
         if r.status_code >= 400:
+            detail = data.get("error") or data.get("detail") or data.get("raw") or data
             return {
                 "status": "error",
                 "provider": "baileys",
                 "http_status": r.status_code,
-                "detail": data,
+                "detail": str(detail)[:400],
+                "hint": (
+                    "Baileys error: check BAILEYS_URL (service root), BAILEYS_API_KEY, "
+                    "QR linked on Baileys dashboard, and that POST /send exists."
+                ),
+            }
+        status = data.get("status")
+        if not status:
+            if data.get("ok") or data.get("success"):
+                status = "sent"
+            elif data.get("parse_error") or data.get("raw"):
+                return {
+                    "status": "error",
+                    "provider": "baileys",
+                    "http_status": r.status_code,
+                    "detail": str(data.get("parse_error") or data.get("raw"))[:400],
+                    "hint": "Baileys did not return JSON — wrong URL or service is down/restarting.",
+                }
+            else:
+                status = "sent" if r.status_code < 300 else "error"
+        if status == "error":
+            return {
+                "status": "error",
+                "provider": "baileys",
+                "http_status": r.status_code,
+                "detail": str(data.get("error") or data.get("detail") or data)[:400],
             }
         return {
-            "status": data.get("status") or "sent",
+            "status": status if status in ("sent", "accepted", "pending", "queued") else "sent",
             "provider": "baileys",
-            "to": to_phone,
-            "messageId": data.get("messageId"),
+            "to": phone,
+            "messageId": data.get("messageId") or data.get("id"),
             "response": data,
+        }
+    except requests.Timeout:
+        return {
+            "status": "error",
+            "provider": "baileys",
+            "detail": "Baileys timed out (60s). Cold start on Render — wait 30s and retry.",
         }
     except Exception as exc:  # noqa: BLE001
         logger.exception("Baileys send failed: %s", exc)
-        return {"status": "error", "provider": "baileys", "detail": str(exc)}
+        return {"status": "error", "provider": "baileys", "detail": str(exc)[:400]}
+
 
 
 def baileys_health() -> dict[str, Any]:
@@ -354,11 +402,13 @@ def baileys_health() -> dict[str, Any]:
         return {"configured": False}
     base = os.environ["BAILEYS_URL"].rstrip("/")
     try:
-        r = requests.get(f"{base}/health", timeout=10)
-        data = r.json() if r.content else {}
+        r = requests.get(f"{base}/health", timeout=15)
+        data = _safe_json(r)
         return {"configured": True, "http_status": r.status_code, **data}
     except Exception as exc:  # noqa: BLE001
         return {"configured": True, "error": str(exc)}
+
+
 
 
 # ---------- Infobip ----------

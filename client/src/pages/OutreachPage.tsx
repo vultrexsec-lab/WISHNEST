@@ -759,14 +759,23 @@ Hospitality | Architecture | Destinations
                         phone,
                         message,
                       });
-                      const data = await res.json();
-                      const st = data.status || "";
-                      if (st === "accepted" || st === "sent" || st === "pending") ok += 1;
-                      else {
+                      const raw = await res.text();
+                      let data: Record<string, unknown> = {};
+                      try {
+                        data = raw ? JSON.parse(raw) : {};
+                      } catch {
+                        fail += 1;
+                        errors.push((raw || "empty response").slice(0, 120));
+                        continue;
+                      }
+                      const st = String(data.status || "");
+                      if (st === "accepted" || st === "sent" || st === "pending" || st === "queued") {
+                        ok += 1;
+                      } else {
                         fail += 1;
                         const d = data.hint || data.detail || data.status || "failed";
                         errors.push(
-                          (typeof d === "string" ? d : JSON.stringify(d)).slice(0, 160),
+                          (typeof d === "string" ? d : JSON.stringify(d)).slice(0, 180),
                         );
                       }
                     } catch (e) {
