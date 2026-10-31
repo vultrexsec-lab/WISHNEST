@@ -450,8 +450,13 @@ def sanitize_article_promotional_language(art: dict) -> dict:
                 text = re.sub(phrase, repl, text)
         if key == "headline":
             text = re.sub(r"(?i)\ba\s+luxurious\s+", "A ", text)
-            text = re.sub(r"(?i)\bluxurious\s+escape\b", "stay", text)
-            text = re.sub(r"(?i)\bhidden\s+gem\b", "profile", text)
+            text = re.sub(r"(?i)\bluxurious\s+escape\b", "Stay", text)
+            text = re.sub(r"(?i)\bluxurious\s+oasis\b", "Setting", text)
+            text = re.sub(r"(?i)\bluxurious\s+retreat\b", "Retreat", text)
+            text = re.sub(r"(?i)\bluxurious\s+heritage\b", "Heritage", text)
+            text = re.sub(r"(?i)\ba\s+luxurious\s+stay\s+at\s+", "", text)
+            text = re.sub(r"(?i)\bhidden\s+gems?\b", "Places", text)
+            text = re.sub(r"(?i)\bin\s+nature'?s\s+lap\b", "in Nature", text)
         art[key] = text
     faqs = art.get("faq_section")
     if isinstance(faqs, list):
