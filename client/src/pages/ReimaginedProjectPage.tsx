@@ -370,6 +370,10 @@ export function ReimaginedProjectPage(): JSX.Element {
               <div className="mx-auto max-w-[1166px]">
                 <BASlider before={before} after={after} />
               </div>
+              <p className="mx-auto max-w-[1166px] px-4 py-3 text-center text-[11px] tracking-[0.06em] text-white/45 sm:px-8">
+                Existing vs proposed concept · Design partner attribution on published studies ·
+                Not a completed build unless stated
+              </p>
             </section>
           )}
 
@@ -449,6 +453,23 @@ export function ReimaginedProjectPage(): JSX.Element {
           </div>
         </>
       )}
+
+            <section className="border-t border-[#1e1e1e1a] bg-[#f4f1ea] py-14">
+        <div className="mx-auto max-w-[640px] px-4 text-center sm:px-8">
+          <p className="text-[10px] font-medium tracking-[2px] text-[#2e4a3f]">PROPERTY OWNERS</p>
+          <h2 className="mt-3 [font-family:'Playfair_Display',Helvetica] text-[28px] text-[#1e1e1e]">
+            Explore a complimentary initial perspective
+          </h2>
+          <p className="mt-3 text-[14px] leading-[24px] text-[#6b6b6b]">
+            No obligation to commission design work. WishNest remains an independent editorial platform.
+          </p>
+          <Link href="/get-reviewed">
+            <Button className="mt-6 h-auto rounded-none bg-[#2e4a3f] px-6 py-3.5 text-[11px] tracking-[1.3px] text-white hover:bg-[#243a32]">
+              REQUEST AN INITIAL ASSESSMENT
+            </Button>
+          </Link>
+        </div>
+      </section>
 
       <SiteFooter />
     </main>

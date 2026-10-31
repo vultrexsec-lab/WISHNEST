@@ -59,6 +59,10 @@ export const ReimaginedPage = (): JSX.Element => {
             architectural intent. Explore the portfolio, then submit your own project
             for review.
           </p>
+          <p className="mt-4 max-w-[480px] text-[12px] leading-[18px] text-white/50">
+            Before/after studies are conceptual visualisations for editorial discussion.
+            They are not photographs of completed construction unless explicitly stated.
+          </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link href="/get-reviewed">
               <Button className="h-auto rounded-none bg-white px-6 py-3.5 [font-family:'Inter',Helvetica] text-[11px] font-medium tracking-[1.4px] text-[#2e4a3f] hover:bg-[#f0f0f0]">

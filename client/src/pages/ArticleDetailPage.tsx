@@ -250,6 +250,25 @@ export const ArticleDetailPage = (): JSX.Element => {
     <main className="w-full max-w-full overflow-x-hidden bg-[#f8f7f4] text-[#1e1e1e]">
       <SiteNav />
 
+      <div className="border-b border-[#1e1e1e1a] bg-white">
+        <nav
+          aria-label="Breadcrumb"
+          className="mx-auto flex w-full max-w-[1166px] flex-wrap items-center gap-2 px-4 py-3 text-[11px] tracking-[0.04em] text-[#6b6b6b] sm:px-8"
+        >
+          <Link href="/">
+            <span className="cursor-pointer hover:text-[#1e1e1e]">Home</span>
+          </Link>
+          <span aria-hidden>/</span>
+          <Link href={isReview ? "/reviews" : "/"}>
+            <span className="cursor-pointer hover:text-[#1e1e1e]">
+              {isReview ? "Reviews" : "Stories"}
+            </span>
+          </Link>
+          <span aria-hidden>/</span>
+          <span className="line-clamp-1 text-[#1e1e1e]">{article.headline}</span>
+        </nav>
+      </div>
+
       {/* Hero */}
       <section
         className="relative overflow-hidden bg-[#1a1a1a]"
@@ -290,6 +309,8 @@ export const ArticleDetailPage = (): JSX.Element => {
           )}
           <p className="pt-6 [font-family:'Inter',Helvetica] text-[11px] text-[#ffffff66]">
             {formatDate(article.created_at)}
+            {article.category ? ` · ${String(article.category).replace(/_/g, " ")}` : ""}
+            {article.focus_keyword ? ` · ${article.focus_keyword}` : ""}
           </p>
         </div>
       </section>
@@ -423,6 +444,16 @@ export const ArticleDetailPage = (): JSX.Element => {
                   ))}
                 </div>
               )}
+
+              <aside className="mt-12 border border-[#1e1e1e14] bg-white px-5 py-4 text-[12px] leading-[20px] text-[#6b6b6b]">
+                <p className="font-medium tracking-[0.08em] text-[#2e4a3f]">EDITORIAL NOTE</p>
+                <p className="mt-2">
+                  WishNest is an independent publication. Scores and commentary reflect available
+                  public signals, design analysis and editorial judgement — not a paid placement.
+                  Property names and locations are grounded in mapped sources where provided;
+                  always verify current operational details with the property.
+                </p>
+              </aside>
 
               {article.faq_section && article.faq_section.length > 0 && (
                 <div className="mt-16 border-t border-[#1e1e1e1a] pt-10">
