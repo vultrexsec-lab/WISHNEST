@@ -5,6 +5,7 @@ import { resolveMediaUrl, resolveMediaHtml } from "@/lib/mediaUrl";
 import { SiteFooter } from "@/components/SiteFooter";
 import type { Article } from "@/lib/article-types";
 import { overallGrade, formatDate } from "@/lib/article-types";
+import { usePageMeta } from "@/hooks/usePageMeta";
 
 const staticCollections = [
   {
@@ -58,6 +59,7 @@ const staticCollections = [
 ];
 
 export const BestOfPage = (): JSX.Element => {
+  usePageMeta("Best Of", "Curated WishNest collections and standout stays.");
   const { data: allArticles = [] } = useQuery<Article[]>({
     queryKey: ["/api/articles"],
   });

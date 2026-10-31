@@ -130,6 +130,11 @@ export const ArticleDetailPage = (): JSX.Element => {
     queryKey: [`/api/articles/${id}`],
   });
 
+  const { data: allForRelated = [] } = useQuery<Article[]>({
+    queryKey: ["/api/articles"],
+    enabled: Boolean(article),
+  });
+
   usePageMeta(
     article?.headline || "Article",
     article?.meta_description || article?.subtitle || article?.executive_summary || undefined,
@@ -329,7 +334,7 @@ export const ArticleDetailPage = (): JSX.Element => {
             {article.focus_keyword ? ` · ${article.focus_keyword}` : ""}
           </p>
           <p className="pt-3 [font-family:'Inter',Helvetica] text-[10px] tracking-[0.04em] text-[#ffffff55]">
-            Independent editorial ·{" "}
+            By WishNest Editors · Independent editorial ·{" "}
             <a href="/methodology" className="underline hover:text-white">ABCDE™ method</a>
             {" · "}
             <a href="/editorial-standards" className="underline hover:text-white">Standards</a>
@@ -466,6 +471,63 @@ export const ArticleDetailPage = (): JSX.Element => {
                   ))}
                 </div>
               )}
+
+
+              {/* Related stories */}
+              {(() => {
+                const related = allForRelated
+                  .filter(
+                    (a) =>
+                      a.id !== article.id &&
+                      ["approved", "scheduled", "published"].includes(a.status) &&
+                      !a.is_trash,
+                  )
+                  .filter((a) => {
+                    const sameCat =
+                      article.category &&
+                      a.category &&
+                      a.category === article.category;
+                    const loc = (article.location || "").split(",")[0].trim().toLowerCase();
+                    const sameLoc =
+                      loc &&
+                      (a.location || "").toLowerCase().includes(loc);
+                    return sameCat || sameLoc;
+                  })
+                  .slice(0, 3);
+                const fallback = allForRelated
+                  .filter(
+                    (a) =>
+                      a.id !== article.id &&
+                      ["approved", "scheduled", "published"].includes(a.status) &&
+                      !a.is_trash,
+                  )
+                  .slice(0, 3);
+                const list = related.length >= 2 ? related : fallback;
+                if (!list.length) return null;
+                return (
+                  <section className="mt-14 border-t border-[#1e1e1e14] pt-10">
+                    <p className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[2px] text-[#2e4a3f]">
+                      RELATED
+                    </p>
+                    <ul className="mt-4 space-y-4">
+                      {list.map((r) => (
+                        <li key={r.id}>
+                          <Link href={`/article/${r.id}`}>
+                            <span className="cursor-pointer [font-family:'Playfair_Display',Helvetica] text-[18px] text-[#1e1e1e] hover:underline">
+                              {r.headline}
+                            </span>
+                          </Link>
+                          {r.location && (
+                            <p className="mt-1 text-[11px] tracking-[1px] text-[#6b6b6b]">
+                              {r.location}
+                            </p>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                );
+              })()}
 
               <aside className="mt-12 border border-[#1e1e1e14] bg-white px-5 py-4 text-[12px] leading-[20px] text-[#6b6b6b]">
                 <p className="font-medium tracking-[0.08em] text-[#2e4a3f]">EDITORIAL NOTE</p>

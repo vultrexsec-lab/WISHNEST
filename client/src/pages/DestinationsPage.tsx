@@ -4,6 +4,7 @@ import { SiteNav } from "@/components/SiteNav";
 import { resolveMediaUrl, resolveMediaHtml } from "@/lib/mediaUrl";
 import { SiteFooter } from "@/components/SiteFooter";
 import type { Article } from "@/lib/article-types";
+import { usePageMeta } from "@/hooks/usePageMeta";
 
 function destSlug(name: string): string {
   return name
@@ -19,7 +20,7 @@ const destinations = [
     name: "Uttarakhand",
     slug: "uttarakhand",
     tagline: "Oak forests, valley retreats & alpine sanctuaries",
-    count: "14 properties",
+    count: "Explore stays",
     bg: "bg-[#2e4a3f]",
   },
   {
@@ -27,7 +28,7 @@ const destinations = [
     name: "Rajasthan",
     slug: "rajasthan",
     tagline: "Heritage havelis, desert lodges & palace conversions",
-    count: "11 properties",
+    count: "Explore stays",
     bg: "bg-[#3a3228]",
   },
   {
@@ -35,7 +36,7 @@ const destinations = [
     name: "Kerala",
     slug: "kerala",
     tagline: "Backwaters, spice gardens & biophilic retreats",
-    count: "9 properties",
+    count: "Explore stays",
     bg: "bg-[#1e3a3a]",
   },
   {
@@ -43,7 +44,7 @@ const destinations = [
     name: "Coorg & Wayanad",
     slug: "coorg-and-wayanad",
     tagline: "Coffee estates, mist valleys & jungle hideaways",
-    count: "8 properties",
+    count: "Explore stays",
     bg: "bg-[#2d3a22]",
   },
   {
@@ -51,7 +52,7 @@ const destinations = [
     name: "Himachal Pradesh",
     slug: "himachal-pradesh",
     tagline: "Apple orchards, pine forests & mountain villages",
-    count: "10 properties",
+    count: "Explore stays",
     bg: "bg-[#33302a]",
   },
   {
@@ -59,13 +60,14 @@ const destinations = [
     name: "Meghalaya & Sikkim",
     slug: "meghalaya-and-sikkim",
     tagline: "Living root bridges, cloud forests & sacred valleys",
-    count: "6 properties",
+    count: "Explore stays",
     bg: "bg-[#1e2a3a]",
   },
 ];
 
 export const DestinationsPage = (): JSX.Element => {
-  const { data: allArticles = [] } = useQuery<Article[]>({
+  usePageMeta("Destinations", "Hospitality and design-led destinations covered by WishNest.");
+  const { data: allArticles = [], isLoading, isError, refetch } = useQuery<Article[]>({
     queryKey: ["/api/articles"],
   });
 

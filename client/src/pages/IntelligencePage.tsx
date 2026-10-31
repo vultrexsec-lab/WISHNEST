@@ -1,6 +1,7 @@
 import { Link } from "wouter";
 import { SiteNav } from "@/components/SiteNav";
 import { SiteFooter } from "@/components/SiteFooter";
+import { usePageMeta } from "@/hooks/usePageMeta";
 
 const packages = [
   {
@@ -20,6 +21,10 @@ const packages = [
 ];
 
 export const IntelligencePage = (): JSX.Element => {
+  usePageMeta(
+    "Intelligence",
+    "Sample project intelligence reports for hospitality and villa development — illustrative unless otherwise stated.",
+  );
   return (
     <main className="min-h-screen bg-[#f8f7f4] text-[#1e1e1e]">
       <SiteNav />
@@ -35,7 +40,7 @@ export const IntelligencePage = (): JSX.Element => {
           <p className="mt-5 max-w-[560px] text-[15px] leading-[26px] text-white/60">
             Research-led sample reports on demand, positioning and commercial
             trade-offs — before locking a masterplan. Choose a demonstration
-            package below.
+            package below. Reports are illustrative samples unless a live engagement is confirmed.
           </p>
         </div>
       </section>

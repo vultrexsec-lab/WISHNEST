@@ -1238,7 +1238,26 @@ function ArticlePreviewModal({
 
           {/* Main article body */}
           <div className="px-5 py-10 sm:px-10 sm:py-14">
-            <div className="mx-auto max-w-[780px]">
+            
+      <div className="mx-auto max-w-[1166px] px-4 pb-2 sm:px-8">
+        <div className="mb-4 border border-white/15 bg-white/5 px-4 py-3 text-[12px] leading-[20px] text-white/75">
+          <p className="font-medium tracking-[0.06em] text-emerald-300/90">BEFORE YOU APPROVE</p>
+          <p className="mt-1">
+            Check: specific headline (no clichés), real address, no invented prices/ROI,
+            distinct images, ABCDE grades match evidence, and disclosure links if commercial
+            context applies. See{" "}
+            <a className="underline text-emerald-200/90" href="/editorial-standards" target="_blank" rel="noreferrer">
+              Standards
+            </a>
+            {" · "}
+            <a className="underline text-emerald-200/90" href="/methodology" target="_blank" rel="noreferrer">
+              Methodology
+            </a>
+            .
+          </p>
+        </div>
+      </div>
+<div className="mx-auto max-w-[780px]">
               {/* ABCDE sidebar + body two-column */}
               <div className="grid gap-10 lg:grid-cols-[minmax(0,540px)_200px] lg:gap-12">
                 <div>

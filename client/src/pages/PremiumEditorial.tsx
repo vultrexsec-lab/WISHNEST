@@ -60,7 +60,7 @@ const trustItems = [
   },
   {
     symbol: "◇",
-    title: "SOURCE-BACKED EDITORIAL",
+    title: "EVIDENCE-LED EDITORIAL",
     description: "Evidence-led editorial",
   },
 ];
@@ -780,7 +780,7 @@ export const PremiumEditorial = (): JSX.Element => {
               </h2>
               <p className="max-w-[460px] pt-6 [font-family:'Inter',Helvetica] text-lg font-normal leading-[32px] text-[#6b6b6b]">
                 Every WishNest review is evaluated using our proprietary ABCDE
-                scoring system — developed over three years of fieldwork across
+                scoring system — refined through ongoing editorial practice across
                 architecture, hospitality and destination research. It is the
                 only framework that evaluates properties through both a design
                 and investor lens simultaneously.
