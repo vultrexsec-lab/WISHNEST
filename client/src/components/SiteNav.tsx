@@ -5,7 +5,7 @@ import { Menu, X, Search, ChevronDown } from "lucide-react";
 import { SearchModal } from "@/components/SearchModal";
 import { NewsletterModal } from "@/components/NewsletterModal";
 
-/** Magazine reading vs commercial/service paths — client audit P2 */
+/** Magazine reading vs commercial/service paths */
 const readLinks = [
   { label: "Reviews", href: "/reviews" },
   { label: "Destinations", href: "/destinations" },
@@ -38,7 +38,7 @@ export const SiteNav = () => {
     location === href || (href !== "/" && location.startsWith(href + "/"));
 
   const linkClass = (href: string) =>
-    `whitespace-nowrap [font-family:'Inter',Helvetica] text-[11px] font-medium leading-[16.5px] tracking-[1.10px] transition-opacity hover:opacity-70 ${
+    `whitespace-nowrap [font-family:'Inter',Helvetica] text-[11px] font-medium leading-none tracking-[1.1px] transition-opacity hover:opacity-70 ${
       isActive(href) ? "text-[#2e4a3f]" : "text-[#1e1e1e]"
     }`;
 
@@ -54,13 +54,13 @@ export const SiteNav = () => {
       <NewsletterModal open={newsletterOpen} onClose={() => setNewsletterOpen(false)} />
 
       <header className="sticky top-0 z-50 border-b border-[#1e1e1e14] bg-[#f8f7f4]/95 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-[1166px] items-center justify-between gap-4 px-4 py-4 sm:px-8 sm:py-5">
+        <div className="mx-auto flex h-[72px] w-full max-w-[1166px] items-center justify-between gap-3 px-4 sm:px-8">
           <Link href="/">
-            <div className="flex min-w-0 cursor-pointer flex-col">
-              <div className="[font-family:'Playfair_Display',Helvetica] text-[22px] font-bold leading-[22px] tracking-[3px] text-[#1e1e1e] sm:text-[26px] sm:leading-[26px] sm:tracking-[3.90px]">
+            <div className="flex min-w-0 shrink-0 cursor-pointer flex-col justify-center">
+              <div className="[font-family:'Playfair_Display',Helvetica] text-[22px] font-bold leading-none tracking-[3px] text-[#1e1e1e] sm:text-[24px] sm:tracking-[3.5px]">
                 WishNest
               </div>
-              <div className="hidden pt-0.5 [font-family:'Inter',Helvetica] text-[8px] font-normal leading-[11px] tracking-[1.40px] text-[#6b6b6b] sm:block sm:text-[9px] sm:leading-[12px] sm:tracking-[1.60px]">
+              <div className="hidden pt-1 [font-family:'Inter',Helvetica] text-[8px] font-normal leading-[1.35] tracking-[1.4px] text-[#6b6b6b] sm:block sm:text-[9px] sm:tracking-[1.5px]">
                 HOSPITALITY · ARCHITECTURE
                 <br />
                 SECOND HOME INTELLIGENCE
@@ -68,68 +68,72 @@ export const SiteNav = () => {
             </div>
           </Link>
 
+          {/* Desktop: single clean row — divider separates Read vs Work */}
           <nav
-            className="hidden items-center gap-5 lg:flex xl:gap-6"
+            className="hidden min-w-0 flex-1 items-center justify-center gap-x-5 lg:flex xl:gap-x-6"
             aria-label="Primary"
           >
-            <span className="mr-1 text-[9px] font-semibold tracking-[1.6px] text-[#6b6b6b]">
-              READ
-            </span>
-            {readLinks.map((item) =>
-              item.children ? (
-                <div
-                  key={item.label}
-                  className="relative"
-                  onMouseEnter={() => setIntelOpen(true)}
-                  onMouseLeave={() => setIntelOpen(false)}
-                >
-                  <button
-                    type="button"
-                    className={`inline-flex items-center gap-1 ${linkClass(item.href)}`}
-                    aria-expanded={intelOpen}
-                    aria-haspopup="true"
-                    onClick={() => setIntelOpen((o) => !o)}
+            <div className="flex items-center gap-x-5 xl:gap-x-6" role="group" aria-label="Read">
+              {readLinks.map((item) =>
+                item.children ? (
+                  <div
+                    key={item.label}
+                    className="relative"
+                    onMouseEnter={() => setIntelOpen(true)}
+                    onMouseLeave={() => setIntelOpen(false)}
                   >
-                    {item.label}
-                    <ChevronDown className="h-3 w-3" aria-hidden />
-                  </button>
-                  {intelOpen && (
-                    <div
-                      className="absolute left-0 top-full z-50 min-w-[220px] border border-[#1e1e1e14] bg-[#f8f7f4] py-2 shadow-lg"
-                      role="menu"
+                    <button
+                      type="button"
+                      className={`inline-flex items-center gap-1 ${linkClass(item.href)}`}
+                      aria-expanded={intelOpen}
+                      aria-haspopup="true"
+                      onClick={() => setIntelOpen((o) => !o)}
                     >
-                      {item.children.map((c) => (
-                        <Link key={c.href} href={c.href}>
-                          <span
-                            role="menuitem"
-                            className="block cursor-pointer px-4 py-2 text-[12px] text-[#1e1e1e] hover:bg-[#1e1e1e08]"
-                            onClick={() => setIntelOpen(false)}
-                          >
-                            {c.label}
-                          </span>
-                        </Link>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ) : (
+                      {item.label}
+                      <ChevronDown className="h-3 w-3 opacity-60" aria-hidden />
+                    </button>
+                    {intelOpen && (
+                      <div
+                        className="absolute left-0 top-full z-50 min-w-[220px] border border-[#1e1e1e14] bg-[#f8f7f4] py-2 shadow-lg"
+                        role="menu"
+                      >
+                        {item.children.map((c) => (
+                          <Link key={c.href} href={c.href}>
+                            <span
+                              role="menuitem"
+                              className="block cursor-pointer px-4 py-2.5 text-[12px] text-[#1e1e1e] hover:bg-[#1e1e1e08]"
+                              onClick={() => setIntelOpen(false)}
+                            >
+                              {c.label}
+                            </span>
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <Link key={item.href} href={item.href}>
+                    <span className={`cursor-pointer ${linkClass(item.href)}`}>{item.label}</span>
+                  </Link>
+                ),
+              )}
+            </div>
+
+            <span
+              className="mx-1 h-3.5 w-px shrink-0 bg-[#1e1e1e22]"
+              aria-hidden
+            />
+
+            <div className="flex items-center gap-x-5 xl:gap-x-6" role="group" aria-label="Work with us">
+              {workLinks.map((item) => (
                 <Link key={item.href} href={item.href}>
                   <span className={`cursor-pointer ${linkClass(item.href)}`}>{item.label}</span>
                 </Link>
-              ),
-            )}
-            <span className="mx-1 h-3 w-px bg-[#1e1e1e20]" aria-hidden />
-            <span className="mr-1 text-[9px] font-semibold tracking-[1.6px] text-[#6b6b6b]">
-              WORK WITH US
-            </span>
-            {workLinks.map((item) => (
-              <Link key={item.href} href={item.href}>
-                <span className={`cursor-pointer ${linkClass(item.href)}`}>{item.label}</span>
-              </Link>
-            ))}
+              ))}
+            </div>
           </nav>
 
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
             <button
               type="button"
               onClick={() => setSearchOpen(true)}
@@ -142,7 +146,7 @@ export const SiteNav = () => {
               type="button"
               variant="outline"
               onClick={() => setNewsletterOpen(true)}
-              className="hidden h-auto rounded-none border-[0.8px] border-[#2e4a3f] bg-transparent px-4 py-2 [font-family:'Inter',Helvetica] text-[11px] font-medium tracking-[1.32px] text-[#2e4a3f] hover:bg-[#2e4a3f] hover:text-white sm:inline-flex"
+              className="hidden h-9 rounded-none border-[0.8px] border-[#2e4a3f] bg-transparent px-4 [font-family:'Inter',Helvetica] text-[11px] font-medium tracking-[1.2px] text-[#2e4a3f] hover:bg-[#2e4a3f] hover:text-white sm:inline-flex"
             >
               Newsletter
             </Button>
