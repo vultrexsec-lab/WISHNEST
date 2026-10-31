@@ -277,6 +277,8 @@ const bestOfItems = [
     category: "TOP BOUTIQUE HOTELS",
     title: "The 12 Best Boutique Hotels in the Indian Himalaya",
     meta: "12 properties",
+    href: "/best-of",
+    match: ["boutique", "himalaya"],
   },
   {
     number: "02",
@@ -285,6 +287,8 @@ const bestOfItems = [
     category: "BEST WELLNESS RETREATS",
     title: "Best Wellness Retreats for Discerning Travellers, Winter 2025",
     meta: "9 properties",
+    href: "/best-of",
+    match: ["wellness", "retreat"],
   },
   {
     number: "03",
@@ -293,6 +297,8 @@ const bestOfItems = [
     category: "ARCHITECTURE & DESIGN",
     title: "Most Celebrated Architecturally-Led Stays in India",
     meta: "8 properties",
+    href: "/best-of",
+    match: ["architect", "design"],
   },
   {
     number: "04",
@@ -301,6 +307,8 @@ const bestOfItems = [
     category: "INVESTMENT INTELLIGENCE",
     title: "Top Investment Plays in Boutique Indian Hospitality",
     meta: "10 markets",
+    href: "/intelligence",
+    match: ["investment", "intelligence"],
   },
 ];
 
@@ -422,6 +430,47 @@ export const PremiumEditorial = (): JSX.Element => {
     title: item.title,
     description: item.description,
     readTime: item.readTime,
+  });
+
+  const bestOfCards = bestOfItems.map((item, idx) => {
+    const live = publishedArticles.find((a) => {
+      const h = (a.headline || "").toLowerCase();
+      const c = (a.category || "").toLowerCase();
+      return item.match.some((m) => h.includes(m) || c.includes(m));
+    });
+    if (live) {
+      return {
+        number: item.number,
+        image: live.hero_image_url ? resolveMediaUrl(live.hero_image_url) : item.image,
+        category: item.category,
+        title: live.headline,
+        meta: live.location || item.meta,
+        href: `/article/${live.id}`,
+      };
+    }
+    const fallback = publishedArticles.length
+      ? publishedArticles[idx % publishedArticles.length]
+      : null;
+    if (fallback) {
+      return {
+        number: item.number,
+        image: fallback.hero_image_url
+          ? resolveMediaUrl(fallback.hero_image_url)
+          : item.image,
+        category: String(fallback.category || item.category).toUpperCase(),
+        title: fallback.headline,
+        meta: fallback.location || item.meta,
+        href: `/article/${fallback.id}`,
+      };
+    }
+    return {
+      number: item.number,
+      image: item.image,
+      category: item.category,
+      title: item.title,
+      meta: item.meta,
+      href: item.href,
+    };
   });
 
   const trendingLive = publishedArticles.slice(0, 4);
@@ -1163,11 +1212,12 @@ export const PremiumEditorial = (): JSX.Element => {
             </Link>
           </div>
           <div className="grid gap-x-8 gap-y-8 pt-14 md:grid-cols-2">
-            {bestOfItems.map((item) => (
-              <article key={item.number} className="flex flex-col">
-                <div className="relative h-[220px] bg-[#e8e6e0] sm:h-[320px] md:h-[401.4px]">
+            {bestOfCards.map((item) => (
+              <Link key={item.number} href={item.href}>
+                <article className="group cursor-pointer transition-opacity hover:opacity-90">
+                <div className="relative h-[240px] overflow-hidden bg-[#e8e6e0] sm:h-[320px] md:h-[401.4px]">
                   <div
-                    className="h-full w-full bg-cover bg-center"
+                    className="h-full w-full bg-cover bg-center transition-transform duration-500 group-hover:scale-[1.02]"
                     style={{ backgroundImage: `url(${item.image})` }}
                   />
                   <div className="absolute inset-y-0 left-0 flex w-12 items-end bg-[linear-gradient(90deg,rgba(20,20,20,0.55)_0%,rgba(0,0,0,0)_100%)] pl-4 pb-4">
@@ -1179,13 +1229,14 @@ export const PremiumEditorial = (): JSX.Element => {
                 <div className="pt-6 [font-family:'Inter',Helvetica] text-[9px] font-normal leading-[13.5px] tracking-[1.44px] text-[#2e4a3f]">
                   {item.category}
                 </div>
-                <h3 className="pt-2 [font-family:'Playfair_Display',Helvetica] text-base font-normal leading-[22px] text-[#1e1e1e]">
+                <h3 className="pt-2 [font-family:'Playfair_Display',Helvetica] text-base font-normal leading-[22px] text-[#1e1e1e] group-hover:underline">
                   {item.title}
                 </h3>
                 <div className="pt-3 [font-family:'Inter',Helvetica] text-[11px] font-normal leading-[16.5px] text-[#6b6b6b]">
                   {item.meta}
                 </div>
               </article>
+              </Link>
             ))}
           </div>
         </div>
