@@ -270,8 +270,6 @@ export const ArticleDetailPage = (): JSX.Element => {
   // useEffect moved above early returns to satisfy React Rules of Hooks.
 
   return (
-    {/* eslint-disable-next-line react-hooks/rules-of-hooks — article is defined above */}
-    {void 0}
     <main id="main-content" className="w-full max-w-full overflow-x-hidden bg-[#f8f7f4] text-[#1e1e1e]">
       <SiteNav />
 

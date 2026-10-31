@@ -21,32 +21,32 @@ function ReviewCard({ article }: { article: Article }) {
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center">
-              <span className="[font-family:\'Playfair_Display\',Helvetica] text-[15px] italic text-[#2e4a3f44]">
+              <span className="[font-family:'Playfair_Display',Helvetica] text-[15px] italic text-[#2e4a3f44]">
                 WishNest
               </span>
             </div>
           )}
           {grade && (
             <div className="absolute left-4 top-4 flex h-9 w-9 items-center justify-center border border-[#2e4a3f] bg-[#f8f7f4e6]">
-              <span className="[font-family:\'Inter\',Helvetica] text-[13px] font-normal text-[#2e4a3f]">
+              <span className="[font-family:'Inter',Helvetica] text-[13px] font-normal text-[#2e4a3f]">
                 {grade}
               </span>
             </div>
           )}
         </div>
         <div className="flex items-center gap-3 pt-5">
-          <span className="[font-family:\'Inter\',Helvetica] text-[9px] font-normal tracking-[1.44px] text-[#6b6b6b]">
+          <span className="[font-family:'Inter',Helvetica] text-[9px] font-normal tracking-[1.44px] text-[#6b6b6b]">
             {(article.location ?? "").toUpperCase()}
           </span>
         </div>
-        <h2 className="pt-2 [font-family:\'Playfair_Display\',Helvetica] text-[22px] font-normal leading-[28px] text-[#1e1e1e]">
+        <h2 className="pt-2 [font-family:'Playfair_Display',Helvetica] text-[22px] font-normal leading-[28px] text-[#1e1e1e]">
           {article.headline}
         </h2>
-        <p className="pt-2 [font-family:\'Inter\',Helvetica] text-[13px] font-normal leading-[22px] text-[#6b6b6b]">
+        <p className="pt-2 [font-family:'Inter',Helvetica] text-[13px] font-normal leading-[22px] text-[#6b6b6b]">
           {article.executive_summary ?? article.subtitle}
         </p>
         <div className="mt-auto pt-4">
-          <span className="border-b border-[#2e4a3f40] pb-0.5 [font-family:\'Inter\',Helvetica] text-[10px] font-normal tracking-[1px] text-[#2e4a3f]">
+          <span className="border-b border-[#2e4a3f40] pb-0.5 [font-family:'Inter',Helvetica] text-[10px] font-normal tracking-[1px] text-[#2e4a3f]">
             PROPERTY REVIEW
           </span>
         </div>
@@ -105,15 +105,15 @@ export const ReviewsPage = (): JSX.Element => {
 
       <section className="border-b border-[#1e1e1e1a] bg-[#f8f7f4] py-16 lg:py-24">
         <div className="mx-auto w-full max-w-[1166px] px-4 sm:px-8">
-          <p className="[font-family:\'Inter\',Helvetica] text-[10px] font-medium tracking-[2.60px] text-[#2e4a3f]">
+          <p className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[2.60px] text-[#2e4a3f]">
             REVIEWS
           </p>
-          <h1 className="pt-5 [font-family:\'Playfair_Display\',Helvetica] text-[40px] font-normal leading-[1.08] text-[#1e1e1e] sm:text-[58px] lg:text-[72px]">
+          <h1 className="pt-5 [font-family:'Playfair_Display',Helvetica] text-[40px] font-normal leading-[1.08] text-[#1e1e1e] sm:text-[58px] lg:text-[72px]">
             Independently Scored,
             <br />
             <span className="italic">Independent Assessment</span>
           </h1>
-          <p className="max-w-[540px] pt-6 [font-family:\'Inter\',Helvetica] text-[17px] font-normal leading-[30px] text-[#6b6b6b]">
+          <p className="max-w-[540px] pt-6 [font-family:'Inter',Helvetica] text-[17px] font-normal leading-[30px] text-[#6b6b6b]">
             Every property assessed against our ABCDE framework —
             Architecture, Landscape, Connectivity, Delight, and Eat &amp;
             Explore. No affiliate placements.
@@ -190,7 +190,7 @@ export const ReviewsPage = (): JSX.Element => {
             </div>
           ) : (
             <div className="py-16 text-center">
-              <p className="[font-family:\'Playfair_Display\',Helvetica] text-[24px] text-[#1e1e1e]">
+              <p className="[font-family:'Playfair_Display',Helvetica] text-[24px] text-[#1e1e1e]">
                 Reviews publishing soon
               </p>
               <p className="mx-auto mt-3 max-w-[420px] text-[14px] text-[#6b6b6b]">
