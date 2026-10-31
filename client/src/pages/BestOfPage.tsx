@@ -14,7 +14,7 @@ const staticCollections = [
     title: "The 12 Best Boutique Hotels in the Indian Himalaya",
     description:
       "From oak-canopy retreats in Uttarakhand to stone-walled sanctuaries in Himachal — the definitive list, independently scored.",
-    meta: "12 properties · Updated Feb 2025",
+    meta: "12 properties · Curated selection",
   },
   {
     number: "02",
@@ -22,7 +22,7 @@ const staticCollections = [
     title: "Best Wellness Retreats for Discerning Travellers, Winter 2025",
     description:
       "Not spa menus and salt pools. Genuine restorative environments where architecture, landscape, and programme are aligned.",
-    meta: "9 properties · Updated Jan 2025",
+    meta: "9 properties · Curated selection",
   },
   {
     number: "03",
@@ -30,7 +30,7 @@ const staticCollections = [
     title: "Most Celebrated Architecturally-Led Stays in India",
     description:
       "Properties where the building itself is the experience — selected and scored by practicing architects.",
-    meta: "8 properties · Updated Dec 2024",
+    meta: "8 properties · Curated selection",
   },
   {
     number: "04",
@@ -38,7 +38,7 @@ const staticCollections = [
     title: "Top Investment Plays in Boutique Indian Hospitality",
     description:
       "Markets with the strongest fundamentals: rising ADR, improving occupancy, and structural supply constraints.",
-    meta: "10 markets · Updated Mar 2025",
+    meta: "10 markets · Curated selection",
   },
   {
     number: "05",
@@ -46,7 +46,7 @@ const staticCollections = [
     title: "Best Destinations for Second Home Investment, 2025",
     description:
       "Where capital is being deployed intelligently — and why. Our annual analysis of emerging second-home markets.",
-    meta: "7 markets · Updated Mar 2025",
+    meta: "7 markets · Curated selection",
   },
   {
     number: "06",
@@ -54,7 +54,7 @@ const staticCollections = [
     title: "Hidden Gems: 8 Properties Most Guides Have Missed",
     description:
       "Extraordinary stays that haven't yet been discovered by the mainstream travel press. Reviewed, scored, and verified.",
-    meta: "8 properties · Updated Feb 2025",
+    meta: "8 properties · Curated selection",
   },
 ];
 
@@ -72,22 +72,32 @@ export const BestOfPage = (): JSX.Element => {
   );
 
   // Curated rows: prefer keyword match on live stories; else open /reviews (never demo URL)
+  const usedIds = new Set<string>();
   const curatedRows = staticCollections.map((item, idx) => {
     const keys = item.title.toLowerCase().split(/\s+/).filter((w) => w.length > 4).slice(0, 4);
     const match = published.find((a) => {
+      if (usedIds.has(a.id)) return false;
       const h = (a.headline || "").toLowerCase();
       return keys.some((k) => h.includes(k));
     });
-    const fallback = published[idx % Math.max(published.length, 1)];
-    const art = match || (published.length ? fallback : null);
+    const fallback = published.find((a, i) => !usedIds.has(a.id) && i >= idx) ||
+      published.find((a) => !usedIds.has(a.id));
+    const art = match || fallback || null;
+    if (art) usedIds.add(art.id);
+    // Prefer a real article URL; only fall back to /reviews when library empty
+    const href = art ? `/article/${art.id}` : "/reviews";
+    // Date label: use article date or mark as curated archive
+    const meta = art
+      ? (art.location || item.meta)
+      : "Curated archive — open Reviews for the live library";
     return {
       ...item,
-      href: art ? `/article/${art.id}` : "/reviews",
+      href,
       title: art ? art.headline : item.title,
       description: art
         ? art.executive_summary || art.subtitle || item.description
         : item.description,
-      meta: art ? art.location || item.meta : item.meta,
+      meta,
     };
   });
 

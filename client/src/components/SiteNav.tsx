@@ -72,7 +72,7 @@ export const SiteNav = () => {
             className="hidden items-center gap-5 lg:flex xl:gap-6"
             aria-label="Primary"
           >
-            <span className="hidden text-[9px] font-medium tracking-[1.5px] text-[#6b6b6b] xl:inline">
+            <span className="mr-1 text-[9px] font-semibold tracking-[1.6px] text-[#6b6b6b]">
               READ
             </span>
             {readLinks.map((item) =>
@@ -119,7 +119,7 @@ export const SiteNav = () => {
               ),
             )}
             <span className="mx-1 h-3 w-px bg-[#1e1e1e20]" aria-hidden />
-            <span className="hidden text-[9px] font-medium tracking-[1.5px] text-[#6b6b6b] xl:inline">
+            <span className="mr-1 text-[9px] font-semibold tracking-[1.6px] text-[#6b6b6b]">
               WORK WITH US
             </span>
             {workLinks.map((item) => (

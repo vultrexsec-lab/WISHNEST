@@ -18,7 +18,7 @@
  * looking like a stuck/broken request.
  */
 
-export const DEFAULT_TIMEOUT_MS = 120_000; // 2 minutes
+export const DEFAULT_TIMEOUT_MS = 45_000; // 45s — fail to error/retry UI instead of endless loading
 
 export class FetchTimeoutError extends Error {
   constructor(message = "Request timed out.") {

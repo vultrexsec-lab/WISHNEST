@@ -47,17 +47,19 @@ export async function apiRequest(
   data?: unknown,
 ): Promise<Response> {
   const isForm = typeof FormData !== "undefined" && data instanceof FormData;
-  const res = await fetchWithTimeout(apiUrl(url), {
-    method,
-    headers: authHeaders(
-      data && !isForm ? { "Content-Type": "application/json" } : {},
-    ),
-    body: data ? (isForm ? (data as FormData) : JSON.stringify(data)) : undefined,
-    credentials: "include",
-    // Never let the browser's HTTP cache serve a stale mutation response —
-    // approvals/deletes/trash actions must always hit the live database.
-    cache: "no-store",
-  });
+  const res = await fetchWithTimeout(
+    apiUrl(url),
+    {
+      method,
+      headers: authHeaders(
+        data && !isForm ? { "Content-Type": "application/json" } : {},
+      ),
+      body: data ? (isForm ? (data as FormData) : JSON.stringify(data)) : undefined,
+      credentials: "include",
+      cache: "no-store",
+    },
+    120_000,
+  );
 
   if (res.status === 401) {
     handleUnauthorized();
@@ -102,8 +104,9 @@ export const queryClient = new QueryClient({
       // the "articles randomly disappear" bug this fixes.
       refetchOnWindowFocus: true,
       refetchOnMount: true,
-      staleTime: 0,
-      retry: false,
+      staleTime: 30_000,
+      retry: 2,
+      retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
     },
     mutations: {
       retry: false,
