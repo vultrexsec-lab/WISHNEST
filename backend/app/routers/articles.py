@@ -18,6 +18,7 @@ from app.database import get_db
 from app.dependencies import optional_admin, require_admin
 from app.models.article import Article, ArticleStatus
 from app.schemas.article import ArticleOut
+from app.services.openai_service import sanitize_article_promotional_language
 from app.services.research_pipeline import regenerate_article_images
 
 router = APIRouter(tags=["articles"])
@@ -31,6 +32,15 @@ _NO_STORE_HEADERS = {
     "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
     "Pragma": "no-cache",
 }
+
+
+
+
+def _article_out_public(article: Article) -> ArticleOut:
+    """Serialize + soft-sanitize promotional language for public responses."""
+    data = ArticleOut.model_validate(article).model_dump(mode="json")
+    data = sanitize_article_promotional_language(data)
+    return ArticleOut.model_validate(data)
 
 
 @router.get("/api/articles", response_model=list[ArticleOut])
@@ -102,6 +112,8 @@ def list_articles(
                     u.startswith("http://") or u.startswith("https://")
                 )
             ]
+    if not admin:
+        return [_article_out_public(a) for a in articles]
     return articles
 
 
@@ -119,6 +131,8 @@ def get_article(
         raise HTTPException(status_code=404, detail="Article not found")
     if not admin and (article.is_trash or article.status not in PUBLIC_STATUSES):
         raise HTTPException(status_code=404, detail="Article not found")
+    if not admin:
+        return _article_out_public(article)
     return article
 
 

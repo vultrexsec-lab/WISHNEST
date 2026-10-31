@@ -429,19 +429,30 @@ def sanitize_article_promotional_language(art: dict) -> dict:
             "Investment suitability is outside the scope of this editorial profile without property-level financial data. ",
             text,
         )
-        # Soften worst clichés in body only
-        if key == "full_article":
+        text = re.sub(
+            r"(?i)(?:is|as)\s+a\s+strong\s+second[- ]home\s+investment[^.]*\.",
+            "Second-home investment conclusions are not made without financial data in this profile. ",
+            text,
+        )
+        if key in ("full_article", "subtitle", "executive_summary"):
             for phrase, repl in [
                 (r"(?i)perfect\s+blend", "combination"),
                 (r"(?i)unforgettable\s+experience", "stay"),
-                (r"(?i)breathtaking\s+views", "views"),
+                (r"(?i)breathtaking\s+views?", "views"),
                 (r"(?i)culinary\s+journey", "dining"),
                 (r"(?i)nature'?s\s+embrace", "the surrounding landscape"),
                 (r"(?i)luxurious\s+escape", "stay"),
+                (r"(?i)serenity\s+amidst", "setting amid"),
+                (r"(?i)hidden\s+gem", "lesser-known stay"),
+                (r"(?i)oasis\s+of\s+calm", "quiet setting"),
+                (r"(?i)premier\s+destination", "destination"),
             ]:
                 text = re.sub(phrase, repl, text)
+        if key == "headline":
+            text = re.sub(r"(?i)\ba\s+luxurious\s+", "A ", text)
+            text = re.sub(r"(?i)\bluxurious\s+escape\b", "stay", text)
+            text = re.sub(r"(?i)\bhidden\s+gem\b", "profile", text)
         art[key] = text
-    # FAQ investment answers
     faqs = art.get("faq_section")
     if isinstance(faqs, list):
         cleaned = []
@@ -451,8 +462,8 @@ def sanitize_article_promotional_language(art: dict) -> dict:
             q = str(item.get("question") or item.get("q") or "")
             a = str(item.get("answer") or item.get("a") or "")
             if re.search(r"(?i)invest|roi|second[- ]home\s+buy", q + " " + a):
-                if not re.search(r"(?i)occupancy|ADR|comparable|methodology", a):
-                    continue  # drop unsupported investment FAQ
+                if not re.search(r"(?i)occupancy|ADR|comparable|methodology|title search", a):
+                    continue
             cleaned.append(item)
         art["faq_section"] = cleaned
     return art
