@@ -76,6 +76,16 @@ EDITORIAL QUALITY LOCK (client audit — non-negotiable)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 These rules override any urge to sound like travel marketing or generic AI copy.
 
+GEOGRAPHIC ACCURACY (zero-tolerance)
+• Never move landmarks or hotels to the wrong city. Examples of FORBIDDEN errors:
+  Taj Mahal is in Agra (not Jaipur); Hawa Mahal / City Palace / Amber Fort are Jaipur;
+  Gateway of India is Mumbai; India Gate is Delhi; Mysore Palace is Mysuru.
+• If the brief is about Jaipur, do not invent a Taj Mahal stay in Jaipur.
+• If the brief names a specific hotel/resort, only describe THAT property and its real locality.
+• Prefer omitting a landmark to inventing a false city association.
+• Destination articles must not list attractions in the wrong state/city.
+
+
 HEADLINE & SUBTITLE
 • Forbidden clichés (never use): "luxurious escape", "serenity amidst", "nature's embrace",
   "hidden gem", "perfect blend", "breathtaking views", "unforgettable experience",

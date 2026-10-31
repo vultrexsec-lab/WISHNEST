@@ -752,6 +752,29 @@ def regenerate_article_images(article: Article, db: Session) -> bool:
     return patched_any
 
 
+
+def _geo_relevance_violations(raw: dict) -> list[str]:
+    """Catch blatant wrong city–landmark pairings before save."""
+    import re
+    text = " ".join(
+        str(raw.get(k) or "")
+        for k in ("headline", "subtitle", "location", "full_article", "executive_summary")
+    ).lower()
+    loc = str(raw.get("location") or "").lower()
+    violations: list[str] = []
+    # Taj Mahal must not appear as a Jaipur property story
+    if re.search(r"taj\s*mahal", text) and re.search(r"jaipur", text):
+        # allow only if Agra is also clearly the site of the Taj
+        if not re.search(r"agra", text):
+            violations.append("Taj Mahal incorrectly associated without Agra")
+    if re.search(r"taj\s*mahal", text) and re.search(r"jaipur", loc) and "agra" not in loc:
+        violations.append("location is Jaipur but content centres Taj Mahal")
+    # India Gate not in Mumbai / Jaipur as home city
+    if re.search(r"india\s*gate", text) and re.search(r"jaipur|mumbai|goa", loc):
+        violations.append("India Gate with non-Delhi location")
+    return violations
+
+
 def run_research_pipeline(
     brief: str,
     db: Session,
@@ -1057,6 +1080,14 @@ def run_research_pipeline(
         _coerce_seo_fields(raw)     # auto-fix minor SEO length violations
         raw["full_article"] = _strip_abcde_score_block(raw.get("full_article"))    # never show scores in body
         raw["full_article"] = _strip_objective_headings(raw.get("full_article"))  # never show Objective headings
+
+        geo_bad = _geo_relevance_violations(raw)
+        if geo_bad:
+            logger.error(
+                "Skipping article for geo/relevance violations: %s | headline=%r",
+                geo_bad, (raw.get("headline") or "")[:80],
+            )
+            continue
 
         try:
             validated = ArticleCreate(**raw)

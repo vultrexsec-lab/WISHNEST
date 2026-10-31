@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.models.article import Article
 from app.services.places_service import (
+    is_hospitality_listing,
     PropertyListing,
     fetch_property_by_name,
     search_properties,
@@ -50,13 +51,13 @@ CATEGORY_QUERIES: dict[str, list[str]] = {
         "premium villa Coorg Karnataka India",
     ],
     "destinations": [
-        "top tourist destination scenic India",
-        "best hill station India travel",
-        "must visit heritage site India",
-        "top beach destination India travel",
-        "best mountain destination India",
-        "scenic travel destination India nature",
-        "heritage city tourism India",
+        "best boutique hotels hill stations India",
+        "top rated resorts beach destinations India",
+        "luxury hotel stay Rajasthan India",
+        "best resort stay Kerala backwaters India",
+        "boutique hotel Himachal Pradesh India",
+        "heritage hotel stay Jaipur Rajasthan India",
+        "eco resort Uttarakhand India high rating",
     ],
 }
 
@@ -216,6 +217,17 @@ def discover_fresh_properties(
 
             if pid in seen_ids:
                 continue  # appeared in a previous query this run
+
+            # Never promote monuments / non-stays into the editorial pipeline
+            if not is_hospitality_listing(
+                listing.name, getattr(listing, "place_type", None), address=listing.address
+            ):
+                logger.info(
+                    "Discovery: skipping %r — not a hospitality listing",
+                    listing.name,
+                )
+                continue
+
             seen_ids.add(pid)
 
             # Enrich with full gallery before returning

@@ -34,6 +34,10 @@ _BLOCKED_NAME_FRAGMENTS = (
     "national museum", "railway station", "bus stand", "airport",
     "sotheby's", "sothebys", "real estate office", "private limited",
     "pvt ltd", "pvt. ltd", "corporate office", "head office",
+    "charminar", "victoria memorial", "gateway of india", "hawa mahal",
+    "amer fort", "amber fort", "city palace", "jal mahal", "fatehpur sikri",
+    "ajanta", "ellora", "konark", "meenakshi temple", "golden temple",
+    "statue of unity", "howrah bridge", "marina beach",
 )
 _BLOCKED_TYPE_FRAGMENTS = (
     "tourist_attraction", "museum", "hindu_temple", "church", "mosque",
@@ -83,10 +87,17 @@ def is_hospitality_listing(
                 return True
             return False
     n = (name or "").lower()
-    if any(h in n for h in ("hotel", "resort", "villa", "lodge", "inn", "retreat", "homestay", "boutique stay", "camp")):
+    if any(
+        h in n
+        for h in (
+            "hotel", "resort", "villa", "lodge", "inn", "retreat", "homestay",
+            "boutique stay", "camp", "suites", "palace hotel", "guest house",
+            "guesthouse", "bungalow stay", "farmstay",
+        )
+    ):
         return True
-    # No clear signal — allow maps hotel queries through; single-name resolve still filtered by caller
-    return True
+    # No clear hospitality signal — reject (prevents monuments / POIs as "reviews")
+    return False
 
 
 
