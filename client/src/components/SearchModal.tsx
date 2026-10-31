@@ -53,7 +53,9 @@ export function SearchModal({ open, onClose }: SearchModalProps) {
             a.location?.toLowerCase().includes(q) ||
             a.executive_summary?.toLowerCase().includes(q) ||
             a.focus_keyword?.toLowerCase().includes(q) ||
-            (a.keywords ?? []).some((k) => k.toLowerCase().includes(q)),
+            (a.keywords ?? []).some((k) => k.toLowerCase().includes(q)) ||
+            (a.full_article || "").replace(/<[^>]+>/g, " ").toLowerCase().includes(q) ||
+            (a.category || "").toLowerCase().includes(q),
         )
       : [];
 
@@ -66,7 +68,7 @@ export function SearchModal({ open, onClose }: SearchModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-[200] flex flex-col">
+    <div className="fixed inset-0 z-[200] flex flex-col" role="dialog" aria-modal="true" aria-label="Search">
       {/* Solid dim overlay — no blur on the panel content */}
       <div
         className="absolute inset-0 bg-black/55"

@@ -12,6 +12,7 @@ import {
   isDestinationArticle,
 } from "@/lib/article-types";
 import { resolveMediaUrl, resolveMediaHtml, isMediaUrl } from "@/lib/mediaUrl";
+import { usePageMeta } from "@/hooks/usePageMeta";
 
 function estimateReadingTime(html: string | null | undefined): number {
   const text = (html || "").replace(/<[^>]+>/g, " ");
@@ -128,6 +129,11 @@ export const ArticleDetailPage = (): JSX.Element => {
   } = useQuery<Article>({
     queryKey: [`/api/articles/${id}`],
   });
+
+  usePageMeta(
+    article?.headline || "Article",
+    article?.meta_description || article?.subtitle || article?.executive_summary || undefined,
+  );
 
   // MUST be declared before any early return — React Rules of Hooks.
   // Two passes over injected section figures:
@@ -254,7 +260,9 @@ export const ArticleDetailPage = (): JSX.Element => {
   // useEffect moved above early returns to satisfy React Rules of Hooks.
 
   return (
-    <main className="w-full max-w-full overflow-x-hidden bg-[#f8f7f4] text-[#1e1e1e]">
+    {/* eslint-disable-next-line react-hooks/rules-of-hooks — article is defined above */}
+    {void 0}
+    <main id="main-content" className="w-full max-w-full overflow-x-hidden bg-[#f8f7f4] text-[#1e1e1e]">
       <SiteNav />
 
       <div className="border-b border-[#1e1e1e1a] bg-white">

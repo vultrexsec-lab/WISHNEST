@@ -5,6 +5,8 @@ import { resolveMediaUrl } from "@/lib/mediaUrl";
 import { SiteFooter } from "@/components/SiteFooter";
 import type { Article } from "@/lib/article-types";
 import { overallGrade } from "@/lib/article-types";
+import { usePageMeta } from "@/hooks/usePageMeta";
+import { useMemo, useState } from "react";
 
 function ReviewCard({ article }: { article: Article }) {
   const grade = overallGrade(article);
@@ -54,6 +56,12 @@ function ReviewCard({ article }: { article: Article }) {
 }
 
 export const ReviewsPage = (): JSX.Element => {
+  usePageMeta(
+    "Reviews",
+    "Independent hospitality and architecture reviews scored with WishNest ABCDE™.",
+  );
+  const [region, setRegion] = useState("all");
+  const [sort, setSort] = useState<"newest" | "az">("newest");
   const { data: articles = [], isLoading, isError, refetch, isFetching } = useQuery<Article[]>({
     queryKey: ["/api/articles"],
     staleTime: 60_000,
@@ -71,6 +79,24 @@ export const ReviewsPage = (): JSX.Element => {
       (a.category || "").toLowerCase().includes("review"),
   );
   const displayReviews = explicitReviews.length > 0 ? explicitReviews : published;
+  const regions = useMemo(() => {
+    const set = new Set<string>();
+    displayReviews.forEach((a) => {
+      const loc = (a.location || "").split(",")[0].trim();
+      if (loc) set.add(loc);
+    });
+    return Array.from(set).sort();
+  }, [displayReviews]);
+  const filtered = useMemo(() => {
+    let list = displayReviews;
+    if (region !== "all") {
+      list = list.filter((a) => (a.location || "").toLowerCase().includes(region.toLowerCase()));
+    }
+    if (sort === "az") {
+      list = [...list].sort((a, b) => (a.headline || "").localeCompare(b.headline || ""));
+    }
+    return list;
+  }, [displayReviews, region, sort]);
   const hasLive = displayReviews.length > 0;
 
   return (
@@ -95,8 +121,46 @@ export const ReviewsPage = (): JSX.Element => {
         </div>
       </section>
 
-      <section className="bg-white py-16 lg:py-20">
+      <section id="main-content" className="bg-white py-16 lg:py-20">
         <div className="mx-auto w-full max-w-[1166px] px-4 sm:px-8">
+          {!isLoading && !isError && hasLive && (
+            <div className="mb-10 flex flex-wrap items-center gap-3">
+              <label className="text-[11px] tracking-[1px] text-[#6b6b6b]">
+                Region
+                <select
+                  value={region}
+                  onChange={(e) => setRegion(e.target.value)}
+                  className="ml-2 h-9 border border-[#1e1e1e1a] bg-white px-2 text-[13px] text-[#1e1e1e]"
+                >
+                  <option value="all">All</option>
+                  {regions.map((r) => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-[11px] tracking-[1px] text-[#6b6b6b]">
+                Sort
+                <select
+                  value={sort}
+                  onChange={(e) => setSort(e.target.value as "newest" | "az")}
+                  className="ml-2 h-9 border border-[#1e1e1e1a] bg-white px-2 text-[13px]"
+                >
+                  <option value="newest">Newest</option>
+                  <option value="az">A–Z</option>
+                </select>
+              </label>
+              {(region !== "all" || sort !== "newest") && (
+                <button
+                  type="button"
+                  onClick={() => { setRegion("all"); setSort("newest"); }}
+                  className="text-[11px] tracking-[1px] text-[#2e4a3f] underline"
+                >
+                  Reset
+                </button>
+              )}
+              <span className="text-[12px] text-[#6b6b6b]">{filtered.length} stories</span>
+            </div>
+          )}
           {isLoading ? (
             <div className="flex items-center justify-center py-20">
               <span className="[font-family:\'Inter\',Helvetica] text-[12px] tracking-[1.5px] text-[#6b6b6b]">
@@ -105,7 +169,7 @@ export const ReviewsPage = (): JSX.Element => {
             </div>
           ) : hasLive ? (
             <div className="grid gap-10 md:grid-cols-2 xl:grid-cols-3">
-              {displayReviews.map((article) => (
+              {filtered.map((article) => (
                 <ReviewCard key={article.id} article={article} />
               ))}
             </div>

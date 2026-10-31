@@ -5,12 +5,13 @@ import { Menu, X, Search, ChevronDown } from "lucide-react";
 import { SearchModal } from "@/components/SearchModal";
 import { NewsletterModal } from "@/components/NewsletterModal";
 
-const navLinks = [
-  { label: "REVIEWS", href: "/reviews" },
-  { label: "DESTINATIONS", href: "/destinations" },
-  { label: "BEST OF", href: "/best-of" },
+/** Magazine reading vs commercial/service paths — client audit P2 */
+const readLinks = [
+  { label: "Reviews", href: "/reviews" },
+  { label: "Destinations", href: "/destinations" },
+  { label: "Best Of", href: "/best-of" },
   {
-    label: "INTELLIGENCE",
+    label: "Intelligence",
     href: "/intelligence",
     children: [
       { label: "Overview", href: "/intelligence" },
@@ -18,9 +19,12 @@ const navLinks = [
       { label: "Villa Intelligence", href: "/intelligence/villa" },
     ],
   },
-  { label: "CONTRIBUTORS", href: "/contributors" },
-  { label: "REIMAGINED™", href: "/reimagined" },
-  { label: "GET REVIEWED", href: "/get-reviewed" },
+  { label: "Contributors", href: "/contributors" },
+];
+
+const workLinks = [
+  { label: "Reimagined™", href: "/reimagined" },
+  { label: "Get Reviewed", href: "/get-reviewed" },
 ];
 
 export const SiteNav = () => {
@@ -33,8 +37,19 @@ export const SiteNav = () => {
   const isActive = (href: string) =>
     location === href || (href !== "/" && location.startsWith(href + "/"));
 
+  const linkClass = (href: string) =>
+    `whitespace-nowrap [font-family:'Inter',Helvetica] text-[11px] font-medium leading-[16.5px] tracking-[1.10px] transition-opacity hover:opacity-70 ${
+      isActive(href) ? "text-[#2e4a3f]" : "text-[#1e1e1e]"
+    }`;
+
   return (
     <>
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:text-[#2e4a3f] focus:outline focus:outline-2"
+      >
+        Skip to content
+      </a>
       <SearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
       <NewsletterModal open={newsletterOpen} onClose={() => setNewsletterOpen(false)} />
 
@@ -53,8 +68,12 @@ export const SiteNav = () => {
             </div>
           </Link>
 
-          <nav className="hidden items-center gap-5 lg:flex" aria-label="Primary">
-            {navLinks.map((item) =>
+          <nav
+            className="hidden items-center gap-5 lg:flex xl:gap-6"
+            aria-label="Primary"
+          >
+            <span className="sr-only">Read</span>
+            {readLinks.map((item) =>
               item.children ? (
                 <div
                   key={item.label}
@@ -62,28 +81,27 @@ export const SiteNav = () => {
                   onMouseEnter={() => setIntelOpen(true)}
                   onMouseLeave={() => setIntelOpen(false)}
                 >
-                  <Link href={item.href}>
-                    <span
-                      className={`inline-flex cursor-pointer items-center gap-0.5 whitespace-nowrap [font-family:'Inter',Helvetica] text-[11px] font-medium leading-[16.5px] tracking-[1.10px] transition-opacity hover:opacity-70 ${
-                        location.startsWith("/intelligence")
-                          ? "text-[#2e4a3f]"
-                          : "text-[#1e1e1e]"
-                      }`}
-                    >
-                      {item.label}
-                      <ChevronDown className="h-3 w-3 opacity-50" />
-                    </span>
-                  </Link>
+                  <button
+                    type="button"
+                    className={`inline-flex items-center gap-1 ${linkClass(item.href)}`}
+                    aria-expanded={intelOpen}
+                    aria-haspopup="true"
+                    onClick={() => setIntelOpen((o) => !o)}
+                  >
+                    {item.label}
+                    <ChevronDown className="h-3 w-3" aria-hidden />
+                  </button>
                   {intelOpen && (
-                    <div className="absolute left-0 top-full z-50 min-w-[220px] border border-[#1e1e1e14] bg-[#f8f7f4] py-2 shadow-lg">
+                    <div
+                      className="absolute left-0 top-full z-50 min-w-[220px] border border-[#1e1e1e14] bg-[#f8f7f4] py-2 shadow-lg"
+                      role="menu"
+                    >
                       {item.children.map((c) => (
-                        <Link key={c.href + c.label} href={c.href}>
+                        <Link key={c.href} href={c.href}>
                           <span
-                            className={`block cursor-pointer px-4 py-2.5 [font-family:'Inter',Helvetica] text-[12px] transition hover:bg-[#2e4a3f]/8 ${
-                              location === c.href
-                                ? "text-[#2e4a3f]"
-                                : "text-[#1e1e1e]"
-                            }`}
+                            role="menuitem"
+                            className="block cursor-pointer px-4 py-2 text-[12px] text-[#1e1e1e] hover:bg-[#1e1e1e08]"
+                            onClick={() => setIntelOpen(false)}
                           >
                             {c.label}
                           </span>
@@ -93,39 +111,42 @@ export const SiteNav = () => {
                   )}
                 </div>
               ) : (
-                <Link key={item.label} href={item.href}>
-                  <span
-                    className={`cursor-pointer whitespace-nowrap [font-family:'Inter',Helvetica] text-[11px] font-medium leading-[16.5px] tracking-[1.10px] transition-opacity hover:opacity-70 ${
-                      isActive(item.href) ? "text-[#2e4a3f]" : "text-[#1e1e1e]"
-                    }`}
-                  >
-                    {item.label}
-                  </span>
+                <Link key={item.href} href={item.href}>
+                  <span className={`cursor-pointer ${linkClass(item.href)}`}>{item.label}</span>
                 </Link>
               ),
             )}
+            <span className="mx-1 h-3 w-px bg-[#1e1e1e20]" aria-hidden />
+            <span className="sr-only">Work with us</span>
+            {workLinks.map((item) => (
+              <Link key={item.href} href={item.href}>
+                <span className={`cursor-pointer ${linkClass(item.href)}`}>{item.label}</span>
+              </Link>
+            ))}
           </nav>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 sm:gap-3">
             <button
               type="button"
-              aria-label="Search"
               onClick={() => setSearchOpen(true)}
-              className="rounded-full p-2 text-[#1e1e1e] hover:bg-[#1e1e1e0a]"
+              className="flex h-9 w-9 items-center justify-center text-[#1e1e1e] transition-opacity hover:opacity-70"
+              aria-label="Search"
             >
               <Search className="h-4 w-4" />
             </button>
             <Button
+              type="button"
               variant="outline"
               onClick={() => setNewsletterOpen(true)}
-              className="hidden h-9 rounded-none border-[#1e1e1e] px-4 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1.2px] sm:inline-flex"
+              className="hidden h-auto rounded-none border-[0.8px] border-[#2e4a3f] bg-transparent px-4 py-2 [font-family:'Inter',Helvetica] text-[11px] font-medium tracking-[1.32px] text-[#2e4a3f] hover:bg-[#2e4a3f] hover:text-white sm:inline-flex"
             >
-              NEWSLETTER
+              Newsletter
             </Button>
             <button
               type="button"
-              className="p-2 lg:hidden"
-              aria-label="Menu"
+              className="flex h-9 w-9 items-center justify-center text-[#1e1e1e] lg:hidden"
+              aria-label={mobileOpen ? "Close menu" : "Open menu"}
+              aria-expanded={mobileOpen}
               onClick={() => setMobileOpen((o) => !o)}
             >
               {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -134,41 +155,57 @@ export const SiteNav = () => {
         </div>
 
         {mobileOpen && (
-          <div className="border-t border-[#1e1e1e14] bg-[#f8f7f4] px-4 py-4 lg:hidden">
-            <div className="flex flex-col gap-1">
-              {navLinks.map((item) => (
-                <div key={item.label}>
-                  <Link href={item.href}>
+          <div
+            className="border-t border-[#1e1e1e14] bg-[#f8f7f4] px-4 py-4 lg:hidden"
+            role="dialog"
+            aria-label="Mobile navigation"
+          >
+            <p className="mb-2 text-[9px] font-medium tracking-[2px] text-[#6b6b6b]">READ</p>
+            {readLinks.map((item) => (
+              <div key={item.label}>
+                <Link href={item.href}>
+                  <span
+                    onClick={() => setMobileOpen(false)}
+                    className="block cursor-pointer border-b border-[#1e1e1e0a] py-3.5 text-[13px] font-medium tracking-[1.1px] text-[#1e1e1e]"
+                  >
+                    {item.label}
+                  </span>
+                </Link>
+                {item.children?.map((c) => (
+                  <Link key={c.href} href={c.href}>
                     <span
                       onClick={() => setMobileOpen(false)}
-                      className="block cursor-pointer py-2.5 [font-family:'Inter',Helvetica] text-[13px] font-medium tracking-[1px] text-[#1e1e1e]"
+                      className="block cursor-pointer border-b border-[#1e1e1e0a] py-2.5 pl-4 text-[12px] text-[#6b6b6b]"
                     >
-                      {item.label}
+                      {c.label}
                     </span>
                   </Link>
-                  {item.children?.map((c) => (
-                    <Link key={c.href + c.label} href={c.href}>
-                      <span
-                        onClick={() => setMobileOpen(false)}
-                        className="block cursor-pointer py-2 pl-4 text-[12px] text-[#6b6b6b]"
-                      >
-                        {c.label}
-                      </span>
-                    </Link>
-                  ))}
-                </div>
-              ))}
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileOpen(false);
-                  setNewsletterOpen(true);
-                }}
-                className="mt-2 py-2 text-left text-[12px] font-medium tracking-[1px] text-[#2e4a3f]"
-              >
-                NEWSLETTER
-              </button>
-            </div>
+                ))}
+              </div>
+            ))}
+            <p className="mb-2 mt-4 text-[9px] font-medium tracking-[2px] text-[#6b6b6b]">
+              WORK WITH US
+            </p>
+            {workLinks.map((item) => (
+              <Link key={item.href} href={item.href}>
+                <span
+                  onClick={() => setMobileOpen(false)}
+                  className="block cursor-pointer border-b border-[#1e1e1e0a] py-3.5 text-[13px] font-medium tracking-[1.1px] text-[#1e1e1e]"
+                >
+                  {item.label}
+                </span>
+              </Link>
+            ))}
+            <button
+              type="button"
+              onClick={() => {
+                setMobileOpen(false);
+                setNewsletterOpen(true);
+              }}
+              className="mt-4 w-full border border-[#2e4a3f] py-3 text-[11px] tracking-[1.3px] text-[#2e4a3f]"
+            >
+              Newsletter
+            </button>
           </div>
         )}
       </header>

@@ -1,6 +1,7 @@
 import { Link } from "wouter";
 import { SiteNav } from "@/components/SiteNav";
 import { SiteFooter } from "@/components/SiteFooter";
+import { usePageMeta } from "@/hooks/usePageMeta";
 
 const CATEGORIES = [
   {
@@ -31,6 +32,7 @@ const CATEGORIES = [
 ];
 
 export function MethodologyPage(): JSX.Element {
+  usePageMeta("ABCDE Methodology", "How WishNest scores architecture, landscape, connectivity, delight and dining.");
   return (
     <main className="min-h-screen bg-[#f8f7f4] text-[#1e1e1e]">
       <SiteNav />
