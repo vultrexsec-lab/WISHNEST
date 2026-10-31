@@ -124,6 +124,25 @@ export function GetReviewedPage(): JSX.Element {
         </div>
       </section>
 
+            <section className="border-t border-[#1e1e1e1a] bg-white py-14">
+        <div className="mx-auto max-w-[720px] px-4 text-center sm:px-8">
+          <p className="text-[10px] font-medium tracking-[2px] text-[#2e4a3f]">DEVELOPERS &amp; LANDOWNERS</p>
+          <h2 className="mt-3 [font-family:'Playfair_Display',Helvetica] text-[28px] text-[#1e1e1e]">
+            From land to possibility
+          </h2>
+          <p className="mt-3 text-[14px] leading-[24px] text-[#6b6b6b]">
+            Preliminary hospitality development concepts and feasibility discussions —
+            editorial-led, with clear scope. Use the same submission form and select
+            stage “Upcoming” or “Under development”, and type “Land / development site” where relevant.
+          </p>
+          <Link href="/submit-project">
+            <Button className="mt-6 rounded-none bg-[#2e4a3f] px-6 py-3.5 text-[11px] tracking-[1.3px] text-white hover:bg-[#243a32]">
+              START A DEVELOPMENT ENQUIRY
+            </Button>
+          </Link>
+        </div>
+      </section>
+
       <SiteFooter />
     </main>
   );
