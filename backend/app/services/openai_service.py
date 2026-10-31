@@ -64,8 +64,11 @@ REQUIRED JSON SHAPE
       "subtitle": string,
 
       "full_article": string
-          HARD REQUIREMENT — 700-1000 words, magazine quality, WishNest voice:
-          independent, design-literate, precise.
+          HARD REQUIREMENT — 1500-2000 words (never under 1400), magazine quality, WishNest voice:
+          independent, design-literate, precise, place-specific. Use the REAL property name and
+          REAL address/location from the research brief — never invent or swap addresses.
+          Do not write generic “any hotel” copy. Ground architecture, rooms, landscape and
+          experience in the named property only.
 
           MANDATORY STRUCTURE for full_article:
           • Use semantic HTML throughout: <h2>, <h3>, <p>, <ul>, <ol>, <table>.

@@ -25,7 +25,7 @@ from app.services.fact_checker_service import fact_check_article
 from app.services.firecrawl_service import FirecrawlError, search_and_scrape
 from app.services.image_service import build_deep_gallery_photo_assignments, generate_article_images
 from app.services.openai_service import generate_article_packages
-from app.services.places_service import PropertyListing, _serpapi_maps_photos_gallery, fetch_premium_stays
+from app.services.places_service import PropertyListing, _serpapi_maps_photos_gallery, fetch_premium_stays, is_hospitality_listing
 
 logger = logging.getLogger("wishnest.research_pipeline")
 
@@ -83,7 +83,7 @@ def _enrich_brief_with_properties(
     lines.append(
         "\nCRITICAL: Write each section specifically about that named property "
         "using only facts from the research sources. Do NOT write generic "
-        "sections that could apply to any hotel."
+        "sections that could apply to any hotel. Use ONLY the listed address — never invent street addresses."
     )
     return brief + "\n".join(lines)
 

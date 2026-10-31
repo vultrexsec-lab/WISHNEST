@@ -27,6 +27,69 @@ from app.config import get_settings
 
 logger = logging.getLogger("wishnest.places_service")
 
+# Non-hospitality entities must never become property reviews (client quality audit).
+_BLOCKED_NAME_FRAGMENTS = (
+    "india gate", "gateway of india", "mysuru palace", "mysore palace",
+    "red fort", "qutub minar", "taj mahal", "lotus temple", "humayun",
+    "national museum", "railway station", "bus stand", "airport",
+    "sotheby's", "sothebys", "real estate office", "private limited",
+    "pvt ltd", "pvt. ltd", "corporate office", "head office",
+)
+_BLOCKED_TYPE_FRAGMENTS = (
+    "tourist_attraction", "museum", "hindu_temple", "church", "mosque",
+    "cemetery", "park", "zoo", "amusement", "shopping_mall", "department_store",
+    "real_estate_agency", "lawyer", "atm", "bank", "gas_station", "parking",
+    "school", "university", "hospital", "doctor", "embassy", "government",
+    "locality", "political", "route", "intersection",
+)
+_HOSPITALITY_TYPE_HINTS = (
+    "hotel", "lodging", "resort", "guest_house", "guest house", "hostel",
+    "motel", "villa", "homestay", "home stay", "bed_and_breakfast",
+    "boutique", "campground", "spa", "wellness", "retreat",
+)
+
+
+def is_hospitality_listing(
+    name: str | None,
+    place_type: str | None = None,
+    types: list | None = None,
+    address: str | None = None,
+) -> bool:
+    """
+    Return False for monuments, civic landmarks, pure offices, and other
+    non-stay entities that must not enter the property-review pipeline.
+    """
+    blob = " ".join(
+        str(x).lower()
+        for x in [name or "", place_type or "", address or ""]
+        + list(types or [])
+    )
+    for frag in _BLOCKED_NAME_FRAGMENTS:
+        if frag in blob:
+            return False
+    for frag in _BLOCKED_TYPE_FRAGMENTS:
+        if frag in blob:
+            return False
+    # If SerpApi/Google gives explicit types, require a hospitality hint when present
+    type_blob = " ".join(str(x).lower() for x in ([place_type] if place_type else []) + list(types or []))
+    if type_blob.strip():
+        if any(h in type_blob for h in _HOSPITALITY_TYPE_HINTS):
+            return True
+        # typed but no hospitality signal → reject
+        if any(x in type_blob for x in ("establishment", "point_of_interest", "premise")):
+            # weak types only — allow if name looks like a stay
+            n = (name or "").lower()
+            if any(h in n for h in ("hotel", "resort", "villa", "lodge", "inn", "retreat", "homestay", "palace hotel", "suites")):
+                return True
+            return False
+    n = (name or "").lower()
+    if any(h in n for h in ("hotel", "resort", "villa", "lodge", "inn", "retreat", "homestay", "boutique stay", "camp")):
+        return True
+    # No clear signal — allow maps hotel queries through; single-name resolve still filtered by caller
+    return True
+
+
+
 _REQUEST_TIMEOUT = 10
 _warned_missing_key = False
 
@@ -208,7 +271,7 @@ def _serpapi_maps_photos_gallery(data_id: str, api_key: str, max_photos: int) ->
 # SerpApi — property search (replaces Google Places Text Search entirely)
 # ---------------------------------------------------------------------------
 
-def _serpapi_maps_query(query: str, limit: int) -> list[PropertyListing]:
+def _serpapi_maps_query(query: str, limit: int, *, hospitality_only: bool = True) -> list[PropertyListing]:
     """
     Run a SerpApi Google Maps search for *query* (fully-formed). Returns up
     to *limit* `PropertyListing`s with `place_id` set to the SerpApi `data_id`
@@ -260,13 +323,19 @@ def _serpapi_maps_query(query: str, limit: int) -> list[PropertyListing]:
             if not thumbnail:
                 continue
             data_id = place.get("data_id")
+            title = place.get("title") or ""
+            addr = place.get("address")
+            ptype = place.get("type") or place.get("category") or ""
+            if hospitality_only and not is_hospitality_listing(title, ptype, address=addr):
+                logger.info("Skipped non-hospitality Maps result: %r (%s)", title[:80], ptype)
+                continue
             listings.append(
                 PropertyListing(
-                    name=place.get("title") or "",
+                    name=title,
                     photo_url=thumbnail,
                     rating=_coerce_rating(place.get("rating")),
                     review_count=_coerce_review_count(place.get("reviews")),
-                    address=place.get("address"),
+                    address=addr,
                     maps_url=place.get("link"),
                     place_id=data_id,
                 )
@@ -311,7 +380,7 @@ def fetch_landmark_attractions(location: str | None, limit: int = 8) -> list[Pro
         f"must visit places tourism {location}",
     ]
     for query in query_templates:
-        listings = _serpapi_maps_query(query, limit)
+        listings = _serpapi_maps_query(query, limit, hospitality_only=False)
         if listings:
             logger.info(
                 "Live attraction listings resolved for %r via SerpApi: %d found (query=%r)",
@@ -410,12 +479,21 @@ def fetch_property_by_name(
             "Strict single-property photo pool resolved for %r via SerpApi: %d photo(s) (%d tagged)",
             name, len(photo_urls), tagged_count,
         )
+        resolved_name = place.get("title") or name
+        resolved_addr = place.get("address")
+        resolved_type = place.get("type") or place.get("category") or ""
+        if not is_hospitality_listing(resolved_name, resolved_type, address=resolved_addr):
+            logger.warning(
+                "Rejected non-hospitality place for review pipeline: %r type=%r",
+                resolved_name, resolved_type,
+            )
+            return None
         return PropertyListing(
-            name=place.get("title") or name,
+            name=resolved_name,
             photo_url=photo_urls[0],
             rating=_coerce_rating(place.get("rating")),
             review_count=_coerce_review_count(place.get("reviews")),
-            address=place.get("address"),
+            address=resolved_addr,
             maps_url=place.get("link"),
             place_id=data_id,
             photo_urls=photo_urls,
@@ -440,7 +518,7 @@ def search_properties(query: str, limit: int = 20) -> list[PropertyListing]:
     if not query:
         return []
 
-    listings = _serpapi_maps_query(query, limit)
+    listings = _serpapi_maps_query(query, limit, hospitality_only=True)
     if listings:
         logger.info(
             "search_properties: %d result(s) via SerpApi for query %r",
