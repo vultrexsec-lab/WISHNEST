@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import type { Article } from "@/lib/article-types";
+import { ABCDE_SCORES, overallGrade } from "@/lib/article-types";
 
 const navItems = [
   { label: "REVIEWS", href: "/reviews" },
@@ -313,8 +314,56 @@ export const PremiumEditorial = (): JSX.Element => {
   });
 
   const publishedArticles = (liveArticles ?? []).filter((a) =>
-    ["approved", "scheduled", "published"].includes(a.status),
+    ["approved", "scheduled", "published"].includes(a.status) && !a.is_trash,
   );
+
+  // Featured review: newest published review-type article (falls back to any published)
+  const featuredArticle =
+    publishedArticles.find(
+      (a) =>
+        (a.article_type || "").toLowerCase() === "review" ||
+        (a.category || "").toLowerCase() === "review" ||
+        (a.category || "").toLowerCase() === "reviews",
+    ) || publishedArticles[0] || null;
+
+  const featuredSnapshot = (featuredArticle?.property_snapshot || {}) as Record<string, unknown>;
+  const featuredStatsLive: { label: string; value: string }[] = [];
+  if (featuredArticle) {
+    if (featuredArticle.location)
+      featuredStatsLive.push({ label: "LOCATION", value: String(featuredArticle.location) });
+    if (featuredSnapshot.address)
+      featuredStatsLive.push({ label: "ADDRESS", value: String(featuredSnapshot.address).slice(0, 48) });
+    const mapsRating = featuredSnapshot.rating ?? featuredSnapshot.google_rating;
+    if (mapsRating != null && mapsRating !== "")
+      featuredStatsLive.push({ label: "MAPS RATING", value: String(mapsRating) });
+    if (featuredSnapshot.rooms || featuredSnapshot.unit_count)
+      featuredStatsLive.push({
+        label: "ROOMS",
+        value: String(featuredSnapshot.rooms || featuredSnapshot.unit_count),
+      });
+    if (featuredArticle.best_for?.length)
+      featuredStatsLive.push({ label: "BEST FOR", value: featuredArticle.best_for.slice(0, 2).join(", ") });
+    if (featuredArticle.category)
+      featuredStatsLive.push({
+        label: "TYPE",
+        value: String(featuredArticle.category).replace(/_/g, " "),
+      });
+  }
+
+  const featuredScoresLive = featuredArticle
+    ? ABCDE_SCORES.map(({ scoreKey, gradeKey, letter, title }) => {
+        const score = featuredArticle[scoreKey] as number | null | undefined;
+        const grade = featuredArticle[gradeKey] as string | null | undefined;
+        const n = typeof score === "number" ? score : null;
+        const widthPct = n != null ? Math.max(8, Math.min(100, (n <= 10 ? n * 10 : n))) : 0;
+        return {
+          letter,
+          title,
+          score: grade || (n != null ? String(n) : "—"),
+          widthPct,
+        };
+      })
+    : [];
 
   // ── Typed card adapters — no `as` casts in render ─────────────────────────
   interface TrendingCard {
@@ -558,6 +607,7 @@ export const PremiumEditorial = (): JSX.Element => {
         </div>
       </section>
       <DailyEditionBanner latestArticle={publishedArticles[0]} />
+      {featuredArticle && (
       <section className="bg-[#f8f7f4] py-16 lg:py-24">
         <div className="mx-auto w-full max-w-[1166px] px-4 sm:px-8">
           <div className="flex items-center gap-5">
@@ -568,43 +618,56 @@ export const PremiumEditorial = (): JSX.Element => {
           </div>
           <div className="mt-12 overflow-hidden bg-white grid lg:grid-cols-[577px_minmax(0,1fr)]">
               <div
-                className="relative min-h-[420px] overflow-hidden bg-cover bg-center"
-                style={{ backgroundImage: "url('/Container.jpg')" }}
+                className="relative min-h-[420px] overflow-hidden bg-cover bg-center bg-[#e8e6e0]"
+                style={
+                  featuredArticle.hero_image_url
+                    ? {
+                        backgroundImage: `url(${resolveMediaUrl(featuredArticle.hero_image_url)})`,
+                      }
+                    : undefined
+                }
                 role="img"
-                aria-label="Seclude Ramgarh Willows"
+                aria-label={featuredArticle.headline}
               >
                 <div className="absolute inset-0 bg-black/15" />
+                {featuredArticle.location && (
+                  <div className="absolute left-4 top-4 bg-[#2e4a3f] px-3 py-1.5 text-[10px] tracking-[1.4px] text-white">
+                    {featuredArticle.location.toUpperCase()}
+                  </div>
+                )}
               </div>
               <div className="flex flex-col p-8 md:p-12 lg:p-14">
                 <div>
-                  <h2 className="[font-family:'Playfair_Display',Helvetica] text-[32.7px] font-normal leading-[40.8px] text-[#1e1e1e]">
-                    Seclude Ramgarh Willows
+                  <h2 className="[font-family:'Playfair_Display',Helvetica] text-[28px] font-normal leading-[1.2] text-[#1e1e1e] sm:text-[32.7px] sm:leading-[40.8px]">
+                    {featuredArticle.headline}
                   </h2>
                   <p className="max-w-[413px] pt-3 [font-family:'Inter',Helvetica] text-[15px] font-normal leading-[26.2px] text-[#6b6b6b]">
-                    A hillside sanctuary that gets its relationship with the
-                    surrounding Himalayan oak forest exactly right.
-                    Architecture, landscape, and guest experience in rare
-                    alignment.
+                    {featuredArticle.subtitle ||
+                      featuredArticle.executive_summary ||
+                      "Independent WishNest review — architecture, landscape and guest experience."}
                   </p>
                 </div>
+                {featuredStatsLive.length > 0 && (
                 <div className="mt-8 grid grid-cols-2 gap-y-6 border-y border-[#1e1e1e1a] py-7 md:grid-cols-3">
-                  {featuredStats.map((stat) => (
+                  {featuredStatsLive.slice(0, 6).map((stat) => (
                     <div key={stat.label}>
                       <div className="[font-family:'Inter',Helvetica] text-[9px] font-normal leading-[13.5px] tracking-[1.44px] text-[#6b6b6b]">
                         {stat.label}
                       </div>
-                      <div className="pt-1 [font-family:'Inter',Helvetica] text-[13px] font-normal leading-[19.5px] text-[#1e1e1e]">
+                      <div className="pt-1 [font-family:'Inter',Helvetica] text-[13px] font-normal leading-[19.5px] text-[#1e1e1e] line-clamp-2">
                         {stat.value}
                       </div>
                     </div>
                   ))}
                 </div>
+                )}
+                {featuredScoresLive.some((s) => s.score !== "—") && (
                 <div className="w-full max-w-[412.96px] py-9">
                   <div className="[font-family:'Inter',Helvetica] text-[9px] font-normal leading-[13.5px] tracking-[1.98px] text-[#6b6b6b]">
                     ABCDE™ SCORE BREAKDOWN
                   </div>
                   <div className="pt-5">
-                    {featuredScores.map((item, index) => (
+                    {featuredScoresLive.map((item, index) => (
                       <div
                         key={item.letter}
                         className={`${index > 0 ? "pt-3.5" : ""} flex items-center gap-3`}
@@ -613,9 +676,12 @@ export const PremiumEditorial = (): JSX.Element => {
                           {item.letter}
                         </div>
                         <div className="relative h-px flex-1 bg-[#1e1e1e1a]">
-                          <div className={`h-px bg-[#2e4a3f] ${item.width}`} />
+                          <div
+                            className="h-px bg-[#2e4a3f]"
+                            style={{ width: `${item.widthPct}%` }}
+                          />
                         </div>
-                        <div className="w-6 text-right [font-family:'Inter',Helvetica] text-xs font-normal leading-[18px] text-[#6b6b6b]">
+                        <div className="w-8 text-right [font-family:'Inter',Helvetica] text-xs font-normal leading-[18px] text-[#6b6b6b]">
                           {item.score}
                         </div>
                         <div className="[font-family:'Inter',Helvetica] text-[10px] font-normal leading-[15px] text-[#6b6b6b]">
@@ -625,21 +691,22 @@ export const PremiumEditorial = (): JSX.Element => {
                     ))}
                   </div>
                 </div>
-                <div className="mt-auto flex flex-wrap items-end justify-between gap-6">
+                )}
+                <div className="mt-auto flex flex-wrap items-end justify-between gap-6 pt-6">
                   <div>
                     <div className="[font-family:'Inter',Helvetica] text-[9px] font-normal leading-[13.5px] tracking-[1.80px] text-[#6b6b6b]">
                       OVERALL GRADE
                     </div>
                     <div className="pt-1 [font-family:'Playfair_Display',Helvetica] text-[64px] font-normal leading-[64px] text-[#2e4a3f]">
-                      B+
+                      {overallGrade(featuredArticle) || featuredArticle.abcde_overall || "—"}
                     </div>
                   </div>
-                  <Link href="/article/seclude-ramgarh-willows">
+                  <Link href={`/article/${featuredArticle.id}`}>
                     <Button className="h-auto rounded-none bg-[#2e4a3f] px-7 py-4 [font-family:'Inter',Helvetica] text-[11px] font-medium leading-[16.5px] tracking-[1.32px] text-white hover:bg-[#243a32]">
                       <span>READ FULL REVIEW</span>
                       <img
                         className="ml-3 h-3.5 w-3.5"
-                        alt="Icon"
+                        alt=""
                         src="/figmaAssets/icon.svg"
                       />
                     </Button>
@@ -649,6 +716,7 @@ export const PremiumEditorial = (): JSX.Element => {
           </div>
         </div>
       </section>
+      )}
       <section className="bg-white py-16 lg:py-28">
         <div className="mx-auto w-full max-w-[1166px] px-4 sm:px-8">
           <div className="grid gap-12 lg:grid-cols-[487px_minmax(0,487px)] lg:justify-between">
