@@ -64,6 +64,30 @@ export const BestOfPage = (): JSX.Element => {
 
   // Live best-of articles
   const liveArticles = allArticles.filter((a) => a.category === "best-of");
+  const published = allArticles.filter(
+    (a) =>
+      ["approved", "scheduled", "published"].includes(a.status) && !a.is_trash,
+  );
+
+  // Curated rows: prefer keyword match on live stories; else open /reviews (never demo URL)
+  const curatedRows = staticCollections.map((item, idx) => {
+    const keys = item.title.toLowerCase().split(/\s+/).filter((w) => w.length > 4).slice(0, 4);
+    const match = published.find((a) => {
+      const h = (a.headline || "").toLowerCase();
+      return keys.some((k) => h.includes(k));
+    });
+    const fallback = published[idx % Math.max(published.length, 1)];
+    const art = match || (published.length ? fallback : null);
+    return {
+      ...item,
+      href: art ? `/article/${art.id}` : "/reviews",
+      title: art ? art.headline : item.title,
+      description: art
+        ? art.executive_summary || art.subtitle || item.description
+        : item.description,
+      meta: art ? art.location || item.meta : item.meta,
+    };
+  });
 
   return (
     <main className="bg-[#f8f7f4] text-[#1e1e1e]">
@@ -139,22 +163,20 @@ export const BestOfPage = (): JSX.Element => {
         </section>
       )}
 
-      {/* Static curated collections */}
+      {/* Curated collections — linked to live articles or Reviews hub */}
       <section className="bg-white py-16 lg:py-20">
         <div className="mx-auto w-full max-w-[1166px] px-4 sm:px-8">
-          {liveArticles.length > 0 && (
-            <div className="mb-8 flex items-center gap-5">
-              <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[2.60px] text-[#2e4a3f]">
-                CURATED COLLECTIONS
-              </div>
-              <div className="h-px flex-1 bg-[#1e1e1e1a]" />
+          <div className="mb-8 flex items-center gap-5">
+            <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[2.60px] text-[#2e4a3f]">
+              CURATED COLLECTIONS
             </div>
-          )}
-          {staticCollections.map((item, index) => (
-            <Link href="/article/seclude-ramgarh-willows" key={item.number}>
+            <div className="h-px flex-1 bg-[#1e1e1e1a]" />
+          </div>
+          {curatedRows.map((item, index) => (
+            <Link href={item.href} key={item.number}>
               <div
                 className={`group flex cursor-pointer flex-col gap-6 py-10 transition-opacity hover:opacity-80 md:flex-row md:items-start md:gap-12 ${
-                  index < staticCollections.length - 1
+                  index < curatedRows.length - 1
                     ? "border-b border-[#1e1e1e1a]"
                     : ""
                 }`}
@@ -166,17 +188,17 @@ export const BestOfPage = (): JSX.Element => {
                   <p className="[font-family:'Inter',Helvetica] text-[9px] font-normal tracking-[1.44px] text-[#2e4a3f]">
                     {item.category}
                   </p>
-                  <h2 className="pt-2 [font-family:'Playfair_Display',Helvetica] text-[22px] font-normal leading-[30px] text-[#1e1e1e]">
+                  <h2 className="pt-2 [font-family:'Playfair_Display',Helvetica] text-[22px] font-normal leading-[30px] text-[#1e1e1e] group-hover:underline">
                     {item.title}
                   </h2>
-                  <p className="pt-3 [font-family:'Inter',Helvetica] text-[14px] font-normal leading-[24px] text-[#6b6b6b]">
+                  <p className="pt-3 [font-family:'Inter',Helvetica] text-[14px] font-normal leading-[24px] text-[#6b6b6b] line-clamp-3">
                     {item.description}
                   </p>
                   <p className="pt-4 [font-family:'Inter',Helvetica] text-[11px] font-normal text-[#6b6b6b80]">
                     {item.meta}
                   </p>
                 </div>
-                <div className="shrink-0 self-center [font-family:'Inter',Helvetica] text-[11px] font-medium tracking-[1.10px] text-[#2e4a3f] opacity-0 transition-opacity group-hover:opacity-100">
+                <div className="shrink-0 self-center [font-family:'Inter',Helvetica] text-[11px] font-medium tracking-[1.10px] text-[#2e4a3f] opacity-60 transition-opacity group-hover:opacity-100">
                   READ →
                 </div>
               </div>

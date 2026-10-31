@@ -405,7 +405,7 @@ export const PremiumEditorial = (): JSX.Element => {
 
   const staticToTrendingCard = (item: typeof trendingItems[0]): TrendingCard => ({
     key: item.number,
-    href: "#",
+    href: "/reviews",
     number: item.number,
     category: item.category,
     title: item.title,
@@ -425,7 +425,7 @@ export const PremiumEditorial = (): JSX.Element => {
 
   const staticToIntelCard = (item: typeof intelligenceItems[0]): IntelCard => ({
     key: item.title,
-    href: "/article/seclude-ramgarh-willows",
+    href: "/intelligence",
     category: item.category,
     title: item.title,
     description: item.description,
@@ -966,9 +966,11 @@ export const PremiumEditorial = (): JSX.Element => {
                 </div>
                 <div className="h-px w-10 bg-[#1e1e1e1a]" />
               </div>
-              <button className="[font-family:'Inter',Helvetica] text-[11px] font-normal leading-[16.5px] text-[#6b6b6b]">
-                View all →
-              </button>
+              <Link href="/reviews">
+                <span className="cursor-pointer [font-family:'Inter',Helvetica] text-[11px] font-normal leading-[16.5px] text-[#6b6b6b] hover:text-[#2e4a3f]">
+                  View all →
+                </span>
+              </Link>
             </div>
             <div className="pt-10">
               {trendingCards.map((card, index) => (
@@ -1008,9 +1010,11 @@ export const PremiumEditorial = (): JSX.Element => {
                 </div>
                 <div className="h-px w-10 bg-[#1e1e1e1a]" />
               </div>
-              <button className="[font-family:'Inter',Helvetica] text-[11px] font-normal leading-[16.5px] text-[#6b6b6b]">
-                All articles →
-              </button>
+              <Link href="/intelligence">
+                <span className="cursor-pointer [font-family:'Inter',Helvetica] text-[11px] font-normal leading-[16.5px] text-[#6b6b6b] hover:text-[#2e4a3f]">
+                  All articles →
+                </span>
+              </Link>
             </div>
             <div className="pt-10">
               {intelCards.map((card, index) => (

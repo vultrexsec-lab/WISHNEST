@@ -9,7 +9,6 @@ import NotFound from "@/pages/not-found";
 
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { PremiumEditorial } from "@/pages/PremiumEditorial";
-import { ArticlePage } from "@/pages/ArticlePage";
 import { ArticleDetailPage } from "@/pages/ArticleDetailPage";
 import { DestinationsPage } from "@/pages/DestinationsPage";
 import { BestOfPage } from "@/pages/BestOfPage";
@@ -77,7 +76,7 @@ function Router() {
       <ScrollToTop />
       <Switch>
         <Route path="/" component={PremiumEditorial} />
-        <Route path="/article/seclude-ramgarh-willows" component={ArticlePage} />
+        <Route path="/article/seclude-ramgarh-willows" component={() => { window.location.replace("/reviews"); return null; }} />
         <Route path="/article/:id" component={ArticleDetailPage} />
         <Route path="/reviews" component={ReviewsPage} />
         <Route path="/destinations" component={DestinationsPage} />
