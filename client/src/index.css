@@ -29,6 +29,18 @@
     all: unset;
   }
 
+  /* WishNest editorial tokens (Step 2 design foundation) */
+  :root {
+    --wn-bg: #f8f7f4;
+    --wn-bg-warm: #f4f1ea;
+    --wn-ink: #1e1e1e;
+    --wn-muted: #6b6b6b;
+    --wn-sage: #2e4a3f;
+    --wn-sage-dark: #243a32;
+    --wn-border: #1e1e1a1a;
+    --wn-max: 1166px;
+  }
+
   :root {
     --background: 0 0% 100%;
     --foreground: 222.2 47.4% 11.2%;

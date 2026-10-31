@@ -475,36 +475,35 @@ export const PremiumEditorial = (): JSX.Element => {
           </div>
           <div className="max-w-[860px]">
             <p className="opacity-60 [font-family:'Inter',Helvetica] text-[11px] font-normal leading-[16.5px] tracking-[2.64px] text-white">
-              CURATED · INDEPENDENT · INSIGHTFUL
+              INDEPENDENT · EDITORIAL · DESIGN-LITERATE
             </p>
-            <h1 className="pt-5 [font-family:'Playfair_Display',Helvetica] text-[38px] font-normal leading-[1.04] tracking-[0] text-white sm:text-[56px] sm:pt-7 lg:text-[87.5px]">
-              Discover Better
+            <h1 className="pt-5 [font-family:'Playfair_Display',Helvetica] text-[38px] font-normal leading-[1.04] tracking-[0] text-white sm:text-[56px] sm:pt-7 lg:text-[72px] lg:leading-[1.05]">
+              Places worth discovering.
               <br />
-              <span className="italic">Places To Stay,</span>
-              <br />
-              Invest &amp; Belong
+              <span className="italic">Ideas worth building.</span>
             </h1>
             <p className="max-w-[540px] pt-8 [font-family:'Inter',Helvetica] text-[16.3px] font-normal leading-[28.6px] tracking-[0] text-[#ffffffb2]">
-              Reviews, destination guides, hospitality intelligence and
-              architectural insights — by people who actually care about design.
+              Independent perspectives on places, design, hospitality and the
+              future of how we live — reviews, destinations, Reimagined™ and
+              market intelligence.
             </p>
             <div className="flex flex-wrap gap-4 pt-10">
               <Link href="/reviews">
                 <Button className="h-auto rounded-none bg-[#2e4a3f] px-8 py-4 [font-family:'Inter',Helvetica] text-[11px] font-medium leading-[16.5px] tracking-[1.32px] text-white hover:bg-[#243a32]">
-                  <span>EXPLORE REVIEWS</span>
+                  <span>EXPLORE STORIES</span>
                   <img
                     className="ml-3 h-3.5 w-3.5"
-                    alt="Icon"
+                    alt=""
                     src="/figmaAssets/icon.svg"
                   />
                 </Button>
               </Link>
-              <Link href="/intelligence">
+              <Link href="/reimagined">
                 <Button
                   variant="outline"
                   className="h-auto rounded-none border-[0.8px] border-[#ffffff4c] bg-transparent px-8 py-4 [font-family:'Inter',Helvetica] text-[11px] font-medium leading-[16.5px] tracking-[1.32px] text-white hover:bg-white hover:text-[#1a1a1a]"
                 >
-                  VIEW INTELLIGENCE
+                  REIMAGINED™
                 </Button>
               </Link>
             </div>
@@ -934,7 +933,7 @@ export const PremiumEditorial = (): JSX.Element => {
                 Reimagined™
               </h2>
               <div className="pt-3 [font-family:'Playfair_Display',Helvetica] text-[17px] font-normal italic leading-[25.5px] text-[#6b6b6b]">
-                ArrowX Design Study
+                The art of possibility · ArrowX design partner
               </div>
             </div>
             <p className="[font-family:'Inter',Helvetica] text-lg font-normal leading-[32px] text-[#6b6b6b]">
@@ -1037,6 +1036,41 @@ export const PremiumEditorial = (): JSX.Element => {
           </div>
         </div>
       </section>
+
+      {/* Property owners — editorial invitation (not a sales landing) */}
+      <section className="border-y border-[#1e1e1e1a] bg-[#f4f1ea] py-16 lg:py-24">
+        <div className="mx-auto grid w-full max-w-[1166px] gap-10 px-4 sm:px-8 lg:grid-cols-[1fr_1fr] lg:items-center">
+          <div>
+            <p className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[2.60px] text-[#2e4a3f]">
+              FOR PROPERTY OWNERS
+            </p>
+            <h2 className="pt-4 [font-family:'Playfair_Display',Helvetica] text-[32px] font-normal leading-[1.15] text-[#1e1e1e] lg:text-[42px]">
+              What could your property become?
+            </h2>
+            <p className="max-w-[480px] pt-5 [font-family:'Inter',Helvetica] text-[16px] leading-[28px] text-[#6b6b6b]">
+              Explore a complimentary initial design perspective for your hotel,
+              resort or hospitality property — through WishNest Reimagined™, with
+              design partner ArrowX. No obligation to proceed with any project.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3 lg:justify-end">
+            <Link href="/reimagined">
+              <Button className="h-auto rounded-none bg-[#2e4a3f] px-6 py-3.5 [font-family:'Inter',Helvetica] text-[11px] font-medium tracking-[1.32px] text-white hover:bg-[#243a32]">
+                EXPLORE REIMAGINED™
+              </Button>
+            </Link>
+            <Link href="/get-reviewed">
+              <Button
+                variant="outline"
+                className="h-auto rounded-none border border-[#2e4a3f] bg-transparent px-6 py-3.5 [font-family:'Inter',Helvetica] text-[11px] font-medium tracking-[1.32px] text-[#2e4a3f] hover:bg-[#2e4a3f] hover:text-white"
+              >
+                REQUEST AN INITIAL ASSESSMENT
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </section>
+
       <section className="bg-white py-16 lg:py-24">
         <div className="mx-auto w-full max-w-[1166px] px-4 sm:px-8">
           <div className="flex items-center justify-between gap-6">
