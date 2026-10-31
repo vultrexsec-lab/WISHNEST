@@ -83,7 +83,7 @@ def _enrich_brief_with_properties(
     lines.append(
         "\nCRITICAL: Write each section specifically about that named property "
         "using only facts from the research sources. Do NOT write generic "
-        "sections that could apply to any hotel. Use ONLY the listed address — never invent street addresses."
+        "sections that could apply to any hotel. Use ONLY the listed address — never invent street addresses. Do not label ratings as Google Live. Do not give investment or ROI advice without hard data. Avoid travel clichés in headline and body."
     )
     return brief + "\n".join(lines)
 

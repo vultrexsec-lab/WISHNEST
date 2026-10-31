@@ -2056,7 +2056,7 @@ def build_deep_gallery_photo_assignments(
     results: list[dict] = []
 
     for section_type in section_types:
-        pick = pool.pick_for_section(section_type, used, allow_reuse=True)
+        pick = pool.pick_for_section(section_type, used, allow_reuse=False)
         if pick is not None:
             url, cat = pick
         else:
@@ -2204,7 +2204,7 @@ def generate_article_images(
 
             if smart_pool and smart_pool.available:
                 result = smart_pool.pick_for_section(
-                    section_type, used_urls, allow_reuse=True
+                    section_type, used_urls, allow_reuse=False
                 )
                 if result is not None:
                     # SmartPhotoPool handles preferred → safe fallback routing.
@@ -2360,7 +2360,7 @@ def generate_article_images(
             if pool is None or not pool.available:
                 continue
             result = pool.pick_for_section(
-                section_type, used_urls, allow_reuse=True
+                section_type, used_urls, allow_reuse=False
             )
             if result is not None:
                 url, vision_cat = result
@@ -2382,7 +2382,7 @@ def generate_article_images(
         listing pool.  Listings are NOT locked to a single section — the same
         property gallery can supply photos for multiple sections.  Unique-image
         deduplication is handled at URL level via *used_urls* and the pool's
-        own _used_proxied set; with allow_reuse=True a photo can repeat only
+        own _used_proxied set; with allow_reuse=False a photo can repeat only
         when the gallery is smaller than the number of sections.
 
         Returns (proxied_url, listing, vision_cat) or None when every listing
@@ -2393,7 +2393,7 @@ def generate_article_images(
             if pool is None or not pool.available:
                 continue
             result = pool.pick_for_section(
-                section_type, used_urls, allow_reuse=True
+                section_type, used_urls, allow_reuse=False
             )
             if result is not None:
                 url, vision_cat = result
@@ -2447,7 +2447,7 @@ def generate_article_images(
                     if _fb_pool is None:
                         continue
                     _fb_result = _fb_pool.pick_for_section(
-                        section_type, used_urls, allow_reuse=True
+                        section_type, used_urls, allow_reuse=False
                     )
                     if _fb_result is not None:
                         fallback_url, vision_cat = _fb_result

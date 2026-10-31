@@ -70,6 +70,58 @@ REQUIRED JSON SHAPE
           Do not write generic “any hotel” copy. Ground architecture, rooms, landscape and
           experience in the named property only.
 
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EDITORIAL QUALITY LOCK (client audit — non-negotiable)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+These rules override any urge to sound like travel marketing or generic AI copy.
+
+HEADLINE & SUBTITLE
+• Forbidden clichés (never use): "luxurious escape", "serenity amidst", "nature's embrace",
+  "hidden gem", "perfect blend", "breathtaking views", "unforgettable experience",
+  "true highlight", "culinary journey", "exceptional hospitality" as empty praise,
+  "premier destination", "paradise", "oasis of calm".
+• Headline must include a concrete, place-specific angle (setting, region, typology,
+  design trait) — e.g. "forest-side resort near Solan" only if verified in sources.
+• Subtitle: one verified concrete detail (road/region, room count if known, or design
+  trait) — not a second slogan.
+
+FACTS, RATINGS, ADDRESS
+• Copy property name and address EXACTLY from the research brief / Maps data.
+  Do not respell village names (if brief says Dhamran, do not write Dharan).
+• Never label ratings as "Google Live" or "live now" unless the brief explicitly
+  provides a retrieval timestamp. Prefer: "Maps listing (as provided in research brief):
+  X★ · N reviews" without inventing currency.
+• Every amenity claim must be grounded in the brief or sources. If unknown, omit —
+  do not invent pools, wine lists, balconies, or spa menus.
+
+PRICES & INVESTMENT (critical)
+• Do NOT recommend the property as a "second-home investment", "promising investment",
+  or give ROI / rate-upside advice unless the brief contains hard data (ADR, occupancy,
+  comps) and you state methodology + uncertainty.
+• Do NOT invent nightly rates in USD/INR. If no dated rate in sources, omit price
+  claims entirely. price_band may be null.
+• FAQ must NOT ask/answer investment suitability unless evidence exists; prefer
+  practical traveller questions (access, season, who it suits) with evidence-tied answers.
+
+WRITING
+• Prefer reported specificity over adjectives. Describe what architecture/layout does,
+  what rooms include when known, what dining is documented — not "perfect" or "premier".
+• Do not repeat the same luxury/comfort/nature paragraph under multiple headings.
+• Each section must add new information; no copy-paste praise blocks.
+
+ABCDE SCORES
+• Scores remain in JSON fields only (not inside full_article HTML).
+• best_for / not_ideal_for must each be justified by one concrete reason tied to
+  evidence (access, setting, facilities) — not generic lifestyle labels alone.
+• If evidence is thin, use conservative scores (B/B− range) and lower confidence —
+  never award A/A+ on marketing language alone.
+
+IMAGES (for captions/alt guidance to downstream)
+• Captions and alt_text must describe DISTINCT subjects (room / dining / outdoor /
+  exterior). Do not write the same caption twice. Never invent what is not in the brief.
+
+
           MANDATORY STRUCTURE for full_article:
           • Use semantic HTML throughout: <h2>, <h3>, <p>, <ul>, <ol>, <table>.
           • Every <h2> and <h3> must be followed by at least one <p> tag (never
@@ -127,7 +179,7 @@ REQUIRED JSON SHAPE
       "pull_quotes": [string, string, string]   (2-3 quotable lines from full_article),
       "faq_section": [{{"question": string, "answer": string}}, ...]
                      (4-5 items; use real long-tail question formats that people search
-                      e.g. "Is [location] good for second-home investment?",
+                      e.g. "How is road access to [property] from the nearest city?",
                            "What is the ROI on boutique resorts in [location]?"),
 
       ── ADVANCED SEO BLOCK ─────────────────────────────────────────────────
@@ -352,6 +404,60 @@ def _build_correction_message(violations: list[str]) -> str:
     return "\n".join(lines)
 
 
+
+
+_BANNED_PHRASE_RES = [
+    r"google\s*live",
+    r"promising\s+option\s+for\s+second[- ]home\s+investment",
+    r"second[- ]home\s+investment\s+opportunity",
+    r"strong\s+roi",
+    r"guaranteed\s+returns",
+]
+
+
+def sanitize_article_promotional_language(art: dict) -> dict:
+    """Strip / soften audit-flagged promotional and false-live language."""
+    import re
+    for key in ("full_article", "subtitle", "executive_summary", "headline"):
+        val = art.get(key)
+        if not isinstance(val, str) or not val:
+            continue
+        text = val
+        text = re.sub(r"(?i)\bgoogle\s*live\b", "Maps listing (research brief)", text)
+        text = re.sub(
+            r"(?i)promising\s+option\s+for\s+second[- ]home\s+investment[^.]*\.",
+            "Investment suitability is outside the scope of this editorial profile without property-level financial data. ",
+            text,
+        )
+        # Soften worst clichés in body only
+        if key == "full_article":
+            for phrase, repl in [
+                (r"(?i)perfect\s+blend", "combination"),
+                (r"(?i)unforgettable\s+experience", "stay"),
+                (r"(?i)breathtaking\s+views", "views"),
+                (r"(?i)culinary\s+journey", "dining"),
+                (r"(?i)nature'?s\s+embrace", "the surrounding landscape"),
+                (r"(?i)luxurious\s+escape", "stay"),
+            ]:
+                text = re.sub(phrase, repl, text)
+        art[key] = text
+    # FAQ investment answers
+    faqs = art.get("faq_section")
+    if isinstance(faqs, list):
+        cleaned = []
+        for item in faqs:
+            if not isinstance(item, dict):
+                continue
+            q = str(item.get("question") or item.get("q") or "")
+            a = str(item.get("answer") or item.get("a") or "")
+            if re.search(r"(?i)invest|roi|second[- ]home\s+buy", q + " " + a):
+                if not re.search(r"(?i)occupancy|ADR|comparable|methodology", a):
+                    continue  # drop unsupported investment FAQ
+            cleaned.append(item)
+        art["faq_section"] = cleaned
+    return art
+
+
 def generate_article_packages(
     brief: str,
     sources: list[dict],
@@ -444,7 +550,7 @@ def generate_article_packages(
 
         if not all_violations:
             logger.info("All SEO constraints satisfied on attempt %d.", attempt)
-            return articles
+            return [sanitize_article_promotional_language(a) if isinstance(a, dict) else a for a in articles]
 
         last_articles = articles
         logger.warning(
@@ -489,4 +595,4 @@ def generate_article_packages(
                 len(desc), len(art["meta_description"]), art["meta_description"],
             )
 
-    return last_articles
+    return [sanitize_article_promotional_language(a) if isinstance(a, dict) else a for a in last_articles]
