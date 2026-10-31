@@ -459,6 +459,13 @@ export const ArticleDetailPage = (): JSX.Element => {
                 </div>
               )}
 
+              {Boolean((article.property_snapshot as { fact_check?: { passed?: boolean } } | null)?.fact_check) &&
+                (article.property_snapshot as { fact_check?: { passed?: boolean } }).fact_check?.passed === false && (
+                <div className="mb-8 border border-amber-700/30 bg-amber-50 px-4 py-3 text-[13px] text-amber-950">
+                  Fact-check flags were raised for this draft — verify claims before treating as final.
+                </div>
+              )}
+
               {article.pull_quotes && article.pull_quotes.length > 0 && (
                 <div className="mt-12 space-y-6 border-l-2 border-[#2e4a3f] pl-6">
                   {article.pull_quotes.map((quote, i) => (

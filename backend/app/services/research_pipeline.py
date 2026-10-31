@@ -1041,13 +1041,20 @@ def run_research_pipeline(
             headline=raw.get("headline", ""),
         )
         if not fc_result.passed:
+            hard = [v for v in fc_result.violations if getattr(v, "severity", "") == "error"]
             logger.warning(
-                "Fact-check FAILED for '%s': %d violation(s). "
-                "Article flagged for human review.",
+                "Fact-check FAILED for '%s': %d violation(s) (%d hard).",
                 (raw.get("headline") or "")[:60],
                 len(fc_result.violations),
+                len(hard),
             )
-            # Append a fact-check notice to executive summary so reviewers see it
+            # Hard errors: do not persist — forces re-generation with cleaner brief
+            if hard:
+                logger.error(
+                    "Dropping package (fact-check hard fail): %s",
+                    "; ".join(getattr(v, "claim_in_article", str(v))[:80] for v in hard[:3]),
+                )
+                continue
             summary = raw.get("executive_summary") or ""
             violation_list = "; ".join(
                 f"[{v.severity.upper()}] {v.claim_in_article}" for v in fc_result.violations[:3]
@@ -1056,12 +1063,26 @@ def run_research_pipeline(
                 f"⚠ FACT-CHECK FLAG: {violation_list}. "
                 f"Full review required before approval. | {summary}"
             )[:500]
+            snap = raw.get("property_snapshot") if isinstance(raw.get("property_snapshot"), dict) else {}
+            snap = dict(snap or {})
+            snap["fact_check"] = {
+                "passed": False,
+                "violations": [
+                    {"severity": v.severity, "claim": v.claim_in_article}
+                    for v in fc_result.violations[:8]
+                ],
+            }
+            raw["property_snapshot"] = snap
         else:
             logger.info(
                 "Fact-check PASSED for '%s' (%d warning(s)).",
                 (raw.get("headline") or "")[:60],
                 len(fc_result.warnings),
             )
+            snap = raw.get("property_snapshot") if isinstance(raw.get("property_snapshot"), dict) else {}
+            snap = dict(snap or {})
+            snap["fact_check"] = {"passed": True, "warnings": list(fc_result.warnings)[:5]}
+            raw["property_snapshot"] = snap
         fact_checked_packages.append(raw)
     raw_packages = fact_checked_packages
 

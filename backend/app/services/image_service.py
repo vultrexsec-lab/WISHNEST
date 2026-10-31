@@ -2186,6 +2186,7 @@ def generate_article_images(
             hero_url = hero_result[0] if hero_result else smart_pool.pick_any(used_urls)
             if hero_url:
                 used_urls.add(hero_url)
+                logger.info("Hero reserved for header only: %s", (hero_url or "")[:80])
 
         logger.info(
             "Hero image resolved for %r: %s",

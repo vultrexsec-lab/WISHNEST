@@ -374,6 +374,35 @@ def fact_check_article(
     global_rules = fact_db.get("global_rules", {})
     result.warnings += _check_global_rules(full_text, global_rules)
 
+
+    # Geographic absurdities (always error-level)
+    text_l = full_text.lower()
+    geo_rules = [
+        (r"taj\s*mahal", r"jaipur", "Taj Mahal is in Agra, not Jaipur"),
+        (r"india\s*gate", r"\b(jaipur|mumbai|goa)\b", "India Gate is in New Delhi"),
+        (r"gateway\s+of\s+india", r"\b(delhi|jaipur|agra)\b", "Gateway of India is in Mumbai"),
+        (r"hawa\s*mahal", r"\b(agra|delhi|mumbai)\b", "Hawa Mahal is in Jaipur"),
+    ]
+    for landmark, wrong_city, msg in geo_rules:
+        if re.search(landmark, text_l) and re.search(wrong_city, text_l):
+            # allow if correct city also heavily present for landmark
+            ok = False
+            if "taj" in landmark and re.search(r"\bagra\b", text_l):
+                ok = True
+            if "india\s*gate" in landmark and re.search(r"\b(delhi|new delhi)\b", text_l):
+                ok = True
+            if not ok:
+                all_violations.append(
+                    FactViolation(
+                        violation_type="geo_mismatch",
+                        claim_in_article=msg,
+                        expected_value="Correct city association",
+                        property_name="geo",
+                        severity="error",
+                        suggestion=msg,
+                    )
+                )
+
     result.violations = all_violations
     hard_errors = [v for v in all_violations if v.severity == "error"]
     result.passed = len(hard_errors) == 0
