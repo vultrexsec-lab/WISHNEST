@@ -135,7 +135,7 @@ export function GetReviewedPage(): JSX.Element {
             editorial-led, with clear scope. Use the same submission form and select
             stage “Upcoming” or “Under development”, and type “Land / development site” where relevant.
           </p>
-          <Link href="/submit-project">
+          <Link href="/get-reviewed/submit">
             <Button className="mt-6 rounded-none bg-[#2e4a3f] px-6 py-3.5 text-[11px] tracking-[1.3px] text-white hover:bg-[#243a32]">
               START A DEVELOPMENT ENQUIRY
             </Button>
