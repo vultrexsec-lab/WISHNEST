@@ -162,10 +162,25 @@ export const ReviewsPage = (): JSX.Element => {
             </div>
           )}
           {isLoading ? (
-            <div className="flex items-center justify-center py-20">
-              <span className="[font-family:\'Inter\',Helvetica] text-[12px] tracking-[1.5px] text-[#6b6b6b]">
-                LOADING REVIEWS…
-              </span>
+            <div className="grid gap-10 md:grid-cols-2 xl:grid-cols-3" aria-busy="true" aria-label="Loading reviews">
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className="animate-pulse">
+                  <div className="h-[255px] w-full bg-[#e8e6e0]" />
+                  <div className="mt-5 h-3 w-1/3 bg-[#e8e6e0]" />
+                  <div className="mt-3 h-6 w-4/5 bg-[#e8e6e0]" />
+                  <div className="mt-2 h-4 w-full bg-[#e8e6e0]" />
+                </div>
+              ))}
+            </div>
+          ) : isError ? (
+            <div className="py-16 text-center">
+              <p className="[font-family:'Playfair_Display',Helvetica] text-[22px]">Unable to load reviews</p>
+              <p className="mx-auto mt-2 max-w-[400px] text-[14px] text-[#6b6b6b]">
+                The editorial feed is temporarily unavailable. Please try again.
+              </p>
+              <button type="button" onClick={() => refetch()} className="mt-6 text-[12px] tracking-[1px] text-[#2e4a3f] underline">
+                RETRY
+              </button>
             </div>
           ) : hasLive ? (
             <div className="grid gap-10 md:grid-cols-2 xl:grid-cols-3">

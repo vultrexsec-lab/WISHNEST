@@ -203,11 +203,16 @@ export const ArticleDetailPage = (): JSX.Element => {
     return (
       <main className="min-h-screen bg-[#f8f7f4] text-[#1e1e1e]">
         <SiteNav />
-        <div className="flex items-center justify-center gap-2 py-40 text-[#6b6b6b]">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          <span className="[font-family:'Inter',Helvetica] text-[13px]">
-            Loading article…
-          </span>
+        <div className="mx-auto max-w-[720px] px-4 py-16" aria-busy="true" aria-label="Loading article">
+          <div className="h-3 w-24 animate-pulse bg-[#e8e6e0]" />
+          <div className="mt-6 h-10 w-full animate-pulse bg-[#e8e6e0]" />
+          <div className="mt-3 h-10 w-3/4 animate-pulse bg-[#e8e6e0]" />
+          <div className="mt-10 aspect-[16/9] w-full animate-pulse bg-[#e8e6e0]" />
+          <div className="mt-8 space-y-3">
+            <div className="h-4 w-full animate-pulse bg-[#e8e6e0]" />
+            <div className="h-4 w-full animate-pulse bg-[#e8e6e0]" />
+            <div className="h-4 w-5/6 animate-pulse bg-[#e8e6e0]" />
+          </div>
         </div>
       </main>
     );

@@ -92,7 +92,7 @@ export const ReimaginedPage = (): JSX.Element => {
         </div>
 
         {isLoading && (
-          <div className="mt-12 grid gap-8 sm:grid-cols-2 lg:grid-cols-3" aria-busy="true" aria-label="Loading portfolio">
+          <div className="mt-12 grid gap-8 sm:grid-cols-2 lg:grid-cols-3" aria-busy="true" aria-label="">
             {[1, 2, 3].map((i) => (
               <div key={i} className="animate-pulse">
                 <div className="aspect-[4/3] bg-[#e8e6e0]" />
