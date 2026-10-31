@@ -143,6 +143,23 @@ export function GetReviewedPage(): JSX.Element {
         </div>
       </section>
 
+      
+      <section className="border-t border-[#1e1e1e1a] bg-[#f4f1ea] py-12">
+        <div className="mx-auto max-w-[720px] px-4 text-[14px] leading-[24px] text-[#3a3a3a] sm:px-8">
+          <p className="text-[10px] font-medium tracking-[2px] text-[#2e4a3f]">IMPORTANT</p>
+          <p className="mt-3">
+            Submitting a project requests a <strong>complimentary initial design perspective</strong>
+            pathway. It does <strong>not</strong> guarantee editorial coverage, a published review,
+            a Reimagined™ feature, or any score. Materials may be shared with design partner ArrowX
+            only as needed for that assessment and only with your consent on the form.{" "}
+            <a href="/commercial-disclosure" className="text-[#2e4a3f] underline">Full disclosure</a>
+            {" · "}
+            <a href="/editorial-standards" className="text-[#2e4a3f] underline">Editorial standards</a>
+            .
+          </p>
+        </div>
+      </section>
+
       <SiteFooter />
     </main>
   );

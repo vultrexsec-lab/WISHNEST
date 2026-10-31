@@ -13,6 +13,13 @@ import {
 } from "@/lib/article-types";
 import { resolveMediaUrl, resolveMediaHtml, isMediaUrl } from "@/lib/mediaUrl";
 
+function estimateReadingTime(html: string | null | undefined): number {
+  const text = (html || "").replace(/<[^>]+>/g, " ");
+  const words = text.split(/\s+/).filter(Boolean).length;
+  return Math.max(1, Math.round(words / 220));
+}
+
+
 /**
  * Safely convert any property_snapshot value to a display string.
  *
@@ -309,8 +316,15 @@ export const ArticleDetailPage = (): JSX.Element => {
           )}
           <p className="pt-6 [font-family:'Inter',Helvetica] text-[11px] text-[#ffffff66]">
             {formatDate(article.created_at)}
+            {` · ${estimateReadingTime(article.full_article)} min read`}
             {article.category ? ` · ${String(article.category).replace(/_/g, " ")}` : ""}
             {article.focus_keyword ? ` · ${article.focus_keyword}` : ""}
+          </p>
+          <p className="pt-3 [font-family:'Inter',Helvetica] text-[10px] tracking-[0.04em] text-[#ffffff55]">
+            Independent editorial ·{" "}
+            <a href="/methodology" className="underline hover:text-white">ABCDE™ method</a>
+            {" · "}
+            <a href="/editorial-standards" className="underline hover:text-white">Standards</a>
           </p>
         </div>
       </section>
@@ -451,7 +465,13 @@ export const ArticleDetailPage = (): JSX.Element => {
                   WishNest is an independent publication. Scores and commentary reflect available
                   public signals, design analysis and editorial judgement — not a paid placement.
                   Property names and locations are grounded in mapped sources where provided;
-                  always verify current operational details with the property.
+                  always verify current operational details with the property.{" "}
+                  <a href="/editorial-standards" className="text-[#2e4a3f] underline">Standards</a>
+                  {" · "}
+                  <a href="/methodology" className="text-[#2e4a3f] underline">ABCDE™ method</a>
+                  {" · "}
+                  <a href="/commercial-disclosure" className="text-[#2e4a3f] underline">Commercial disclosure</a>
+                  . Corrections: editorial@wishnest.info
                 </p>
               </aside>
 

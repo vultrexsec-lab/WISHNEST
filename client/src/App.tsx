@@ -25,6 +25,9 @@ import { SocialPage } from "@/pages/SocialPage";
 import { GetReviewedPage } from "@/pages/GetReviewedPage";
 import { RequestCallPage } from "@/pages/RequestCallPage";
 import { SubmitProjectPage } from "@/pages/SubmitProjectPage";
+import { EditorialStandardsPage } from "@/pages/EditorialStandardsPage";
+import { MethodologyPage } from "@/pages/MethodologyPage";
+import { CommercialDisclosurePage } from "@/pages/CommercialDisclosurePage";
 import { SubmissionsAdminPage } from "@/pages/SubmissionsAdminPage";
 import { OutreachPage } from "@/pages/OutreachPage";
 import { ListeningPage } from "@/pages/ListeningPage";
@@ -94,6 +97,9 @@ function Router() {
         <Route path="/reimaging" component={ReimagingPage} />
         <Route path="/social" component={SocialPage} />
         <Route path="/request-call" component={RequestCallPage} />
+        <Route path="/editorial-standards" component={EditorialStandardsPage} />
+        <Route path="/methodology" component={MethodologyPage} />
+        <Route path="/commercial-disclosure" component={CommercialDisclosurePage} />
         <Route path="/get-reviewed" component={GetReviewedPage} />
         <Route path="/get-reviewed/submit" component={SubmitProjectPage} />
         <Route path="/submissions" component={SubmissionsAdminPage} />

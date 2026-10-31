@@ -8,8 +8,9 @@ const footerLinks = [
   { label: "Intelligence", href: "/intelligence" },
   { label: "Contributors", href: "/contributors" },
   { label: "Reimagined", href: "/reimagined" },
-  { label: "ABCDE™", href: "/entity/abcde" },
-  { label: "WishNest", href: "/entity/wishnest" },
+  { label: "ABCDE™ Methodology", href: "/methodology" },
+  { label: "Editorial Standards", href: "/editorial-standards" },
+  { label: "Commercial Disclosure", href: "/commercial-disclosure" },
   { label: "Get Reviewed", href: "/get-reviewed" },
   { label: "Newsletter", href: "/#newsletter" },
 ];

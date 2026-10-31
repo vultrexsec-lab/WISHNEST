@@ -327,10 +327,14 @@ export function SubmitProjectPage(): JSX.Element {
             {step === 4 && (
               <div className="space-y-4">
                 <p className="text-[13px] leading-[22px] text-[#6b6b6b]">
-                  WishNest is an independent publication. Submissions may be reviewed
-                  editorially and, only with appropriate scope, shared with a design
-                  partner (e.g. ArrowX) for a preliminary perspective. Marketing messages
-                  require separate consent where applicable.
+                  WishNest is an independent publication. A submission requests a complimentary
+                  initial perspective pathway only — it does not guarantee editorial coverage,
+                  publication, or any score. Details and files may be shared with design partner
+                  ArrowX solely to explore that assessment if you consent below. See{" "}
+                  <a href="/commercial-disclosure" className="text-[#2e4a3f] underline">disclosure</a>
+                  {" "}and{" "}
+                  <a href="/editorial-standards" className="text-[#2e4a3f] underline">standards</a>.
+                  Typical response: we acknowledge receipt; timelines vary and are not guaranteed.
                 </p>
                 <label className="flex items-start gap-2 text-[13px]">
                   <input type="checkbox" checked={form.consent_contact} onChange={(e) => set("consent_contact", e.target.checked)} className="mt-1" />

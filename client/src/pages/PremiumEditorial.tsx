@@ -46,7 +46,7 @@ const trustItems = [
   {
     symbol: "✦",
     title: "INDEPENDENT ANALYSIS",
-    description: "No paid placements, ever",
+    description: "Independent editorial — see our standards",
   },
   {
     symbol: "◈",
@@ -61,7 +61,7 @@ const trustItems = [
   {
     symbol: "◇",
     title: "SOURCE-BACKED EDITORIAL",
-    description: "Every claim, verified",
+    description: "Evidence-led editorial",
   },
 ];
 

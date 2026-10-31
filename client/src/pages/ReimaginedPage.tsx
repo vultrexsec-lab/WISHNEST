@@ -28,8 +28,10 @@ function afterUrl(a: Article): string | null {
 }
 
 export const ReimaginedPage = (): JSX.Element => {
-  const { data: articles, isLoading } = useQuery<Article[]>({
+  const { data: articles, isLoading, isError, refetch } = useQuery<Article[]>({
     queryKey: ["/api/articles"],
+    staleTime: 60_000,
+    retry: 2,
   });
 
   const projects = (articles || [])
@@ -85,14 +87,28 @@ export const ReimaginedPage = (): JSX.Element => {
             </h2>
           </div>
           <p className="[font-family:'Inter',Helvetica] text-[13px] text-[#6b6b6b]">
-            {isLoading ? "Loading…" : `${projects.length} project${projects.length === 1 ? "" : "s"}`}
+            {isLoading ? "…" : isError ? "—" : `${projects.length} project${projects.length === 1 ? "" : "s"}`}
           </p>
         </div>
 
         {isLoading && (
-          <div className="flex items-center justify-center gap-2 py-24 text-[#6b6b6b]">
-            <Loader2 className="h-5 w-5 animate-spin" />
-            Loading portfolio…
+          <div className="mt-12 grid gap-8 sm:grid-cols-2 lg:grid-cols-3" aria-busy="true" aria-label="Loading portfolio">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="animate-pulse">
+                <div className="aspect-[4/3] bg-[#e8e6e0]" />
+                <div className="mt-4 h-3 w-1/3 bg-[#e8e6e0]" />
+                <div className="mt-2 h-5 w-2/3 bg-[#e8e6e0]" />
+              </div>
+            ))}
+          </div>
+        )}
+        {isError && !isLoading && (
+          <div className="mt-12 py-16 text-center">
+            <p className="[font-family:'Playfair_Display',Helvetica] text-[22px]">Unable to load portfolio</p>
+            <p className="mt-2 text-[14px] text-[#6b6b6b]">Please try again in a moment.</p>
+            <button type="button" onClick={() => refetch()} className="mt-6 text-[12px] tracking-[1px] text-[#2e4a3f] underline">
+              RETRY
+            </button>
           </div>
         )}
 

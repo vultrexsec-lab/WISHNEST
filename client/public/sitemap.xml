@@ -9,4 +9,7 @@
   <url><loc>https://www.wishnest.info/get-reviewed/submit</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://www.wishnest.info/best-of</loc><changefreq>weekly</changefreq><priority>0.7</priority></url>
   <url><loc>https://www.wishnest.info/contributors</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
+  <url><loc>https://www.wishnest.info/editorial-standards</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://www.wishnest.info/methodology</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://www.wishnest.info/commercial-disclosure</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
 </urlset>

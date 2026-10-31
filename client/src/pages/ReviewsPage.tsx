@@ -54,8 +54,10 @@ function ReviewCard({ article }: { article: Article }) {
 }
 
 export const ReviewsPage = (): JSX.Element => {
-  const { data: articles = [], isLoading } = useQuery<Article[]>({
+  const { data: articles = [], isLoading, isError, refetch, isFetching } = useQuery<Article[]>({
     queryKey: ["/api/articles"],
+    staleTime: 60_000,
+    retry: 2,
   });
 
   const published = articles.filter(
