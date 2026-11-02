@@ -4,7 +4,6 @@ import { fetchWithTimeout } from "@/lib/fetchWithTimeout";
 
 // In production static hosts (e.g. Netlify) there's no dev-server proxy for
 // /api/*, so we need an absolute backend URL. Set VITE_API_BASE_URL at build
-// time to point at the live backend (e.g. Render). Locally/on Replit this is
 // left unset and requests stay relative, handled by the Vite proxy.
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 

@@ -193,12 +193,10 @@ def trigger_auto_generate(
     if not settings.openai_api_key:
         raise HTTPException(
             status_code=503,
-            detail="OPENAI_API_KEY not configured. Add it to Replit Secrets.",
         )
     if not settings.firecrawl_api_key:
         raise HTTPException(
             status_code=503,
-            detail="FIRECRAWL_API_KEY not configured. Add it to Replit Secrets.",
         )
 
     try:

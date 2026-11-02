@@ -179,7 +179,6 @@ def _log_missing_key_notice() -> None:
         "  WishNest setup notice: SERPAPI_KEY is not configured.\n"
         "  Live Google Maps hotel photos + real star ratings are disabled.\n"
         "\n"
-        "  To enable them, add SERPAPI_KEY in the Replit Secrets tab.\n"
         "\n"
         "  Until then, articles fall back to the existing dynamic image\n"
         "  search chain and LLM-estimated scores.\n"

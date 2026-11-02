@@ -1,14 +1,37 @@
-node_modules
-dist
-.DS_Store
-server/public
-vite.config.ts.*
-*.tar.gz
-# Python
-.pythonlibs/
-__pycache__/
-*.pyc
+# Dependencies
+node_modules/
 .venv/
-backend/app/static/images/*
-!backend/app/static/images/.gitkeep
-.vercel
+venv/
+__pycache__/
+*.py[cod]
+.Python
+
+# Build
+dist/
+build/
+*.egg-info/
+.cache/
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+
+# Logs / temp
+*.log
+npm-debug.log*
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Platform local
+.vercel/
+.netlify/

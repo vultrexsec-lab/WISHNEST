@@ -1,7 +1,6 @@
 """
 Central configuration for the WishNest AI Research Editor Agent backend.
 
-All secrets are read from environment variables (Replit Secrets in this
 environment). Nothing sensitive is ever hardcoded here.
 """
 import os
@@ -17,7 +16,6 @@ class Settings(BaseSettings):
     database_url: str = os.environ.get("DATABASE_URL", "")
 
     # --- AI / Research providers ---
-    # Accept CHATGPT_API_KEY as an alias for OPENAI_API_KEY (Replit secret name)
     openai_api_key: str = (
         os.environ.get("OPENAI_API_KEY", "")
         or os.environ.get("CHATGPT_API_KEY", "")

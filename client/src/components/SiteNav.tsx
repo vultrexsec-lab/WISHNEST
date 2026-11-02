@@ -5,7 +5,7 @@ import { Menu, X, Search, ChevronDown } from "lucide-react";
 import { SearchModal } from "@/components/SearchModal";
 import { NewsletterModal } from "@/components/NewsletterModal";
 
-/** Magazine reading vs commercial/service paths */
+/** Primary navigation groups: editorial reading vs services */
 const readLinks = [
   { label: "Reviews", href: "/reviews" },
   { label: "Destinations", href: "/destinations" },

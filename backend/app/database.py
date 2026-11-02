@@ -1,5 +1,4 @@
 """
-SQLAlchemy engine/session setup, using the existing Replit PostgreSQL
 database (same DATABASE_URL already provisioned for this project).
 """
 from sqlalchemy import create_engine

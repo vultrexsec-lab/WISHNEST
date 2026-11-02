@@ -457,7 +457,6 @@ app.mount("/api/static/images", StaticFiles(directory=str(STATIC_IMAGES_DIR)), n
 # CORS — allow_credentials=True requires explicit origins (no wildcard).
 _ALWAYS_ALLOWED = [
     "https://public-brown-one-94.vercel.app",
-    "https://b7f50de8-22d2-4e87-b4bd-7ec7e0b00cfc-00-1yj2ksywkheg8.pike.replit.dev",
     "https://wishnest.info",
     "https://www.wishnest.info",
     "https://wishnests.netlify.app",
