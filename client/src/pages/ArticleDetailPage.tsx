@@ -272,6 +272,7 @@ export const ArticleDetailPage = (): JSX.Element => {
     "pipeline",
     "eic_report",
     "editor_in_chief",
+    "sanitized_at",
   ]);
   const snapshotEntries = Object.entries(snapshot).filter(
     ([key]) => !HIDDEN_SNAPSHOT_KEYS.has(key),

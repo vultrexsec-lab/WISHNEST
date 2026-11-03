@@ -54,6 +54,7 @@ _PUBLIC_SNAPSHOT_HIDE = {
     "pipeline",
     "serpapi",
     "data_id",
+    "sanitized_at",
 }
 
 
