@@ -14,15 +14,15 @@ const staticCollections = [
     title: "The 12 Best Boutique Hotels in the Indian Himalaya",
     description:
       "From oak-canopy retreats in Uttarakhand to stone-walled sanctuaries in Himachal — the definitive list, independently scored.",
-    meta: "12 properties · Curated selection",
+    meta: "Live reviews · Collection page forthcoming",
   },
   {
     number: "02",
     category: "BEST WELLNESS RETREATS",
-    title: "Best Wellness Retreats for Discerning Travellers, Winter 2025",
+    title: "Wellness-led stays worth considering",
     description:
       "Not spa menus and salt pools. Genuine restorative environments where architecture, landscape, and programme are aligned.",
-    meta: "9 properties · Curated selection",
+    meta: "Live reviews · Collection page forthcoming",
   },
   {
     number: "03",
@@ -30,7 +30,7 @@ const staticCollections = [
     title: "Most Celebrated Architecturally-Led Stays in India",
     description:
       "Properties where the building itself is the experience — selected and scored by practicing architects.",
-    meta: "8 properties · Curated selection",
+    meta: "Live reviews · Collection page forthcoming",
   },
   {
     number: "04",
@@ -38,23 +38,23 @@ const staticCollections = [
     title: "Top Investment Plays in Boutique Indian Hospitality",
     description:
       "Markets with the strongest fundamentals: rising ADR, improving occupancy, and structural supply constraints.",
-    meta: "10 markets · Curated selection",
+    meta: "Editorial note · Full list forthcoming",
   },
   {
     number: "05",
     category: "SECOND HOME POTENTIAL",
-    title: "Best Destinations for Second Home Investment, 2025",
+    title: "Second-home destinations under review",
     description:
       "Where capital is being deployed intelligently — and why. Our annual analysis of emerging second-home markets.",
-    meta: "7 markets · Curated selection",
+    meta: "Editorial note · Full list forthcoming",
   },
   {
     number: "06",
     category: "UNDER THE RADAR",
-    title: "Hidden Gems: 8 Properties Most Guides Have Missed",
+    title: "Under-the-radar stays from the live library",
     description:
       "Extraordinary stays that haven't yet been discovered by the mainstream travel press. Reviewed, scored, and verified.",
-    meta: "8 properties · Curated selection",
+    meta: "Live reviews · Collection page forthcoming",
   },
 ];
 
@@ -92,12 +92,16 @@ export const BestOfPage = (): JSX.Element => {
     if (art) usedIds.add(art.id);
     // Prefer a real article URL; only fall back to /reviews when library empty
     const href = art ? `/article/${art.id}` : "/reviews";
+    const meta = art
+      ? item.meta
+      : "Collection page forthcoming · Open live reviews";
     // Date label: use article date or mark as curated archive
     const meta = art
       ? (art.location || item.meta)
       : "Curated archive — open Reviews for the live library";
     return {
       ...item,
+      meta: art ? item.meta : "Collection page forthcoming · Open live reviews",
       href,
       title: art ? art.headline : item.title,
       description: art

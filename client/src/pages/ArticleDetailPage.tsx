@@ -229,9 +229,9 @@ export const ArticleDetailPage = (): JSX.Element => {
           <p className="[font-family:'Inter',Helvetica] text-[13px] text-[#6b6b6b]">
             This article may not exist, or hasn't been generated yet.
           </p>
-          <Link href="/dashboard">
+          <Link href="/reviews">
             <span className="cursor-pointer [font-family:'Inter',Helvetica] text-[11px] font-medium tracking-[1px] text-[#2e4a3f] hover:opacity-70">
-              ← Back to review dashboard
+              ← Back to reviews
             </span>
           </Link>
         </div>
@@ -580,9 +580,25 @@ export const ArticleDetailPage = (): JSX.Element => {
               )}
 
               <div className="mt-16 border-t border-[#1e1e1e1a] pt-10">
-                <Link href="/dashboard">
+                <Link href={
+                  (article.category || "").toLowerCase() === "reimagined" || (article.category || "").toLowerCase() === "reimaging"
+                    ? "/reimagined"
+                    : (article.category || "").toLowerCase() === "destinations"
+                      ? "/destinations"
+                      : (article.category || "").toLowerCase() === "best-of"
+                        ? "/best-of"
+                        : "/reviews"
+                }>
                   <button className="[font-family:'Inter',Helvetica] text-[11px] font-medium tracking-[1.10px] text-[#2e4a3f] transition-opacity hover:opacity-70">
-                    ← Back to review dashboard
+                    ← Back to {
+                      (article.category || "").toLowerCase() === "reimagined" || (article.category || "").toLowerCase() === "reimaging"
+                        ? "Reimagined"
+                        : (article.category || "").toLowerCase() === "destinations"
+                          ? "destinations"
+                          : (article.category || "").toLowerCase() === "best-of"
+                            ? "Best Of"
+                            : "reviews"
+                    }
                   </button>
                 </Link>
               </div>
