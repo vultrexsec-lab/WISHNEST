@@ -36,10 +36,41 @@ _NO_STORE_HEADERS = {
 
 
 
+_PUBLIC_SNAPSHOT_HIDE = {
+    "fact_check",
+    "factcheck",
+    "google_live_sources",
+    "google_live_rating",
+    "google_live_review_count",
+    "google_rating",
+    "google_review_count",
+    "reimaging",
+    "user_prompt",
+    "source",
+    "original_photo_urls",
+    "maps_place_id",
+    "eic_report",
+    "editor_in_chief",
+    "pipeline",
+    "serpapi",
+    "data_id",
+}
+
+
+def _strip_public_snapshot(data: dict) -> dict:
+    snap = data.get("property_snapshot")
+    if isinstance(snap, dict):
+        data["property_snapshot"] = {
+            k: v for k, v in snap.items() if k not in _PUBLIC_SNAPSHOT_HIDE
+        }
+    return data
+
+
 def _article_out_public(article: Article) -> ArticleOut:
     """Serialize + soft-sanitize promotional language for public responses."""
     data = ArticleOut.model_validate(article).model_dump(mode="json")
     data = sanitize_article_promotional_language(data)
+    data = _strip_public_snapshot(data)
     return ArticleOut.model_validate(data)
 
 

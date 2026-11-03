@@ -255,13 +255,23 @@ export const ArticleDetailPage = (): JSX.Element => {
   // Hide internal pipeline / reimaging-studio fields from the public page.
   const HIDDEN_SNAPSHOT_KEYS = new Set([
     "google_live_sources",
+    "google_live_rating",
+    "google_live_review_count",
+    "google_rating",
+    "google_review_count",
+    "fact_check",
+    "factcheck",
     "reimaging",
     "user_prompt",
     "source",
     "original_photo_urls",
     "maps_place_id",
-    "google_rating",
-    "google_review_count",
+    "serpapi",
+    "data_id",
+    "place_id",
+    "pipeline",
+    "eic_report",
+    "editor_in_chief",
   ]);
   const snapshotEntries = Object.entries(snapshot).filter(
     ([key]) => !HIDDEN_SNAPSHOT_KEYS.has(key),
@@ -459,13 +469,6 @@ export const ArticleDetailPage = (): JSX.Element => {
                       dangerouslySetInnerHTML={{ __html: resolveMediaHtml(article.full_article) }}
                     />
                   </div>
-                </div>
-              )}
-
-              {Boolean((article.property_snapshot as { fact_check?: { passed?: boolean } } | null)?.fact_check) &&
-                (article.property_snapshot as { fact_check?: { passed?: boolean } }).fact_check?.passed === false && (
-                <div className="mb-8 border border-amber-700/30 bg-amber-50 px-4 py-3 text-[13px] text-amber-950">
-                  Fact-check flags were raised for this draft — verify claims before treating as final.
                 </div>
               )}
 
