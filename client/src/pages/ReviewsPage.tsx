@@ -146,7 +146,7 @@ export const ReviewsPage = (): JSX.Element => {
     return type === "review" || cat === "reviews" || cat === "review" || cat === "resort" || !cat;
   });
   // Prefer explicit reviews; never fall back to dumping every public article (includes Reimagined).
-  const displayReviews = explicitReviews;
+  const displayReviews = explicitReviews.filter((a) => Boolean(a.hero_image_url));
   const regions = useMemo(() => {
     const set = new Set<string>();
     displayReviews.forEach((a) => {

@@ -321,8 +321,11 @@ export const PremiumEditorial = (): JSX.Element => {
     queryKey: ["/api/articles"],
   });
 
-  const publishedArticles = (liveArticles ?? []).filter((a) =>
-    ["approved", "scheduled", "published"].includes(a.status) && !a.is_trash,
+  const publishedArticles = (liveArticles ?? []).filter(
+    (a) =>
+      ["approved", "scheduled", "published"].includes(a.status) &&
+      !a.is_trash &&
+      Boolean(a.hero_image_url),
   );
 
   // Featured review: newest published review-type article (falls back to any published)
