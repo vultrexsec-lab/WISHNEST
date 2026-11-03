@@ -1238,25 +1238,6 @@ function ArticlePreviewModal({
 
           {/* Main article body */}
           <div className="px-5 py-10 sm:px-10 sm:py-14">
-            
-      <div className="mx-auto max-w-[1166px] px-4 pb-2 sm:px-8">
-        <div className="mb-4 border border-white/15 bg-white/5 px-4 py-3 text-[12px] leading-[20px] text-white/75">
-          <p className="font-medium tracking-[0.06em] text-emerald-300/90">BEFORE YOU APPROVE</p>
-          <p className="mt-1">
-            Check: specific headline (no clichés), real address, no invented prices/ROI,
-            distinct images, ABCDE grades match evidence, and disclosure links if commercial
-            context applies. See{" "}
-            <a className="underline text-emerald-200/90" href="/editorial-standards" target="_blank" rel="noreferrer">
-              Standards
-            </a>
-            {" · "}
-            <a className="underline text-emerald-200/90" href="/methodology" target="_blank" rel="noreferrer">
-              Methodology
-            </a>
-            .
-          </p>
-        </div>
-      </div>
 <div className="mx-auto max-w-[780px]">
               {/* ABCDE sidebar + body two-column */}
               <div className="grid gap-10 lg:grid-cols-[minmax(0,540px)_200px] lg:gap-12">
@@ -2229,6 +2210,42 @@ function ArticleCard({
                 </Button>
                 <Button
                   variant="outline"
+                  onClick={async () => {
+                    try {
+                      const res = await apiRequest(
+                        "POST",
+                        `/api/articles/${article.id}/fact-check`,
+                      );
+                      if (!res.ok) {
+                        const err = await res.json().catch(() => ({}));
+                        throw new Error(
+                          (err as { detail?: string })?.detail || "Fact-check failed",
+                        );
+                      }
+                      const data = await res.json();
+                      invalidateArticleQueries();
+                      const fc = data.fact_check || {};
+                      toast({
+                        title: fc.passed ? "Fact-check passed" : "Fact-check flags",
+                        description: fc.passed
+                          ? "No hard violations stored on this article."
+                          : `${(fc.violations || []).length} issue(s) saved on snapshot — review before publish.`,
+                      });
+                    } catch (e) {
+                      toast({
+                        title: "Fact-check failed",
+                        description: e instanceof Error ? e.message : "Error",
+                        variant: "destructive",
+                      });
+                    }
+                  }}
+                  className="h-8 rounded-xl border-violet-500/40 bg-transparent px-3 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-violet-300 hover:bg-violet-500/10"
+                  data-testid={`button-factcheck-${article.id}`}
+                >
+                  FACT-CHECK
+                </Button>
+                <Button
+                  variant="outline"
                   onClick={requestDelete}
                   disabled={approveMutation.isPending || trashMutation.isPending}
                   className="h-8 rounded-xl border-red-500/30 bg-transparent px-3 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-red-400 hover:bg-red-500/10"
@@ -2884,6 +2901,7 @@ export const ReviewDashboard = (): JSX.Element => {
   const [activeTab, setActiveTab] = useState<DashboardTab>("all");
   const { logout } = useAuth();
   const [, navigate] = useLocation();
+  const { toast } = useToast();
 
   const handleLogout = () => {
     logout();
@@ -2928,6 +2946,42 @@ export const ReviewDashboard = (): JSX.Element => {
   return (
     <main className="min-h-screen bg-[#0a0f0d] text-white">
       <SiteNav />
+
+      <div className="mx-auto max-w-[1166px] px-4 pt-6 sm:px-8">
+        <div className="mb-2 border border-white/15 bg-white/5 px-4 py-3 text-[12px] leading-[20px] text-white/75">
+          <p className="font-medium tracking-[0.06em] text-emerald-300/90">EDITORIAL CONTROLS</p>
+          <p className="mt-1">
+            Posted articles are editable. Run Editor-in-Chief and Fact-check before approve.
+            Sanitize all cleans promotional language on every old and new article in the database.
+          </p>
+          <button
+            type="button"
+            data-testid="button-sanitize-library"
+            className="mt-3 rounded-lg border border-emerald-500/40 px-3 py-1.5 text-[11px] tracking-[1px] text-emerald-300 hover:bg-emerald-500/10"
+            onClick={async () => {
+              try {
+                const res = await apiRequest("POST", "/api/articles/sanitize-all");
+                if (!res.ok) throw new Error("Sanitize failed");
+                const data = await res.json();
+                invalidateArticleQueries();
+                toast({
+                  title: "Library sanitized",
+                  description: `Scanned ${data.scanned}, updated ${data.updated} articles.`,
+                });
+              } catch (e) {
+                toast({
+                  title: "Sanitize failed",
+                  description: e instanceof Error ? e.message : "Error",
+                  variant: "destructive",
+                });
+              }
+            }}
+          >
+            SANITIZE ALL ARTICLES (OLD + NEW)
+          </button>
+        </div>
+      </div>
+
 
       <section
         className="relative overflow-hidden border-b border-white/10 py-16"

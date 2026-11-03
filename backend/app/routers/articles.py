@@ -229,6 +229,7 @@ def edit_article(
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
     data = body.model_dump(exclude_unset=True)
+    data = sanitize_article_promotional_language(data)
     for key, val in data.items():
         if val is not None:
             setattr(article, key, val)
@@ -291,3 +292,81 @@ def delete_article(
     db.delete(article)
     db.commit()
     return None
+
+
+@router.post("/api/articles/sanitize-all")
+def sanitize_all_articles(
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """Persist soft-sanitization on every non-trashed article (old + new library)."""
+    rows = db.query(Article).filter(Article.is_trash.is_(False)).all()
+    updated = 0
+    for article in rows:
+        raw = {
+            "headline": article.headline,
+            "subtitle": article.subtitle,
+            "executive_summary": article.executive_summary,
+            "full_article": article.full_article,
+            "faq_section": article.faq_section,
+        }
+        cleaned = sanitize_article_promotional_language(raw)
+        changed = False
+        for key in ("headline", "subtitle", "executive_summary", "full_article", "faq_section"):
+            if cleaned.get(key) is not None and cleaned.get(key) != getattr(article, key):
+                setattr(article, key, cleaned.get(key))
+                changed = True
+        if changed:
+            updated += 1
+    db.commit()
+    return {"ok": True, "scanned": len(rows), "updated": updated}
+
+
+@router.post("/api/articles/{article_id}/fact-check")
+def run_fact_check_endpoint(
+    article_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """Re-run fact-checker agent on one article; store result on property_snapshot."""
+    article = db.query(Article).filter(Article.id == article_id).first()
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+    from app.services.fact_checker_service import fact_check_article
+
+    result = fact_check_article(
+        article_text=article.full_article or "",
+        headline=article.headline or "",
+    )
+    snap = dict(article.property_snapshot or {}) if isinstance(article.property_snapshot, dict) else {}
+    snap["fact_check"] = {
+        "passed": result.passed,
+        "violations": [
+            {
+                "severity": v.severity,
+                "claim": v.claim_in_article,
+                "type": getattr(v, "violation_type", ""),
+            }
+            for v in (result.violations or [])[:12]
+        ],
+        "warnings": list(result.warnings or [])[:8],
+        "checked_properties": list(result.checked_properties or [])[:8],
+    }
+    article.property_snapshot = snap
+    # Soft-sanitize body while we are here
+    cleaned = sanitize_article_promotional_language(
+        {
+            "headline": article.headline,
+            "subtitle": article.subtitle,
+            "executive_summary": article.executive_summary,
+            "full_article": article.full_article,
+            "faq_section": article.faq_section,
+        }
+    )
+    for key in ("headline", "subtitle", "executive_summary", "full_article", "faq_section"):
+        if cleaned.get(key) is not None:
+            setattr(article, key, cleaned.get(key))
+    db.commit()
+    db.refresh(article)
+    return {"ok": True, "fact_check": snap["fact_check"], "article_id": str(article.id)}
+

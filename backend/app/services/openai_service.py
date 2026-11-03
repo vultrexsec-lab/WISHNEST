@@ -456,6 +456,11 @@ def sanitize_article_promotional_language(art: dict) -> dict:
                 (r"(?i)hidden\s+gem", "lesser-known stay"),
                 (r"(?i)oasis\s+of\s+calm", "quiet setting"),
                 (r"(?i)premier\s+destination", "destination"),
+                (r"(?i)must[- ]visit\s+paradise", "notable place"),
+                (r"(?i)world[- ]class\s+luxury", "high-end"),
+                (r"(?i)iconic\s+landmark\s+experience", "landmark visit"),
+                (r"(?i)nestled\s+in\s+the\s+heart\s+of", "in"),
+                (r"(?i)a\s+truly\s+unique\s+experience", "a distinct stay"),
             ]:
                 text = re.sub(phrase, repl, text)
         if key == "headline":
