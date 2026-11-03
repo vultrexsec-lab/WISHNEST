@@ -147,10 +147,14 @@ export const BestOfPage = (): JSX.Element => {
                   <article className="flex cursor-pointer flex-col">
                     <div className="relative h-[200px] overflow-hidden bg-[#ffffff14]">
                       {article.hero_image_url ? (
-                        <div
-                          className="h-full w-full bg-cover bg-center"
-                          style={{
-                            backgroundImage: `url(${resolveMediaUrl(article.hero_image_url)})`,
+                        <img
+                          src={resolveMediaUrl(article.hero_image_url)}
+                          alt=""
+                          className="h-full w-full object-cover"
+                          loading="lazy"
+                          referrerPolicy="no-referrer"
+                          onError={(e) => {
+                            e.currentTarget.style.display = "none";
                           }}
                         />
                       ) : (

@@ -39,7 +39,7 @@ router = APIRouter(tags=["image-proxy"])
 
 _ALLOWED_SCHEMES = {"http", "https"}
 _MAX_BYTES = 15 * 1024 * 1024  # 15MB safety cap
-_TIMEOUT = 10
+_TIMEOUT = 20
 _MAX_REDIRECTS = 5
 
 
@@ -103,8 +103,14 @@ def proxy_image(url: str = Query(..., description="Original image URL to fetch a
                 stream=True,
                 allow_redirects=False,
                 headers={
-                    "User-Agent": "Mozilla/5.0 (compatible; WishNestImageProxy/1.0)",
-                    "Accept": "image/*",
+                    "User-Agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/120.0.0.0 Safari/537.36"
+                    ),
+                    "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "Referer": "https://www.google.com/",
                 },
             )
             if resp.is_redirect or resp.status_code in (301, 302, 303, 307, 308):

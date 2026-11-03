@@ -55,17 +55,28 @@ function ReviewCard({ article }: { article: Article }) {
       <article className="flex cursor-pointer flex-col" data-testid={`card-review-${article.id}`}>
         <div className="relative h-[255px] w-full overflow-hidden bg-[#e8e6e0]">
           {article.hero_image_url ? (
-            <div
-              className="h-full w-full bg-cover bg-center"
-              style={{ backgroundImage: `url(${resolveMediaUrl(article.hero_image_url)})` }}
+            <img
+              src={resolveMediaUrl(article.hero_image_url)}
+              alt=""
+              className="h-full w-full object-cover"
+              loading="lazy"
+              referrerPolicy="no-referrer"
+              onError={(e) => {
+                const el = e.currentTarget;
+                el.style.display = "none";
+                const fb = el.nextElementSibling as HTMLElement | null;
+                if (fb) fb.style.display = "flex";
+              }}
             />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center">
-              <span className="[font-family:'Playfair_Display',Helvetica] text-[15px] italic text-[#2e4a3f44]">
-                WishNest
-              </span>
-            </div>
-          )}
+          ) : null}
+          <div
+            className="absolute inset-0 flex h-full w-full items-center justify-center"
+            style={{ display: article.hero_image_url ? "none" : "flex" }}
+          >
+            <span className="[font-family:'Playfair_Display',Helvetica] text-[15px] italic text-[#2e4a3f44]">
+              WishNest
+            </span>
+          </div>
           {grade && (
             <div className="absolute left-4 top-4 flex h-9 w-9 items-center justify-center border border-[#2e4a3f] bg-[#f8f7f4e6]">
               <span className="[font-family:'Inter',Helvetica] text-[13px] font-normal text-[#2e4a3f]">
