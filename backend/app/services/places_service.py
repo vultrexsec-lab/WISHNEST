@@ -107,17 +107,23 @@ def is_hospitality_listing(
 
 
 def is_non_hospitality_title(title: str | None) -> bool:
-    """True when headline/name is clearly not a stay (realty, office, etc.)."""
+    """True only for clear non-stay commercial entities (realty, offices).
+
+    Do NOT use inverse of is_hospitality_listing — destinations, beaches,
+    guides and landmarks are separate editorial categories and must not be
+    auto-trashed by this helper.
+    """
     n = (title or "").lower()
-    # Extra hard rejects beyond is_hospitality_listing
     hard = (
-        "sotheby", "realty", "real estate", "realestate", "broker",
-        "private limited", "pvt ltd", "pvt. ltd", "realtors",
-        "property dealer", "property consultant", "knight frank",
+        "sotheby", "sothebys", "knight frank", "cushman", "colliers",
+        "realty", "real estate", "realestate", "realtors", "realtor",
+        "brokerage", "property dealer", "property consultant",
+        "private limited", "pvt ltd", "pvt. ltd", "pvt ltd.",
+        "corporate office", "sales office", "co-working", "coworking",
+        "propertyincoorg",
     )
-    if any(h in n for h in hard):
-        return True
-    return not is_hospitality_listing(title, None, address=None)
+    return any(h in n for h in hard)
+
 
 
 _REQUEST_TIMEOUT = 10
