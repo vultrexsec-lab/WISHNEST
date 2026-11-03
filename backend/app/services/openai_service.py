@@ -461,6 +461,13 @@ def sanitize_article_promotional_language(art: dict) -> dict:
                 (r"(?i)iconic\s+landmark\s+experience", "landmark visit"),
                 (r"(?i)nestled\s+in\s+the\s+heart\s+of", "in"),
                 (r"(?i)a\s+truly\s+unique\s+experience", "a distinct stay"),
+                (r"(?i)unique\s+blend\s+of", "mix of"),
+                (r"(?i)offering\s+a\s+unique\s+blend", "combining"),
+                (r"(?i)modern\s+hotel\s+located\s+in", "hotel in"),
+                (r"(?i)comfort,\s+style,\s+and\s+local\s+culture", "comfort and local character"),
+                (r"(?i)seamless\s+blend", "mix"),
+                (r"(?i)epitome\s+of", "example of"),
+                (r"(?i)testament\s+to", "reflection of"),
             ]:
                 text = re.sub(phrase, repl, text)
         if key == "headline":

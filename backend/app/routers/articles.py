@@ -335,18 +335,39 @@ def sanitize_all_articles(
     updated = 0
     for article in rows:
         raw = {
-            "headline": article.headline,
-            "subtitle": article.subtitle,
-            "executive_summary": article.executive_summary,
-            "full_article": article.full_article,
+            "headline": article.headline or "",
+            "subtitle": article.subtitle or "",
+            "executive_summary": article.executive_summary or "",
+            "full_article": article.full_article or "",
             "faq_section": article.faq_section,
         }
-        cleaned = sanitize_article_promotional_language(raw)
+        cleaned = sanitize_article_promotional_language(dict(raw))
         changed = False
-        for key in ("headline", "subtitle", "executive_summary", "full_article", "faq_section"):
-            if cleaned.get(key) is not None and cleaned.get(key) != getattr(article, key):
-                setattr(article, key, cleaned.get(key))
+        for key in ("headline", "subtitle", "executive_summary", "full_article"):
+            before = (getattr(article, key) or "") if isinstance(getattr(article, key), str) or getattr(article, key) is None else getattr(article, key)
+            after = cleaned.get(key) or ""
+            if before != after:
+                setattr(article, key, after if after else None)
                 changed = True
+        if cleaned.get("faq_section") is not None and cleaned.get("faq_section") != article.faq_section:
+            article.faq_section = cleaned.get("faq_section")
+            changed = True
+        # Strip internal noise from public-facing snapshot keys when present
+        snap = dict(article.property_snapshot or {}) if isinstance(article.property_snapshot, dict) else {}
+        if snap:
+            for k in (
+                "fact_check",
+                "google_live_rating",
+                "google_live_review_count",
+                "google_rating",
+                "google_review_count",
+            ):
+                if k in snap:
+                    # keep for admin tools but mark cleaned pass
+                    pass
+            snap["sanitized_at"] = __import__("datetime").datetime.utcnow().isoformat() + "Z"
+            article.property_snapshot = snap
+            changed = True
         if changed:
             updated += 1
     db.commit()

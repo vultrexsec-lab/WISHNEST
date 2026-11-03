@@ -750,11 +750,19 @@ function ArticlePreviewModal({
     (article.property_snapshot as Record<string, unknown>) ?? {};
   const HIDDEN_SNAPSHOT_KEYS = new Set([
     "google_live_sources",
+    "google_live_rating",
+    "google_live_review_count",
+    "google_rating",
+    "google_review_count",
+    "fact_check",
+    "factcheck",
     "reimaging",
     "user_prompt",
     "source",
     "original_photo_urls",
     "maps_place_id",
+    "eic_report",
+    "editor_in_chief",
   ]);
   const snapshotEntries = Object.entries(snapshot).filter(
     ([key]) => !HIDDEN_SNAPSHOT_KEYS.has(key),
@@ -816,7 +824,7 @@ function ArticlePreviewModal({
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-[#0a0f0d]">
+    <div className="fixed inset-0 z-[200] flex min-h-[100dvh] flex-col bg-[#0a0f0d]" role="dialog" aria-modal="true" aria-label="Article preview">
       {/* ── Top bar ── */}
       <div className="flex shrink-0 items-center justify-between border-b border-white/10 bg-[#0d1512] px-6 py-4">
         <div className="flex items-center gap-3">
@@ -1329,7 +1337,7 @@ function ArticlePreviewModal({
                         [&_td]:border [&_td]:border-[#1e1e1e1a] [&_td]:px-4 [&_td]:py-3 [&_td]:align-top [&_td]:leading-[22px]
                         [&_tr:nth-child(even)_td]:bg-[#f8f7f4]
                         [&_br]:block [&_br]:mt-4"
-                      dangerouslySetInnerHTML={{ __html: resolveMediaHtml(article.full_article )}}
+                      dangerouslySetInnerHTML={{ __html: resolveMediaHtml(article.full_article || "") }}
                     />
                   ) : (
                     <div className="rounded-lg border border-dashed border-[#1e1e1e20] py-10 text-center [font-family:'Inter',Helvetica] text-[13px] text-[#6b6b6b]">
@@ -2046,7 +2054,17 @@ function ArticleCard({
           <div className="flex shrink-0 flex-col items-stretch gap-2 md:items-end">
             {/* ── VIEW FULL ARTICLE button ── */}
             <Button
-              onClick={() => setShowPreview(true)}
+              onClick={() => {
+                const live =
+                  article.status === "approved" ||
+                  article.status === "published" ||
+                  article.status === "scheduled";
+                if (live) {
+                  window.open(`/article/${article.id}`, "_blank", "noopener,noreferrer");
+                  return;
+                }
+                setShowPreview(true);
+              }}
               className="h-auto rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-5 py-2.5 [font-family:'Inter',Helvetica] text-[11px] font-semibold tracking-[1.1px] text-emerald-300 shadow-none hover:bg-emerald-500/20 hover:text-emerald-200"
               variant="outline"
             >
