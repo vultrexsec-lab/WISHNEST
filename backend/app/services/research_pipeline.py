@@ -25,7 +25,13 @@ from app.services.fact_checker_service import fact_check_article
 from app.services.firecrawl_service import FirecrawlError, search_and_scrape
 from app.services.image_service import build_deep_gallery_photo_assignments, generate_article_images
 from app.services.openai_service import generate_article_packages
-from app.services.places_service import PropertyListing, _serpapi_maps_photos_gallery, fetch_premium_stays, is_hospitality_listing
+from app.services.places_service import (
+    is_non_hospitality_title,
+    is_hospitality_listing,
+    PropertyListing,
+    _serpapi_maps_photos_gallery,
+    fetch_premium_stays,
+)
 
 logger = logging.getLogger("wishnest.research_pipeline")
 
@@ -1101,6 +1107,14 @@ def run_research_pipeline(
         _coerce_seo_fields(raw)     # auto-fix minor SEO length violations
         raw["full_article"] = _strip_abcde_score_block(raw.get("full_article"))    # never show scores in body
         raw["full_article"] = _strip_objective_headings(raw.get("full_article"))  # never show Objective headings
+
+        headline = (raw.get("headline") or "") + " " + (raw.get("subtitle") or "")
+        if is_non_hospitality_title(headline) or is_non_hospitality_title(raw.get("headline")):
+            logger.error(
+                "Skipping non-hospitality package: %r",
+                (raw.get("headline") or "")[:80],
+            )
+            continue
 
         geo_bad = _geo_relevance_violations(raw)
         if geo_bad:

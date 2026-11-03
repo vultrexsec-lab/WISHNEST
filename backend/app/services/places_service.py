@@ -32,12 +32,17 @@ _BLOCKED_NAME_FRAGMENTS = (
     "india gate", "gateway of india", "mysuru palace", "mysore palace",
     "red fort", "qutub minar", "taj mahal", "lotus temple", "humayun",
     "national museum", "railway station", "bus stand", "airport",
-    "sotheby's", "sothebys", "real estate office", "private limited",
-    "pvt ltd", "pvt. ltd", "corporate office", "head office",
-    "charminar", "victoria memorial", "gateway of india", "hawa mahal",
+    "sotheby's", "sothebys", "sotheby", "knight frank", "cushman", "colliers",
+    "real estate", "realestate", "realty", "realtor", "brokerage", "broker",
+    "property dealer", "property consultant", "sales office", "showroom",
+    "private limited", "pvt ltd", "pvt. ltd", "pvt ltd.", "limited company",
+    "corporate office", "head office", "co-working", "coworking",
+    "charminar", "victoria memorial", "hawa mahal",
     "amer fort", "amber fort", "city palace", "jal mahal", "fatehpur sikri",
     "ajanta", "ellora", "konark", "meenakshi temple", "golden temple",
     "statue of unity", "howrah bridge", "marina beach",
+    "homes private", "properties private", "developers private",
+    "construction pvt", "infra pvt", "buildcon", "realtors",
 )
 _BLOCKED_TYPE_FRAGMENTS = (
     "tourist_attraction", "museum", "hindu_temple", "church", "mosque",
@@ -49,7 +54,7 @@ _BLOCKED_TYPE_FRAGMENTS = (
 _HOSPITALITY_TYPE_HINTS = (
     "hotel", "lodging", "resort", "guest_house", "guest house", "hostel",
     "motel", "villa", "homestay", "home stay", "bed_and_breakfast",
-    "boutique", "campground", "spa", "wellness", "retreat",
+    "boutique_hotel", "boutique hotel", "campground", "spa_hotel", "retreat",
 )
 
 
@@ -99,6 +104,20 @@ def is_hospitality_listing(
     # No clear hospitality signal — reject (prevents monuments / POIs as "reviews")
     return False
 
+
+
+def is_non_hospitality_title(title: str | None) -> bool:
+    """True when headline/name is clearly not a stay (realty, office, etc.)."""
+    n = (title or "").lower()
+    # Extra hard rejects beyond is_hospitality_listing
+    hard = (
+        "sotheby", "realty", "real estate", "realestate", "broker",
+        "private limited", "pvt ltd", "pvt. ltd", "realtors",
+        "property dealer", "property consultant", "knight frank",
+    )
+    if any(h in n for h in hard):
+        return True
+    return not is_hospitality_listing(title, None, address=None)
 
 
 _REQUEST_TIMEOUT = 10

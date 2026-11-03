@@ -2997,6 +2997,31 @@ export const ReviewDashboard = (): JSX.Element => {
           >
             SANITIZE ALL ARTICLES (OLD + NEW)
           </button>
+          <button
+            type="button"
+            data-testid="button-trash-non-hospitality"
+            className="ml-2 mt-3 rounded-lg border border-red-500/40 px-3 py-1.5 text-[11px] tracking-[1px] text-red-300 hover:bg-red-500/10"
+            onClick={async () => {
+              try {
+                const res = await apiRequest("POST", "/api/articles/trash-non-hospitality");
+                if (!res.ok) throw new Error("Cleanup failed");
+                const data = await res.json();
+                invalidateArticleQueries();
+                toast({
+                  title: "Non-stay articles moved to trash",
+                  description: `${data.trashed} real-estate / office pieces removed from the live library.`,
+                });
+              } catch (e) {
+                toast({
+                  title: "Cleanup failed",
+                  description: e instanceof Error ? e.message : "Error",
+                  variant: "destructive",
+                });
+              }
+            }}
+          >
+            TRASH NON-HOSPITALITY ARTICLES
+          </button>
         </div>
       </div>
 

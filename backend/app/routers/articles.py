@@ -422,3 +422,22 @@ def run_fact_check_endpoint(
     db.refresh(article)
     return {"ok": True, "fact_check": snap["fact_check"], "article_id": str(article.id)}
 
+
+
+@router.post("/api/articles/trash-non-hospitality")
+def trash_non_hospitality_articles(
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """Move clearly non-stay articles (realty firms, offices) to trash."""
+    from app.services.places_service import is_non_hospitality_title
+
+    rows = db.query(Article).filter(Article.is_trash.is_(False)).all()
+    trashed = []
+    for article in rows:
+        title = f"{article.headline or ''} {article.subtitle or ''}"
+        if is_non_hospitality_title(article.headline) or is_non_hospitality_title(title):
+            article.is_trash = True
+            trashed.append({"id": str(article.id), "headline": article.headline})
+    db.commit()
+    return {"ok": True, "trashed": len(trashed), "items": trashed[:50]}
