@@ -237,6 +237,7 @@ class ArticleEditIn(BaseModel):
     best_for: list[str] | None = None
     not_ideal_for: list[str] | None = None
     keywords: list[str] | None = None
+    property_snapshot: dict | None = None
     architecture_grade: str | None = None
     landscape_grade: str | None = None
     connectivity_grade: str | None = None
