@@ -441,3 +441,36 @@ def trash_non_hospitality_articles(
             trashed.append({"id": str(article.id), "headline": article.headline})
     db.commit()
     return {"ok": True, "trashed": len(trashed), "items": trashed[:50]}
+
+
+@router.post("/api/articles/normalize-media-urls")
+def normalize_media_urls(
+    db: Session = Depends(get_db),
+    admin: str = Depends(require_admin),
+):
+    """Rewrite stored media URLs that point at old Render hosts to relative /api/... paths."""
+    import re
+    host_re = re.compile(r"https?://(?:[\w-]+\.)*onrender\.com(?=/api/)", re.I)
+    updated = 0
+    rows = db.query(Article).all()
+    for article in rows:
+        changed = False
+        if article.hero_image_url and host_re.search(article.hero_image_url):
+            article.hero_image_url = host_re.sub("", article.hero_image_url)
+            changed = True
+        if article.section_image_urls and isinstance(article.section_image_urls, list):
+            new_list = []
+            for u in article.section_image_urls:
+                if isinstance(u, str) and host_re.search(u):
+                    new_list.append(host_re.sub("", u))
+                    changed = True
+                else:
+                    new_list.append(u)
+            article.section_image_urls = new_list
+        if article.full_article and host_re.search(article.full_article):
+            article.full_article = host_re.sub("", article.full_article)
+            changed = True
+        if changed:
+            updated += 1
+    db.commit()
+    return {"ok": True, "scanned": len(rows), "updated": updated}

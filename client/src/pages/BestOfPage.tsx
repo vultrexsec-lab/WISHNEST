@@ -65,7 +65,13 @@ export const BestOfPage = (): JSX.Element => {
   });
 
   // Live best-of articles
-  const liveArticles = allArticles.filter((a) => a.category === "best-of");
+  const liveArticles = allArticles.filter(
+    (a) =>
+      a.category === "best-of" &&
+      !a.is_trash &&
+      ["approved", "scheduled", "published"].includes(a.status) &&
+      Boolean(a.hero_image_url),
+  );
   const published = allArticles.filter(
     (a) =>
       ["approved", "scheduled", "published"].includes(a.status) && !a.is_trash,

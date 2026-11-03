@@ -73,12 +73,29 @@ export const ReviewsPage = (): JSX.Element => {
       !a.is_trash &&
       ["approved", "scheduled", "published"].includes(a.status),
   );
-  const explicitReviews = published.filter(
-    (a) =>
-      (a.article_type || "").toLowerCase() === "review" ||
-      (a.category || "").toLowerCase().includes("review"),
-  );
-  const displayReviews = explicitReviews.length > 0 ? explicitReviews : published;
+  // NOTE: do not use category.includes("review") — "reimagined" contains that substring.
+  const isReimagined = (a: Article) => {
+    const cat = (a.category || "").toLowerCase();
+    const type = (a.article_type || "").toLowerCase();
+    const head = (a.headline || "").toLowerCase();
+    return (
+      cat === "reimagined" ||
+      cat === "reimaging" ||
+      type === "reimagined" ||
+      head.includes("reimagined:") ||
+      head.includes("visionary redesign") ||
+      !!(a.property_snapshot as { reimaging?: boolean } | null)?.reimaging
+    );
+  };
+  const explicitReviews = published.filter((a) => {
+    if (isReimagined(a)) return false;
+    const cat = (a.category || "").toLowerCase();
+    const type = (a.article_type || "").toLowerCase();
+    if (cat === "destinations" || cat === "best-of" || cat === "intelligence") return false;
+    return type === "review" || cat === "reviews" || cat === "review" || cat === "resort" || !cat;
+  });
+  // Prefer explicit reviews; never fall back to dumping every public article (includes Reimagined).
+  const displayReviews = explicitReviews;
   const regions = useMemo(() => {
     const set = new Set<string>();
     displayReviews.forEach((a) => {
