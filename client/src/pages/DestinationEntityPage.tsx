@@ -162,6 +162,24 @@ export function DestinationEntityPage(): JSX.Element {
           })}
         </section>
       )}
+      
+      {(data.counts && Object.values(data.counts).every((n) => !n)) && (
+        <div className="mx-auto max-w-[720px] px-4 py-16 text-center">
+          <p className="[font-family:'Playfair_Display',Helvetica] text-[22px] text-[#1e1e1e]">
+            Coverage for this destination is forthcoming
+          </p>
+          <p className="mt-3 text-[14px] leading-relaxed text-[#6b6b6b]">
+            WishNest is expanding editorial coverage across all Indian regions, including the Northeast.
+            Check Reviews for live property assessments, or check back as new field notes are published.
+          </p>
+          <Link href="/reviews">
+            <span className="mt-6 inline-block cursor-pointer border-b border-[#2e4a3f] pb-0.5 text-[12px] tracking-[1px] text-[#2e4a3f]">
+              Browse reviews
+            </span>
+          </Link>
+        </div>
+      )}
+
       <SiteFooter />
     </main>
   );

@@ -8,6 +8,46 @@ import { overallGrade } from "@/lib/article-types";
 import { usePageMeta } from "@/hooks/usePageMeta";
 import { useMemo, useState } from "react";
 
+/** Map messy addresses to clean geographic region labels (not Khasra / plus-codes). */
+function regionBucket(location: string | null | undefined): string | null {
+  if (!location) return null;
+  const raw = location.replace(/\s+/g, " ").trim();
+  if (!raw || /[A-Z0-9]{4,}\+[A-Z0-9]{2,}/i.test(raw)) {
+    // Plus-code heavy: try trailing city/state tokens only
+  }
+  const l = raw.toLowerCase();
+  const rules: [RegExp, string][] = [
+    [/rajasthan|jaipur|udaipur|jodhpur|jaisalmer|udaipur|ajmer/, "Rajasthan"],
+    [/kerala|kochi|cochin|munnar|alleppey|alappuzha|wayanad|kovalam|thekkady/, "Kerala"],
+    [/goa|calangute|candolim|anjuna|panaji|vasco/, "Goa"],
+    [/himachal|manali|shimla|kasol|dharamshala|kullu|spiti/, "Himachal Pradesh"],
+    [/uttarakhand|dehradun|mussoorie|nainital|rishikesh|haridwar|bhimtal/, "Uttarakhand"],
+    [/karnataka|coorg|kodagu|bengaluru|bangalore|mysore|mysuru/, "Karnataka"],
+    [/tamil nadu|chennai|ooty|ootacamund|kodaikanal/, "Tamil Nadu"],
+    [/maharashtra|mumbai|pune|lonavala|alibaug|alibag/, "Maharashtra"],
+    [/meghalaya|shillong|cherrapunji/, "Meghalaya"],
+    [/sikkim|gangtok|pelling/, "Sikkim"],
+    [/assam|guwahati|kaziranga/, "Assam"],
+    [/arunachal/, "Arunachal Pradesh"],
+    [/nagaland|manipur|mizoram|tripura/, "Northeast"],
+    [/delhi|new delhi|ncr/, "Delhi NCR"],
+    [/andaman|port blair/, "Andaman"],
+    [/ladakh|leh/, "Ladakh"],
+  ];
+  for (const [re, label] of rules) {
+    if (re.test(l)) return label;
+  }
+  // Last comma segment if it looks like a state/city word (no digits / khasra)
+  const parts = raw.split(",").map((s) => s.trim()).filter(Boolean);
+  for (const part of [...parts].reverse()) {
+    if (/\d/.test(part)) continue;
+    if (/khasra|tehsil|village|near|plot|sector|hmgc/i.test(part)) continue;
+    if (part.length >= 3 && part.length <= 28) return part;
+  }
+  return null;
+}
+
+
 function ReviewCard({ article }: { article: Article }) {
   const grade = overallGrade(article);
   return (
@@ -36,7 +76,7 @@ function ReviewCard({ article }: { article: Article }) {
         </div>
         <div className="flex items-center gap-3 pt-5">
           <span className="[font-family:'Inter',Helvetica] text-[9px] font-normal tracking-[1.44px] text-[#6b6b6b]">
-            {(article.location ?? "").toUpperCase()}
+            {(regionBucket(article.location) || article.location || "").toUpperCase()}
           </span>
         </div>
         <h2 className="pt-2 [font-family:'Playfair_Display',Helvetica] text-[22px] font-normal leading-[28px] text-[#1e1e1e]">
@@ -99,15 +139,15 @@ export const ReviewsPage = (): JSX.Element => {
   const regions = useMemo(() => {
     const set = new Set<string>();
     displayReviews.forEach((a) => {
-      const loc = (a.location || "").split(",")[0].trim();
-      if (loc) set.add(loc);
+      const bucket = regionBucket(a.location);
+      if (bucket) set.add(bucket);
     });
     return Array.from(set).sort();
   }, [displayReviews]);
   const filtered = useMemo(() => {
     let list = displayReviews;
     if (region !== "all") {
-      list = list.filter((a) => (a.location || "").toLowerCase().includes(region.toLowerCase()));
+      list = list.filter((a) => regionBucket(a.location) === region);
     }
     if (sort === "az") {
       list = [...list].sort((a, b) => (a.headline || "").localeCompare(b.headline || ""));

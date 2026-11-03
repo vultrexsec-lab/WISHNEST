@@ -384,8 +384,27 @@ def _serpapi_maps_query(query: str, limit: int, *, hospitality_only: bool = True
 
 
 def _serpapi_maps_search(location: str, limit: int) -> list[PropertyListing]:
-    query = f"top rated luxury hotels resorts villas boutique stays in {location}"
-    return _serpapi_maps_query(query, limit)
+    """Prefer 5-star hotels and resorts; merge unique listings across query angles."""
+    queries = [
+        f"5 star hotel luxury resort in {location}",
+        f"top rated luxury resort in {location}",
+        f"best heritage hotel in {location}",
+        f"top rated luxury hotels resorts in {location}",
+    ]
+    seen: set[str] = set()
+    merged: list[PropertyListing] = []
+    for q in queries:
+        if len(merged) >= limit:
+            break
+        for item in _serpapi_maps_query(q, limit):
+            key = (item.place_id or item.name or "").lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            merged.append(item)
+            if len(merged) >= limit:
+                break
+    return merged[:limit]
 
 
 def fetch_landmark_attractions(location: str | None, limit: int = 8) -> list[PropertyListing]:

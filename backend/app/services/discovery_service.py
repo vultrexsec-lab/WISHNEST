@@ -31,33 +31,42 @@ logger = logging.getLogger("wishnest.discovery")
 # property never appears in two consecutive weekly runs.
 # ---------------------------------------------------------------------------
 CATEGORY_QUERIES: dict[str, list[str]] = {
+    # Prefer star hotels & resorts over guest-house / homestay noise.
     "reviews": [
-        "top rated luxury boutique hotel India high rating",
-        "best heritage resort boutique stay India",
+        "5 star hotel luxury resort India high rating",
         "top luxury resort India 5 star",
-        "best boutique hotel Rajasthan India",
-        "top luxury property Goa India",
-        "best heritage hotel Kerala India",
-        "top rated resort Himachal Pradesh India",
-        "best boutique stay Uttarakhand India",
+        "best 5 star hotel Rajasthan India",
+        "luxury resort Goa India beach",
+        "heritage palace hotel Rajasthan India",
+        "5 star resort Kerala India backwaters",
+        "luxury hill resort Himachal Pradesh India",
+        "5 star hotel Uttarakhand India",
+        "luxury resort Meghalaya India",
+        "best hotel resort Sikkim Gangtok India",
+        "5 star hotel Assam Guwahati India",
+        "luxury resort Shillong Meghalaya India",
+        "Oberoi Taj Leela luxury hotel India",
+        "best luxury resort Andaman India",
     ],
     "best-of": [
-        "luxury private villa holiday home India",
-        "top rated villa stay India high rating",
-        "best private estate India",
-        "luxury villa rental Goa India",
-        "top villa stay Rajasthan India",
-        "best holiday villa Kerala India",
-        "premium villa Coorg Karnataka India",
+        "best luxury resort India ranking",
+        "top 5 star hotel India high rating",
+        "best heritage palace hotel India",
+        "luxury beach resort Goa India",
+        "best hill resort Himachal Uttarakhand India",
+        "luxury resort Kerala India",
+        "best wellness resort India spa",
+        "luxury resort Northeast India Meghalaya Sikkim",
     ],
     "destinations": [
-        "best boutique hotels hill stations India",
-        "top rated resorts beach destinations India",
-        "luxury hotel stay Rajasthan India",
-        "best resort stay Kerala backwaters India",
-        "boutique hotel Himachal Pradesh India",
-        "heritage hotel stay Jaipur Rajasthan India",
-        "eco resort Uttarakhand India high rating",
+        "luxury resort hotel Meghalaya Shillong India",
+        "best hotel resort Sikkim Gangtok India",
+        "5 star hotel Assam Kaziranga India",
+        "luxury stay Arunachal Pradesh India",
+        "top resort hotel Rajasthan India",
+        "best beach resort Goa India",
+        "luxury resort Kerala India",
+        "hill station luxury hotel Himachal India",
     ],
 }
 
@@ -227,6 +236,24 @@ def discover_fresh_properties(
                     listing.name,
                 )
                 continue
+
+            nlow = (listing.name or "").lower()
+            if any(x in nlow for x in ("paying guest", "hostel", "dormitory")):
+                logger.info("Discovery: skipping %r — non-editorial lodging type", listing.name)
+                continue
+            if ("guest house" in nlow or "guesthouse" in nlow) and not any(
+                x in nlow
+                for x in (
+                    "hotel", "resort", "palace", "marriott", "hyatt",
+                    "oberoi", "taj ", "leela", "radisson", "hilton",
+                )
+            ):
+                if (listing.rating or 0) < 4.6:
+                    logger.info(
+                        "Discovery: skipping %r — guest house below editorial bar",
+                        listing.name,
+                    )
+                    continue
 
             seen_ids.add(pid)
 
