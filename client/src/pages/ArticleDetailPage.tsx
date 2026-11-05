@@ -368,83 +368,110 @@ export const ArticleDetailPage = (): JSX.Element => {
         </div>
       </section>
 
-      {/* Snapshot: Summary + Key Facts (readable layout, not cramped grid cells) */}
+      {/* Snapshot band: Summary | Key Facts | Sources — three clear columns */}
       {snapshotEntries.length > 0 && (
         <section className="border-b border-[#1e1e1e1a] bg-white">
-          <div className="mx-auto w-full max-w-[1166px] px-4 py-8 sm:px-8 sm:py-10">
+          <div className="mx-auto w-full max-w-[1166px] px-4 py-10 sm:px-8 sm:py-12">
             {(() => {
-              const summaryVal = snapshot.summary;
+              const summaryText = formatSnapshotValue(snapshot.summary);
               const keyFactsRaw = snapshot.key_facts;
-              const keyFacts = Array.isArray(keyFactsRaw)
-                ? keyFactsRaw.map((x) => formatSnapshotValue(x)).filter((s) => s && s !== "—")
-                : typeof keyFactsRaw === "string" && keyFactsRaw.trim()
-                  ? [keyFactsRaw.trim()]
-                  : [];
+              let keyFacts: string[] = [];
+              if (Array.isArray(keyFactsRaw)) {
+                keyFacts = keyFactsRaw
+                  .map((x) => formatSnapshotValue(x))
+                  .filter((s) => s && s !== "—");
+              } else if (typeof keyFactsRaw === "string" && keyFactsRaw.trim()) {
+                // Split accidental comma/semicolon blobs into lines
+                keyFacts = keyFactsRaw
+                  .split(/\s*[;|]\s*|\.\s+(?=[A-Z0-9])/)
+                  .map((s) => s.trim())
+                  .filter((s) => s.length > 8);
+                if (keyFacts.length === 0) keyFacts = [keyFactsRaw.trim()];
+              }
+              const sourcesText =
+                typeof snapshot.sources_note === "string"
+                  ? snapshot.sources_note.trim()
+                  : formatSnapshotValue(snapshot.sources_note) !== "—"
+                    ? formatSnapshotValue(snapshot.sources_note)
+                    : "";
               const otherEntries = snapshotEntries.filter(
-                ([k]) => k !== "summary" && k !== "key_facts" && k !== "sources_note",
+                ([k]) =>
+                  k !== "summary" &&
+                  k !== "key_facts" &&
+                  k !== "sources_note",
               );
-              const sourcesNote =
-                typeof snapshot.sources_note === "string" ? snapshot.sources_note.trim() : "";
+              const hasTop =
+                (summaryText && summaryText !== "—") ||
+                keyFacts.length > 0 ||
+                (sourcesText && sourcesText !== "—");
 
               return (
-                <div className="flex flex-col gap-8">
-                  {(summaryVal != null && formatSnapshotValue(summaryVal) !== "—") ||
-                  keyFacts.length > 0 ? (
-                    <div className="grid gap-8 md:grid-cols-2 md:gap-12 lg:gap-16">
-                      {summaryVal != null && formatSnapshotValue(summaryVal) !== "—" && (
-                        <div className="min-w-0">
-                          <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1.6px] text-[#6b6b6b]">
-                            SUMMARY
-                          </div>
-                          <p className="mt-3 max-w-prose [font-family:'Inter',Helvetica] text-[15px] font-normal leading-[26px] text-[#1e1e1e]">
-                            {formatSnapshotValue(summaryVal)}
-                          </p>
-                        </div>
-                      )}
-                      {keyFacts.length > 0 && (
-                        <div className="min-w-0">
-                          <div className="[font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1.6px] text-[#6b6b6b]">
-                            KEY FACTS
-                          </div>
-                          <ul className="mt-3 list-none space-y-3 p-0">
-                            {keyFacts.map((fact, i) => (
-                              <li
+                <div className="flex flex-col gap-10">
+                  {hasTop && (
+                    <div className="grid grid-cols-1 gap-10 md:grid-cols-3 md:gap-10 lg:gap-14">
+                      {/* Column 1 — Summary */}
+                      <div className="min-w-0">
+                        <h2 className="[font-family:'Inter',Helvetica] text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6b6b6b]">
+                          Summary
+                        </h2>
+                        <p className="mt-4 [font-family:'Inter',Helvetica] text-[15px] font-normal leading-[1.7] text-[#1e1e1e]">
+                          {summaryText && summaryText !== "—"
+                            ? summaryText
+                            : "—"}
+                        </p>
+                      </div>
+
+                      {/* Column 2 — Key facts as separate short paragraphs */}
+                      <div className="min-w-0">
+                        <h2 className="[font-family:'Inter',Helvetica] text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6b6b6b]">
+                          Key facts
+                        </h2>
+                        <div className="mt-4 flex flex-col gap-3">
+                          {keyFacts.length > 0 ? (
+                            keyFacts.map((fact, i) => (
+                              <p
                                 key={i}
-                                className="flex gap-3 [font-family:'Inter',Helvetica] text-[14px] font-normal leading-[22px] text-[#1e1e1e]"
+                                className="[font-family:'Inter',Helvetica] text-[15px] font-normal leading-[1.7] text-[#1e1e1e]"
                               >
-                                <span
-                                  className="mt-[9px] h-1 w-1 shrink-0 rounded-full bg-[#2e4a3f]"
-                                  aria-hidden
-                                />
-                                <span className="min-w-0">{fact}</span>
-                              </li>
-                            ))}
-                          </ul>
+                                {fact}
+                              </p>
+                            ))
+                          ) : (
+                            <p className="[font-family:'Inter',Helvetica] text-[15px] text-[#6b6b6b]">
+                              —
+                            </p>
+                          )}
                         </div>
-                      )}
+                      </div>
+
+                      {/* Column 3 — Sources */}
+                      <div className="min-w-0">
+                        <h2 className="[font-family:'Inter',Helvetica] text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6b6b6b]">
+                          Sources
+                        </h2>
+                        <p className="mt-4 [font-family:'Inter',Helvetica] text-[15px] font-normal leading-[1.7] text-[#1e1e1e]">
+                          {sourcesText && sourcesText !== "—"
+                            ? sourcesText
+                            : "Public listings and official brand pages; ratings checked on the date noted in the article."}
+                        </p>
+                      </div>
                     </div>
-                  ) : null}
+                  )}
 
                   {otherEntries.length > 0 && (
-                    <div className="grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                    <div className="grid grid-cols-2 gap-x-8 gap-y-6 border-t border-[#1e1e1e0f] pt-8 sm:grid-cols-3 md:grid-cols-4">
                       {otherEntries.map(([key, value]) => (
                         <div key={key} className="min-w-0">
-                          <div className="[font-family:'Inter',Helvetica] text-[9px] font-normal tracking-[1.44px] text-[#6b6b6b]">
-                            {key.replace(/_/g, " ").toUpperCase()}
+                          <div className="[font-family:'Inter',Helvetica] text-[10px] font-semibold uppercase tracking-[0.12em] text-[#6b6b6b]">
+                            {key.replace(/_/g, " ")}
                           </div>
-                          <div className="pt-1.5 break-words [font-family:'Inter',Helvetica] text-[14px] font-normal leading-[20px] text-[#1e1e1e]">
+                          <div className="mt-2 break-words [font-family:'Inter',Helvetica] text-[14px] leading-[1.55] text-[#1e1e1e]">
                             {formatSnapshotValue(value)}
                           </div>
                         </div>
                       ))}
                     </div>
                   )}
-
-                  {sourcesNote ? (
-                    <p className="border-t border-[#1e1e1e0f] pt-4 [font-family:'Inter',Helvetica] text-[12px] leading-[18px] text-[#6b6b6b]">
-                      {sourcesNote}
-                    </p>
-                  ) : null}
                 </div>
               );
             })()}
