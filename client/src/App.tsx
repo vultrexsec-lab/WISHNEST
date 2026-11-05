@@ -99,6 +99,7 @@ function Router() {
         <Route path="/request-call" component={RequestCallPage} />
         <Route path="/editorial-standards" component={EditorialStandardsPage} />
         <Route path="/methodology" component={MethodologyPage} />
+        <Route path="/abcde">{() => <Redirect to="/methodology" />}</Route>
         <Route path="/commercial-disclosure" component={CommercialDisclosurePage} />
         <Route path="/get-reviewed" component={GetReviewedPage} />
         <Route path="/get-reviewed/submit" component={SubmitProjectPage} />

@@ -12,7 +12,6 @@ const footerLinks = [
   { label: "Editorial Standards", href: "/editorial-standards" },
   { label: "Commercial Disclosure", href: "/commercial-disclosure" },
   { label: "Get Reviewed", href: "/get-reviewed" },
-  { label: "Newsletter", href: "/#newsletter" },
 ];
 
 const socialLinks = [
