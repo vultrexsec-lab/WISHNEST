@@ -421,27 +421,20 @@ export const ArticleDetailPage = (): JSX.Element => {
                         </p>
                       </div>
 
-                      {/* Column 2 — Key facts as separate short paragraphs */}
+                      {/* Column 2 — Key facts as one compact paragraph (balanced with Summary / Sources) */}
                       <div className="min-w-0">
                         <h2 className="[font-family:'Inter',Helvetica] text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6b6b6b]">
                           Key facts
                         </h2>
-                        <div className="mt-4 flex flex-col gap-3">
-                          {keyFacts.length > 0 ? (
-                            keyFacts.map((fact, i) => (
-                              <p
-                                key={i}
-                                className="[font-family:'Inter',Helvetica] text-[15px] font-normal leading-[1.7] text-[#1e1e1e]"
-                              >
-                                {fact}
-                              </p>
-                            ))
-                          ) : (
-                            <p className="[font-family:'Inter',Helvetica] text-[15px] text-[#6b6b6b]">
-                              —
-                            </p>
-                          )}
-                        </div>
+                        <p className="mt-4 [font-family:'Inter',Helvetica] text-[15px] font-normal leading-[1.7] text-[#1e1e1e]">
+                          {keyFacts.length > 0
+                            ? keyFacts
+                                .map((f) => f.replace(/\s+/g, " ").trim())
+                                .filter(Boolean)
+                                .map((f) => (f.endsWith(".") ? f : `${f}.`))
+                                .join(" ")
+                            : "—"}
+                        </p>
                       </div>
 
                       {/* Column 3 — Sources */}
