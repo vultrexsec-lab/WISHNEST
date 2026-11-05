@@ -25,6 +25,7 @@ from app.services.fact_checker_service import fact_check_article
 from app.services.firecrawl_service import FirecrawlError, search_and_scrape
 from app.services.image_service import build_deep_gallery_photo_assignments, generate_article_images
 from app.services.openai_service import generate_article_packages
+from app.services.publishing_gates import apply_location_normalize, normalize_location, title_looks_like_stay
 from app.services.places_service import (
     is_non_hospitality_title,
     is_hospitality_listing,
@@ -739,6 +740,7 @@ def regenerate_article_images(article: Article, db: Session) -> bool:
     patched_any = bool(hero_url or section_urls or html_changed or ratings_changed)
     if hero_url or section_urls:
         article.hero_image_url = hero_url
+                apply_location_normalize(article)
         article.section_image_urls = section_urls or None
     if html_changed:
         article.full_article = enriched_html
@@ -1245,6 +1247,7 @@ def run_research_pipeline(
             patched_any = bool(hero_url or section_urls or html_changed or ratings_changed)
             if hero_url or section_urls:
                 article.hero_image_url = hero_url
+                apply_location_normalize(article)
                 article.section_image_urls = section_urls or None
             if html_changed:
                 article.full_article = enriched_html

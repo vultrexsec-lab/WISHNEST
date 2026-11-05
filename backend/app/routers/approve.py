@@ -24,6 +24,7 @@ from app.schemas.article import ApproveArticleRequest, ApproveArticleResponse
 from app.services.email_service import send_article_to_subscribers, email_configured
 from app.services.seo_geo_service import run_seo_geo_for_article
 from app.services.postiz_service import queue_article_distribution
+from app.services.publishing_gates import validate_for_public, apply_location_normalize
 
 router = APIRouter(tags=["approval"])
 logger = logging.getLogger("wishnest.approve")
@@ -89,6 +90,18 @@ def approve_article(
     article = db.query(Article).filter(Article.id == article_id).first()
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
+
+    # Step 2 hard gates: hospitality + location + reachable hero
+    apply_location_normalize(article)
+    blockers = validate_for_public(article)
+    if blockers:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "Article cannot be approved until quality gates pass.",
+                "blockers": blockers,
+            },
+        )
 
     if payload.scheduled_at:
         article.status = ArticleStatus.scheduled
