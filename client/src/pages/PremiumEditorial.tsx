@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import type { Article } from "@/lib/article-types";
-import { ABCDE_SCORES, overallGrade } from "@/lib/article-types";
+import { ABCDE_SCORES, overallGrade, publicExcerpt } from "@/lib/article-types";
 
 const navItems = [
   { label: "REVIEWS", href: "/reviews" },
@@ -423,7 +423,7 @@ export const PremiumEditorial = (): JSX.Element => {
       (a.category ?? "EDITORIAL").toUpperCase().replace(/-/g, " ") +
       (a.location ? ` · ${a.location.toUpperCase()}` : ""),
     title: a.headline,
-    description: a.executive_summary ?? a.subtitle ?? undefined,
+    description: publicExcerpt(a) || undefined,
   });
 
   const staticToIntelCard = (item: typeof intelligenceItems[0]): IntelCard => ({
@@ -435,46 +435,37 @@ export const PremiumEditorial = (): JSX.Element => {
     readTime: item.readTime,
   });
 
-  const bestOfCards = bestOfItems.map((item, idx) => {
-    const live = publishedArticles.find((a) => {
-      const h = (a.headline || "").toLowerCase();
-      const c = (a.category || "").toLowerCase();
-      return item.match.some((m) => h.includes(m) || c.includes(m));
-    });
-    if (live) {
+  const bestOfCards = (() => {
+    const used = new Set<string>();
+    return bestOfItems.map((item) => {
+      const live = publishedArticles.find((a) => {
+        if (used.has(a.id)) return false;
+        const h = (a.headline || "").toLowerCase();
+        const c = (a.category || "").toLowerCase();
+        return item.match.some((m) => h.includes(m) || c.includes(m));
+      });
+      if (live) {
+        used.add(live.id);
+        return {
+          number: item.number,
+          image: live.hero_image_url ? resolveMediaUrl(live.hero_image_url) : item.image,
+          category: item.category,
+          title: live.headline,
+          meta: live.location || item.meta,
+          href: `/article/${live.id}`,
+        };
+      }
+      // No matching live article — keep the collection label, link to Best Of hub (do not reuse another story).
       return {
         number: item.number,
-        image: live.hero_image_url ? resolveMediaUrl(live.hero_image_url) : item.image,
+        image: item.image,
         category: item.category,
-        title: live.headline,
-        meta: live.location || item.meta,
-        href: `/article/${live.id}`,
+        title: item.title,
+        meta: item.meta,
+        href: item.href,
       };
-    }
-    const fallback = publishedArticles.length
-      ? publishedArticles[idx % publishedArticles.length]
-      : null;
-    if (fallback) {
-      return {
-        number: item.number,
-        image: fallback.hero_image_url
-          ? resolveMediaUrl(fallback.hero_image_url)
-          : item.image,
-        category: String(fallback.category || item.category).toUpperCase(),
-        title: fallback.headline,
-        meta: fallback.location || item.meta,
-        href: `/article/${fallback.id}`,
-      };
-    }
-    return {
-      number: item.number,
-      image: item.image,
-      category: item.category,
-      title: item.title,
-      meta: item.meta,
-      href: item.href,
-    };
-  });
+    });
+  })();
 
   const trendingLive = publishedArticles.slice(0, 4);
   const intelligenceLive = publishedArticles
@@ -695,7 +686,7 @@ export const PremiumEditorial = (): JSX.Element => {
                   </h2>
                   <p className="max-w-[413px] pt-3 [font-family:'Inter',Helvetica] text-[15px] font-normal leading-[26.2px] text-[#6b6b6b]">
                     {featuredArticle.subtitle ||
-                      featuredArticle.executive_summary ||
+                      publicExcerpt(featuredArticle) ||
                       "Independent WishNest review — architecture, landscape and guest experience."}
                   </p>
                 </div>
@@ -912,7 +903,7 @@ export const PremiumEditorial = (): JSX.Element => {
                         {article.headline}
                       </h3>
                       <p className="pt-3 [font-family:'Inter',Helvetica] text-[15px] font-normal leading-[26.2px] text-[#6b6b6b]">
-                        {article.executive_summary ?? article.subtitle}
+                        {publicExcerpt(article)}
                       </p>
                       <div className="flex items-center justify-between pt-5">
                         <div className="border-b border-[#2e4a3f40] pb-0.5 [font-family:'Inter',Helvetica] text-[10px] font-normal leading-[15px] tracking-[1px] text-[#2e4a3f]">

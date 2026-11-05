@@ -136,6 +136,10 @@ const GRADE_ORDER: Record<string, number> = {
 };
 
 export function overallGrade(article: Article): string | null {
+  // Prefer editor-set overall so cards and article pages never disagree.
+  if (article.abcde_overall && String(article.abcde_overall).trim()) {
+    return String(article.abcde_overall).trim();
+  }
   const grades = [
     article.architecture_grade,
     article.landscape_grade,
@@ -149,6 +153,17 @@ export function overallGrade(article: Article): string | null {
   const rounded = Math.round(avg);
   const entry = Object.entries(GRADE_ORDER).find(([, v]) => v === rounded);
   return entry ? entry[0] : grades[0];
+}
+
+/** Public card/excerpt text — strip internal draft notes. */
+export function publicExcerpt(article: Article, max = 220): string {
+  const raw = (article.executive_summary || article.subtitle || "").replace(/\s+/g, " ").trim();
+  const cleaned = raw
+    .replace(/This draft is for editorial review before publish\.?/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  if (cleaned.length <= max) return cleaned;
+  return cleaned.slice(0, max - 1).trimEnd() + "…";
 }
 
 export function formatDate(value: string | null): string {
