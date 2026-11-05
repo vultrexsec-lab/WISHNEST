@@ -2917,6 +2917,7 @@ function ListField({
 // ---------------------------------------------------------------------------
 export const ReviewDashboard = (): JSX.Element => {
   const [activeTab, setActiveTab] = useState<DashboardTab>("all");
+  const [showEditorialTools, setShowEditorialTools] = useState(false);
   const { logout } = useAuth();
   const [, navigate] = useLocation();
   const { toast } = useToast();
@@ -2964,67 +2965,6 @@ export const ReviewDashboard = (): JSX.Element => {
   return (
     <main className="min-h-screen bg-[#0a0f0d] text-white">
       <SiteNav />
-
-      <div className="mx-auto max-w-[1166px] px-4 pt-6 sm:px-8">
-        <div className="mb-2 border border-white/15 bg-white/5 px-4 py-3 text-[12px] leading-[20px] text-white/75">
-          <p className="font-medium tracking-[0.06em] text-emerald-300/90">EDITORIAL CONTROLS</p>
-          <p className="mt-1">
-            Posted articles are editable. Run Editor-in-Chief and Fact-check before approve.
-            Sanitize all cleans promotional language on every old and new article in the database.
-          </p>
-          <button
-            type="button"
-            data-testid="button-sanitize-library"
-            className="mt-3 rounded-lg border border-emerald-500/40 px-3 py-1.5 text-[11px] tracking-[1px] text-emerald-300 hover:bg-emerald-500/10"
-            onClick={async () => {
-              try {
-                const res = await apiRequest("POST", "/api/articles/sanitize-all");
-                if (!res.ok) throw new Error("Sanitize failed");
-                const data = await res.json();
-                invalidateArticleQueries();
-                toast({
-                  title: "Library sanitized",
-                  description: `Scanned ${data.scanned}, updated ${data.updated} articles.`,
-                });
-              } catch (e) {
-                toast({
-                  title: "Sanitize failed",
-                  description: e instanceof Error ? e.message : "Error",
-                  variant: "destructive",
-                });
-              }
-            }}
-          >
-            SANITIZE ALL ARTICLES (OLD + NEW)
-          </button>
-          <button
-            type="button"
-            data-testid="button-trash-non-hospitality"
-            className="ml-2 mt-3 rounded-lg border border-red-500/40 px-3 py-1.5 text-[11px] tracking-[1px] text-red-300 hover:bg-red-500/10"
-            onClick={async () => {
-              try {
-                const res = await apiRequest("POST", "/api/articles/trash-non-hospitality");
-                if (!res.ok) throw new Error("Cleanup failed");
-                const data = await res.json();
-                invalidateArticleQueries();
-                toast({
-                  title: "Non-stay articles moved to trash",
-                  description: `${data.trashed} real-estate / office pieces removed from the live library.`,
-                });
-              } catch (e) {
-                toast({
-                  title: "Cleanup failed",
-                  description: e instanceof Error ? e.message : "Error",
-                  variant: "destructive",
-                });
-              }
-            }}
-          >
-            TRASH NON-HOSPITALITY ARTICLES
-          </button>
-        </div>
-      </div>
-
 
       <section
         className="relative overflow-hidden border-b border-white/10 py-16"
@@ -3088,6 +3028,19 @@ export const ReviewDashboard = (): JSX.Element => {
                 </a>
               </Link>
               <button
+                type="button"
+                data-testid="btn-open-editorial-tools"
+                onClick={() => setShowEditorialTools((v) => !v)}
+                className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1px] transition ${
+                  showEditorialTools
+                    ? "border-violet-400/60 bg-violet-500/25 text-violet-100"
+                    : "border-violet-500/40 bg-violet-500/15 text-violet-200 hover:border-violet-400/60 hover:bg-violet-500/25"
+                }`}
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                EDITORIAL
+              </button>
+              <button
                 onClick={handleLogout}
                 className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-white/50 transition-colors hover:border-white/20 hover:text-white"
               >
@@ -3100,6 +3053,73 @@ export const ReviewDashboard = (): JSX.Element => {
             as a draft. Nothing is published or scheduled without your explicit
             approval.
           </p>
+
+          {showEditorialTools && (
+            <div
+              className="mt-6 rounded-2xl border border-violet-500/25 bg-violet-500/5 px-5 py-4"
+              data-testid="panel-editorial-tools"
+            >
+              <p className="[font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1.6px] text-violet-200/90">
+                EDITORIAL TOOLS
+              </p>
+              <p className="mt-1 max-w-[640px] [font-family:'Inter',Helvetica] text-[13px] leading-[20px] text-white/55">
+                Posted articles are editable. Run Editor-in-Chief and Fact-check before approve.
+                Sanitize cleans promotional language across the library; trash removes clear non-stay pieces.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  data-testid="button-sanitize-library"
+                  className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1px] text-emerald-300 transition hover:bg-emerald-500/20"
+                  onClick={async () => {
+                    try {
+                      const res = await apiRequest("POST", "/api/articles/sanitize-all");
+                      if (!res.ok) throw new Error("Sanitize failed");
+                      const data = await res.json();
+                      invalidateArticleQueries();
+                      toast({
+                        title: "Library sanitized",
+                        description: `Scanned ${data.scanned}, updated ${data.updated} articles.`,
+                      });
+                    } catch (e) {
+                      toast({
+                        title: "Sanitize failed",
+                        description: e instanceof Error ? e.message : "Error",
+                        variant: "destructive",
+                      });
+                    }
+                  }}
+                >
+                  SANITIZE ALL (OLD + NEW)
+                </button>
+                <button
+                  type="button"
+                  data-testid="button-trash-non-hospitality"
+                  className="rounded-full border border-red-500/40 bg-red-500/10 px-4 py-2 [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1px] text-red-300 transition hover:bg-red-500/20"
+                  onClick={async () => {
+                    try {
+                      const res = await apiRequest("POST", "/api/articles/trash-non-hospitality");
+                      if (!res.ok) throw new Error("Cleanup failed");
+                      const data = await res.json();
+                      invalidateArticleQueries();
+                      toast({
+                        title: "Non-stay articles moved to trash",
+                        description: `${data.trashed} real-estate / office pieces removed from the live library.`,
+                      });
+                    } catch (e) {
+                      toast({
+                        title: "Cleanup failed",
+                        description: e instanceof Error ? e.message : "Error",
+                        variant: "destructive",
+                      });
+                    }
+                  }}
+                >
+                  TRASH NON-HOSPITALITY
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="mt-10">
             <MetricsBar articles={articles} />
