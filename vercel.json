@@ -4,10 +4,17 @@
   "installCommand": "npm install",
   "rewrites": [
     {
+      "source": "/sitemap.xml",
+      "destination": "https://wishnest-backend-b0vs.onrender.com/api/sitemap.xml"
+    },
+    {
       "source": "/api/:path*",
       "destination": "https://wishnest-backend-b0vs.onrender.com/api/:path*"
     },
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
   ],
   "headers": [
     {
@@ -21,7 +28,12 @@
     },
     {
       "source": "/(.*)",
-      "headers": [{ "key": "X-Content-Type-Options", "value": "nosniff" }]
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        }
+      ]
     }
   ]
 }

@@ -6,6 +6,7 @@ import { SiteFooter } from "@/components/SiteFooter";
 import { Button } from "@/components/ui/button";
 import type { Article } from "@/lib/article-types";
 import { ArrowRight, Loader2 } from "lucide-react";
+import { usePageMeta } from "@/hooks/usePageMeta";
 
 function isPublicReimagined(a: Article): boolean {
   if (a.is_trash) return false;
@@ -28,6 +29,8 @@ function afterUrl(a: Article): string | null {
 }
 
 export const ReimaginedPage = (): JSX.Element => {
+  usePageMeta("Reimagined™", "Before-and-after design studies for hospitality properties.");
+
   const { data: articles, isLoading, isError, refetch } = useQuery<Article[]>({
     queryKey: ["/api/articles"],
     staleTime: 60_000,

@@ -4,6 +4,7 @@ import { SiteFooter } from "@/components/SiteFooter";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Building2, CheckCircle2, MessageCircle } from "lucide-react";
 import { publicWhatsAppCta } from "@/lib/whatsapp";
+import { usePageMeta } from "@/hooks/usePageMeta";
 
 const PROPERTY_TYPES = [
   "Resorts",

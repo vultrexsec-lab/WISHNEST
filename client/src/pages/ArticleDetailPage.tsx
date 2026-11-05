@@ -135,10 +135,22 @@ export const ArticleDetailPage = (): JSX.Element => {
     enabled: Boolean(article),
   });
 
-  usePageMeta(
-    article?.headline || "Article",
-    article?.meta_description || article?.subtitle || article?.executive_summary || undefined,
-  );
+  usePageMeta({
+    title: article?.headline || "Article",
+    description:
+      article?.meta_description ||
+      article?.subtitle ||
+      article?.executive_summary ||
+      undefined,
+    canonicalPath: article?.id ? `/article/${article.id}` : undefined,
+    placeName: article?.location || undefined,
+    ogType: "article",
+    imageUrl: article?.hero_image_url
+      ? article.hero_image_url.startsWith("http")
+        ? article.hero_image_url
+        : `https://wishnest-backend-b0vs.onrender.com${article.hero_image_url}`
+      : undefined,
+  });
 
   // MUST be declared before any early return — React Rules of Hooks.
   // Two passes over injected section figures:

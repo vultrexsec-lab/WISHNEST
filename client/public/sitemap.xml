@@ -1,15 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://www.wishnest.info/</loc><changefreq>daily</changefreq><priority>1.0</priority></url>
-  <url><loc>https://www.wishnest.info/reviews</loc><changefreq>daily</changefreq><priority>0.9</priority></url>
+  <url><loc>https://www.wishnest.info/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://www.wishnest.info/reviews</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://www.wishnest.info/destinations</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
-  <url><loc>https://www.wishnest.info/reimagined</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>
+  <url><loc>https://www.wishnest.info/reimagined</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://www.wishnest.info/best-of</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://www.wishnest.info/intelligence</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
-  <url><loc>https://www.wishnest.info/get-reviewed</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
-  <url><loc>https://www.wishnest.info/get-reviewed/submit</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
-  <url><loc>https://www.wishnest.info/best-of</loc><changefreq>weekly</changefreq><priority>0.7</priority></url>
-  <url><loc>https://www.wishnest.info/contributors</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
-  <url><loc>https://www.wishnest.info/editorial-standards</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
-  <url><loc>https://www.wishnest.info/methodology</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
-  <url><loc>https://www.wishnest.info/commercial-disclosure</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://www.wishnest.info/get-reviewed</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://www.wishnest.info/get-reviewed/submit</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://www.wishnest.info/contributors</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://www.wishnest.info/editorial-standards</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://www.wishnest.info/methodology</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://www.wishnest.info/commercial-disclosure</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://www.wishnest.info/article/9b0af387-53fa-431c-aef5-15418a90a4e7</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://www.wishnest.info/article/45d5043b-4b15-41bb-a455-b9edcfb6edd9</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://www.wishnest.info/article/fb63725e-6dca-4783-a920-04047cc9b6fa</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://www.wishnest.info/article/14d92136-bf3d-4460-97b0-0ec490233dc2</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://www.wishnest.info/article/ec987a04-20d9-4b01-8ebd-f73fe44a7add</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://www.wishnest.info/article/c6c248e8-56ab-4a38-bc34-47a84aed291b</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://www.wishnest.info/article/95948a3f-7ac3-4881-9415-674e5abbe70d</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://www.wishnest.info/article/d860336d-f7ee-4c07-bd3a-3f7e0d40c7b4</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://www.wishnest.info/article/1a42ccb4-751f-45cf-9cd1-e33faa4fce65</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
 </urlset>
