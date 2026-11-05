@@ -93,15 +93,10 @@ export const BestOfPage = (): JSX.Element => {
     // Prefer a real article URL; only fall back to /reviews when library empty
     const href = art ? `/article/${art.id}` : "/reviews";
     const meta = art
-      ? item.meta
-      : "Collection page forthcoming · Open live reviews";
-    // Date label: use article date or mark as curated archive
-    const meta = art
       ? (art.location || item.meta)
       : "Curated archive — open Reviews for the live library";
     return {
       ...item,
-      meta: art ? item.meta : "Collection page forthcoming · Open live reviews",
       href,
       title: art ? art.headline : item.title,
       description: art
