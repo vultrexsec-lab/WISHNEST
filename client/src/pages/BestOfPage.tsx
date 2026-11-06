@@ -53,7 +53,7 @@ const staticCollections = [
     category: "UNDER THE RADAR",
     title: "Under-the-radar stays from the live library",
     description:
-      "Extraordinary stays that haven't yet been discovered by the mainstream travel press. Reviewed, scored, and verified.",
+      "Extraordinary stays that haven't yet been discovered by the mainstream travel press. Reviewed and scored on available evidence; material claims are qualified when sources are thin.",
     meta: "Live reviews · Collection page forthcoming",
   },
 ];

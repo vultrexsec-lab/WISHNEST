@@ -111,7 +111,7 @@ const frameworkCards = [
     letter: "A",
     title: "ARCHITECTURE",
     description:
-      "Spatial quality, structural integrity, material honesty, and the building's dialogue with its site and context.",
+      "Concept, massing, spatial planning, materials, interiors, climate response and design coherence as readable from available evidence — not a structural-engineering survey.",
   },
   {
     letter: "B",
@@ -321,12 +321,23 @@ export const PremiumEditorial = (): JSX.Element => {
     queryKey: ["/api/articles"],
   });
 
-  const publishedArticles = (liveArticles ?? []).filter(
-    (a) =>
-      ["approved", "scheduled", "published"].includes(a.status) &&
-      !a.is_trash &&
-      Boolean(a.hero_image_url),
-  );
+    const publishedArticles = (liveArticles ?? []).filter((a) => {
+    if (!["approved", "scheduled", "published"].includes(a.status)) return false;
+    if (!a.hero_image_url) return false;
+    const cat = (a.category || "").toLowerCase();
+    const type = (a.article_type || "").toLowerCase();
+    const head = (a.headline || "").toLowerCase();
+    if (
+      cat === "reimagined" ||
+      type === "reimagined" ||
+      head.includes("reimagined:") ||
+      !!(a.property_snapshot as Record<string, unknown> | null)?.reimaging
+    ) {
+      return false;
+    }
+    return true;
+  });
+
 
   // Featured review: newest published review-type article (falls back to any published)
   const featuredArticle =
@@ -782,8 +793,11 @@ export const PremiumEditorial = (): JSX.Element => {
             </div>
             <div>
               <div className="[font-family:'Inter',Helvetica] text-[10px] font-normal leading-[15px] tracking-[2.20px] text-[#6b6b6b]">
-                ADDITIONAL METRICS
+                ADDITIONAL METRICS · ILLUSTRATIVE SCALE ONLY
               </div>
+              <p className="max-w-[420px] pt-3 [font-family:'Inter',Helvetica] text-[12px] leading-[18px] text-[#6b6b6b]">
+                Sample axis labels for how secondary signals may be shown on a review — not a live score for any named property.
+              </p>
               <div className="pt-6">
                 {additionalMetrics.map((metric) => (
                   <div
@@ -915,38 +929,18 @@ export const PremiumEditorial = (): JSX.Element => {
                     </article>
                   </Link>
                 ))
-              : latestReviews.map((review) => (
-                  <article key={review.title} className="flex flex-col">
-                    <div className="relative h-[255.6px] bg-[#e8e6e0]">
-                      <div
-                        className="h-full w-full bg-cover bg-center"
-                        style={{ backgroundImage: `url(${review.image})` }}
-                      />
-                      <div className="absolute left-4 top-4 flex h-9 w-9 items-center justify-center border border-[#2e4a3f] bg-[#f8f7f4e6]">
-                        <span className="[font-family:'Inter',Helvetica] text-[13px] font-normal leading-[19.5px] text-[#2e4a3f]">
-                          {review.grade}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="pt-6 [font-family:'Inter',Helvetica] text-[10px] font-normal leading-[15px] tracking-[1.60px] text-[#6b6b6b]">
-                      {review.location}
-                    </div>
-                    <h3 className="pt-2 [font-family:'Playfair_Display',Helvetica] text-[21px] font-normal leading-[28.9px] text-[#1e1e1e]">
-                      {review.title}
-                    </h3>
-                    <p className="pt-3 [font-family:'Inter',Helvetica] text-[15px] font-normal leading-[26.2px] text-[#6b6b6b]">
-                      {review.description}
-                    </p>
-                    <div className="flex items-center justify-between pt-5">
-                      <div className="border-b border-[#2e4a3f40] pb-0.5 [font-family:'Inter',Helvetica] text-[10px] font-normal leading-[15px] tracking-[1px] text-[#2e4a3f]">
-                        {review.tag}
-                      </div>
-                      <div className="[font-family:'Inter',Helvetica] text-[11px] font-normal leading-[16.5px] text-[#6b6b6b]">
-                        {review.readTime}
-                      </div>
-                    </div>
-                  </article>
-                ))}
+              : (
+              <div className="col-span-full rounded-lg border border-[#1e1e1e14] bg-white px-6 py-10 text-center">
+                <p className="[font-family:'Inter',Helvetica] text-[15px] leading-[24px] text-[#6b6b6b]">
+                  Live reviews appear here when published. Open the Reviews library for the current list.
+                </p>
+                <Link href="/reviews">
+                  <span className="mt-4 inline-block cursor-pointer border-b border-[#2e4a3f40] pb-0.5 [font-family:'Inter',Helvetica] text-[11px] tracking-[1px] text-[#2e4a3f]">
+                    VIEW ALL REVIEWS
+                  </span>
+                </Link>
+              </div>
+            )}
           </div>
         </div>
       </section>

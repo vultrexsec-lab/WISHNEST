@@ -8,14 +8,14 @@ const contributors = [
     bio: "Every WishNest draft begins with our Research Editor Agent — combining live web research with structured ABCDE scoring before any article reaches a human reviewer.",
   },
   {
-    name: "Editorial Review Board",
+    name: "Editorial desk",
     role: "HUMAN APPROVAL & STANDARDS",
-    bio: "No article is published without explicit human sign-off. Our editors verify facts, tone, and scoring integrity before anything goes live.",
+    bio: "Drafts are prepared with AI-assisted research and production tools, then reviewed on the WishNest desk before publication. Bylines currently read WishNest Editors unless a named contributor is credited on the story.",
   },
   {
-    name: "Contributing Architects",
-    role: "DESIGN & ARCHITECTURE ANALYSIS",
-    bio: "Practicing architects inform the Architecture and Landscape dimensions of our scoring framework, grounding every grade in professional judgement.",
+    name: "Architecture reading",
+    role: "DESIGN & PLACE ANALYSIS",
+    bio: "Architecture and landscape grades are editorial judgments based on available evidence (photographs, plans, operator materials, public records). They are not a substitute for a licensed structural survey or an on-site architect’s report unless a story states otherwise.",
   },
 ];
 
@@ -35,9 +35,9 @@ export const ContributorsPage = (): JSX.Element => {
             <span className="italic">WishNest</span>
           </h1>
           <p className="max-w-[540px] pt-6 [font-family:'Inter',Helvetica] text-[17px] font-normal leading-[30px] text-[#6b6b6b]">
-            A blend of AI-assisted research and human editorial judgement.
-            Every draft is reviewed and approved by a person before it
-            reaches you.
+            AI-assisted research and production, with human editorial review
+            before publication. We do not claim a named practicing architect
+            scores every property unless that contributor is credited on the article.
           </p>
         </div>
       </section>

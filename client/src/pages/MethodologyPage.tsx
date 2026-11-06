@@ -7,7 +7,7 @@ const CATEGORIES = [
   {
     letter: "A",
     name: "Architecture",
-    body: "Concept, massing, spatial planning, materials, interiors, climate response and design intelligence — not façade beauty alone.",
+    body: "Concept, massing, spatial planning, materials, interiors, climate response and design coherence as supported by available evidence. Desk-based grades do not certify design coherence or code compliance.",
   },
   {
     letter: "B",
@@ -50,9 +50,14 @@ export function MethodologyPage(): JSX.Element {
           <h2 className="[font-family:'Playfair_Display',Helvetica] text-[24px]">Scale</h2>
           <p className="text-[15px] leading-[26px] text-[#3a3a3a]">
             Category scores use a 1.0–10.0 numeric scale when evidence allows, then map to letter
-            grades (A+ rare / exceptional; B band for solid average performance). Thin evidence
-            produces conservative scores. Missing evidence may be marked not assessed rather than
-            guessed.
+            grades. Thin evidence produces conservative scores. Missing evidence may be marked
+            not assessed rather than guessed.
+          </p>
+          <p className="text-[15px] leading-[26px] text-[#3a3a3a]">
+            Indicative numeric-to-letter bands used on the desk: A+ ≈ 9.5–10; A ≈ 9.0–9.4; A− ≈ 8.5–8.9;
+            B+ ≈ 8.0–8.4; B ≈ 7.0–7.9; B− ≈ 6.5–6.9; C band ≈ 5.0–6.4; below 5 is reserved for clear
+            under-performance on the evidence available. These are editorial guide rails, not a
+            laboratory instrument.
           </p>
         </section>
 
@@ -81,9 +86,12 @@ export function MethodologyPage(): JSX.Element {
         <section className="mt-10 space-y-3">
           <h2 className="[font-family:'Playfair_Display',Helvetica] text-[24px]">Overall grade</h2>
           <p className="text-[15px] leading-[26px] text-[#3a3a3a]">
-            The overall grade summarises the five category letters when enough categories are
-            assessed. Additional metrics on some pages (e.g. value, sustainability signals) are
-            interpretive context and are not a substitute for the five-letter card unless stated.
+            The overall grade is an editorial summary of assessed category letters (typically the
+            five ABCDE marks). When category evidence is uneven, the overall mark stays conservative.
+            Secondary homepage axis labels (value, sustainability, investment potential, etc.) are
+            illustrative context unless a story explicitly ties a figure to a named property and date.
+            Architecture grades never claim design coherence, code compliance or construction
+            quality from photographs alone.
           </p>
         </section>
 
