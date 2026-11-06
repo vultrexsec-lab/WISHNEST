@@ -488,7 +488,58 @@ app.include_router(vision.router)
 app.include_router(reimaging.router)
 app.include_router(growth.router)
 app.include_router(entities.router)
+
 app.include_router(listening.router)
+
+# SEO: public sitemap (also registered on articles router; kept here so deploy always exposes it)
+@app.get("/api/sitemap.xml")
+def _sitemap_xml():
+    from app.database import SessionLocal
+    from app.models.article import Article, ArticleStatus
+    from fastapi.responses import Response as FastResponse
+    static = [
+        ("https://www.wishnest.info/", "daily", "1.0"),
+        ("https://www.wishnest.info/reviews", "daily", "0.9"),
+        ("https://www.wishnest.info/destinations", "weekly", "0.8"),
+        ("https://www.wishnest.info/reimagined", "weekly", "0.9"),
+        ("https://www.wishnest.info/best-of", "weekly", "0.7"),
+        ("https://www.wishnest.info/methodology", "monthly", "0.6"),
+        ("https://www.wishnest.info/editorial-standards", "monthly", "0.6"),
+        ("https://www.wishnest.info/commercial-disclosure", "monthly", "0.6"),
+        ("https://www.wishnest.info/get-reviewed", "monthly", "0.7"),
+    ]
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(Article)
+            .filter(
+                Article.is_trash.is_(False),
+                Article.status.in_(
+                    [ArticleStatus.approved, ArticleStatus.scheduled, ArticleStatus.published]
+                ),
+            )
+            .order_by(Article.updated_at.desc())
+            .limit(500)
+            .all()
+        )
+    finally:
+        db.close()
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    ]
+    for loc, freq, pri in static:
+        lines.append(
+            f"  <url><loc>{loc}</loc><changefreq>{freq}</changefreq><priority>{pri}</priority></url>"
+        )
+    for a in rows:
+        lines.append(
+            f"  <url><loc>https://www.wishnest.info/article/{a.id}</loc>"
+            f"<changefreq>weekly</changefreq><priority>0.8</priority></url>"
+        )
+    lines.append("</urlset>")
+    return FastResponse(content="\n".join(lines), media_type="application/xml; charset=utf-8")
+
 
 
 @app.get("/api/health")
