@@ -740,8 +740,8 @@ def regenerate_article_images(article: Article, db: Session) -> bool:
     patched_any = bool(hero_url or section_urls or html_changed or ratings_changed)
     if hero_url or section_urls:
         article.hero_image_url = hero_url
-                apply_location_normalize(article)
         article.section_image_urls = section_urls or None
+    apply_location_normalize(article)
     if html_changed:
         article.full_article = enriched_html
     if patched_any:
