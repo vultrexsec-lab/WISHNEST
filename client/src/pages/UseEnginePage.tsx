@@ -1,0 +1,399 @@
+/**
+ * USE MVP P1 — CEO / admin panel for tenants, A01/A02/A00, audit.
+ * No live ad spend in this phase.
+ */
+import { useState } from "react";
+import { Link } from "wouter";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { SiteNav } from "@/components/SiteNav";
+import { SiteFooter } from "@/components/SiteFooter";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { Loader2 } from "lucide-react";
+
+type Tenant = {
+  id: string;
+  slug: string;
+  name: string;
+  product_summary?: string | null;
+  website?: string | null;
+  geography?: string | null;
+};
+
+type Strategy = {
+  id: string;
+  tenant_id: string;
+  status: string;
+  a01_output?: Record<string, unknown> | null;
+  a02_output?: Record<string, unknown> | null;
+  a00_output?: Record<string, unknown> | null;
+  ceo_notes?: string | null;
+};
+
+type AuditRow = {
+  id: string;
+  agent_id: string;
+  action: string;
+  status: string;
+  created_at?: string | null;
+  detail?: Record<string, unknown> | null;
+};
+
+export default function UseEnginePage() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [name, setName] = useState("");
+  const [product, setProduct] = useState("");
+  const [website, setWebsite] = useState("");
+  const [geo, setGeo] = useState("");
+  const [selectedTenant, setSelectedTenant] = useState<string | null>(null);
+  const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
+  const [ceoNotes, setCeoNotes] = useState("");
+
+  const statusQ = useQuery({
+    queryKey: ["/api/use/status"],
+    queryFn: async () => {
+      const r = await apiRequest("GET", "/api/use/status");
+      if (!r.ok) throw new Error("USE status failed");
+      return r.json();
+    },
+  });
+
+  const tenantsQ = useQuery({
+    queryKey: ["/api/use/tenants"],
+    queryFn: async () => {
+      const r = await apiRequest("GET", "/api/use/tenants");
+      if (!r.ok) throw new Error("Tenants failed");
+      return (await r.json()) as Tenant[];
+    },
+  });
+
+  const strategiesQ = useQuery({
+    queryKey: ["/api/use/tenants", selectedTenant, "strategies"],
+    enabled: !!selectedTenant,
+    queryFn: async () => {
+      const r = await apiRequest("GET", `/api/use/tenants/${selectedTenant}/strategies`);
+      if (!r.ok) throw new Error("Strategies failed");
+      return (await r.json()) as Strategy[];
+    },
+  });
+
+  const strategyQ = useQuery({
+    queryKey: ["/api/use/strategies", selectedStrategy],
+    enabled: !!selectedStrategy,
+    queryFn: async () => {
+      const r = await apiRequest("GET", `/api/use/strategies/${selectedStrategy}`);
+      if (!r.ok) throw new Error("Strategy failed");
+      return (await r.json()) as Strategy;
+    },
+  });
+
+  const auditQ = useQuery({
+    queryKey: ["/api/use/audit", selectedTenant],
+    queryFn: async () => {
+      const q = selectedTenant ? `?tenant_id=${selectedTenant}&limit=30` : "?limit=30";
+      const r = await apiRequest("GET", `/api/use/audit${q}`);
+      if (!r.ok) throw new Error("Audit failed");
+      return (await r.json()) as AuditRow[];
+    },
+  });
+
+  const createTenant = useMutation({
+    mutationFn: async () => {
+      const r = await apiRequest("POST", "/api/use/tenants", {
+        name,
+        product_summary: product,
+        website,
+        geography: geo,
+      });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.detail || "Create tenant failed");
+      }
+      return r.json();
+    },
+    onSuccess: (t: Tenant) => {
+      toast({ title: "Tenant created", description: t.name });
+      setName("");
+      setProduct("");
+      setWebsite("");
+      setGeo("");
+      setSelectedTenant(t.id);
+      qc.invalidateQueries({ queryKey: ["/api/use/tenants"] });
+      qc.invalidateQueries({ queryKey: ["/api/use/audit"] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const createStrategy = useMutation({
+    mutationFn: async () => {
+      const r = await apiRequest("POST", `/api/use/tenants/${selectedTenant}/strategies`);
+      if (!r.ok) throw new Error("Create strategy failed");
+      return r.json();
+    },
+    onSuccess: (s: Strategy) => {
+      setSelectedStrategy(s.id);
+      qc.invalidateQueries({ queryKey: ["/api/use/tenants", selectedTenant, "strategies"] });
+      toast({ title: "Strategy record created" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const runAgent = useMutation({
+    mutationFn: async (path: string) => {
+      const r = await apiRequest("POST", path);
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(typeof e.detail === "string" ? e.detail : "Agent run failed");
+      }
+      return r.json();
+    },
+    onSuccess: (s: Strategy) => {
+      setSelectedStrategy(s.id);
+      qc.invalidateQueries({ queryKey: ["/api/use/strategies", s.id] });
+      qc.invalidateQueries({ queryKey: ["/api/use/tenants", selectedTenant, "strategies"] });
+      qc.invalidateQueries({ queryKey: ["/api/use/audit"] });
+      toast({ title: "Agent completed", description: `Status: ${s.status}` });
+    },
+    onError: (e: Error) => toast({ title: "Agent error", description: e.message, variant: "destructive" }),
+  });
+
+  const ceo = useMutation({
+    mutationFn: async (approve: boolean) => {
+      const r = await apiRequest("POST", `/api/use/strategies/${selectedStrategy}/ceo-decision`, {
+        approve,
+        notes: ceoNotes,
+      });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(typeof e.detail === "string" ? e.detail : "CEO decision failed");
+      }
+      return r.json();
+    },
+    onSuccess: (s: Strategy) => {
+      qc.invalidateQueries({ queryKey: ["/api/use/strategies", s.id] });
+      qc.invalidateQueries({ queryKey: ["/api/use/audit"] });
+      toast({ title: s.status === "approved" ? "Strategy approved" : "Strategy rejected" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const st = strategyQ.data;
+  const busy = runAgent.isPending || ceo.isPending || createStrategy.isPending;
+
+  return (
+    <main className="min-h-screen bg-[#0a0f0d] text-white">
+      <SiteNav />
+      <div className="mx-auto max-w-[1100px] px-4 py-10 sm:px-8">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-semibold tracking-[2px] text-emerald-400">USE MVP 1.1 · P1</p>
+            <h1 className="pt-2 font-serif text-3xl font-medium text-white">Universal Sales Engine</h1>
+            <p className="mt-2 max-w-xl text-sm text-white/55">
+              Foundation: tenants, A01 Strategy, A02 Rival, CEO approval, A00 Campaign Manager (plan only).
+              No live ad spend in this phase.
+            </p>
+          </div>
+          <Link href="/dashboard">
+            <a className="rounded-full border border-white/15 px-4 py-2 text-[10px] tracking-wide text-white/70 hover:border-white/30">
+              ← DASHBOARD
+            </a>
+          </Link>
+        </div>
+
+        {statusQ.data && (
+          <div className="mt-6 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-xs text-white/60">
+            Phase {statusQ.data.phase} · Agents {(statusQ.data.agents || []).join(", ")} · Live spend:{" "}
+            {statusQ.data.live_spend ? "yes" : "no"}
+          </div>
+        )}
+
+        {/* Create tenant */}
+        <section className="mt-10 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+          <h2 className="text-sm font-semibold tracking-wide text-emerald-300/90">1 · Create tenant</h2>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <input
+              className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm"
+              placeholder="Business name *"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <input
+              className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm"
+              placeholder="Website"
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
+            />
+            <input
+              className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm"
+              placeholder="Geography"
+              value={geo}
+              onChange={(e) => setGeo(e.target.value)}
+            />
+            <input
+              className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm"
+              placeholder="Product / service summary"
+              value={product}
+              onChange={(e) => setProduct(e.target.value)}
+            />
+          </div>
+          <button
+            type="button"
+            disabled={!name.trim() || createTenant.isPending}
+            onClick={() => createTenant.mutate()}
+            className="mt-4 rounded-full border border-emerald-500/40 bg-emerald-500/15 px-4 py-2 text-[11px] font-semibold tracking-wide text-emerald-200 disabled:opacity-40"
+          >
+            {createTenant.isPending ? "Saving…" : "CREATE TENANT"}
+          </button>
+        </section>
+
+        {/* Tenant list */}
+        <section className="mt-8">
+          <h2 className="text-sm font-semibold tracking-wide text-emerald-300/90">2 · Select tenant</h2>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {(tenantsQ.data || []).map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => {
+                  setSelectedTenant(t.id);
+                  setSelectedStrategy(null);
+                }}
+                className={`rounded-full border px-3 py-1.5 text-[11px] ${
+                  selectedTenant === t.id
+                    ? "border-emerald-400/60 bg-emerald-500/20 text-emerald-100"
+                    : "border-white/15 text-white/60 hover:border-white/30"
+                }`}
+              >
+                {t.name}
+              </button>
+            ))}
+            {!tenantsQ.data?.length && !tenantsQ.isLoading && (
+              <p className="text-sm text-white/40">No tenants yet.</p>
+            )}
+          </div>
+        </section>
+
+        {selectedTenant && (
+          <section className="mt-8 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+            <h2 className="text-sm font-semibold tracking-wide text-emerald-300/90">3 · Strategy workflow</h2>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => createStrategy.mutate()}
+                className="rounded-full border border-white/20 px-3 py-1.5 text-[11px] text-white/80"
+              >
+                New strategy record
+              </button>
+              {(strategiesQ.data || []).map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setSelectedStrategy(s.id)}
+                  className={`rounded-full border px-3 py-1.5 text-[11px] ${
+                    selectedStrategy === s.id
+                      ? "border-violet-400/50 bg-violet-500/20 text-violet-100"
+                      : "border-white/15 text-white/55"
+                  }`}
+                >
+                  {s.id.slice(0, 8)} · {s.status}
+                </button>
+              ))}
+            </div>
+
+            {selectedStrategy && (
+              <div className="mt-6 space-y-4">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => runAgent.mutate(`/api/use/strategies/${selectedStrategy}/run-a01`)}
+                    className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-[11px] text-emerald-200"
+                  >
+                    {runAgent.isPending ? <Loader2 className="inline h-3 w-3 animate-spin" /> : null} RUN A01 STRATEGY
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || !st?.a01_output}
+                    onClick={() => runAgent.mutate(`/api/use/strategies/${selectedStrategy}/run-a02`)}
+                    className="rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-[11px] text-amber-200 disabled:opacity-40"
+                  >
+                    RUN A02 RIVAL
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || !st?.a01_output}
+                    onClick={() => ceo.mutate(true)}
+                    className="rounded-full border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-[11px] text-sky-200 disabled:opacity-40"
+                  >
+                    CEO APPROVE
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || !st?.a01_output}
+                    onClick={() => ceo.mutate(false)}
+                    className="rounded-full border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-[11px] text-red-200 disabled:opacity-40"
+                  >
+                    CEO REJECT
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || st?.status !== "approved"}
+                    onClick={() => runAgent.mutate(`/api/use/strategies/${selectedStrategy}/run-a00`)}
+                    className="rounded-full border border-violet-500/40 bg-violet-500/10 px-3 py-1.5 text-[11px] text-violet-200 disabled:opacity-40"
+                  >
+                    RUN A00 CAMPAIGN MANAGER
+                  </button>
+                </div>
+                <textarea
+                  className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm"
+                  rows={2}
+                  placeholder="CEO notes (optional)"
+                  value={ceoNotes}
+                  onChange={(e) => setCeoNotes(e.target.value)}
+                />
+                <p className="text-xs text-white/45">
+                  Status: <span className="text-white/80">{st?.status || "…"}</span>
+                  {busy && " · running…"}
+                </p>
+                {st?.a01_output && (
+                  <pre className="max-h-48 overflow-auto rounded-lg border border-white/10 bg-black/40 p-3 text-[11px] text-white/70">
+                    {JSON.stringify(st.a01_output, null, 2)}
+                  </pre>
+                )}
+                {st?.a02_output && (
+                  <pre className="max-h-48 overflow-auto rounded-lg border border-amber-500/20 bg-black/40 p-3 text-[11px] text-amber-100/70">
+                    {JSON.stringify(st.a02_output, null, 2)}
+                  </pre>
+                )}
+                {st?.a00_output && (
+                  <pre className="max-h-48 overflow-auto rounded-lg border border-violet-500/20 bg-black/40 p-3 text-[11px] text-violet-100/70">
+                    {JSON.stringify(st.a00_output, null, 2)}
+                  </pre>
+                )}
+              </div>
+            )}
+          </section>
+        )}
+
+        <section className="mt-8 mb-16">
+          <h2 className="text-sm font-semibold tracking-wide text-emerald-300/90">4 · Audit log</h2>
+          <ul className="mt-3 space-y-2">
+            {(auditQ.data || []).map((a) => (
+              <li
+                key={a.id}
+                className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-[11px] text-white/55"
+              >
+                <span className="text-emerald-300/80">{a.agent_id}</span> · {a.action} · {a.status}
+                {a.created_at ? ` · ${a.created_at}` : ""}
+              </li>
+            ))}
+            {!auditQ.data?.length && <li className="text-sm text-white/35">No audit entries yet.</li>}
+          </ul>
+        </section>
+      </div>
+      <SiteFooter />
+    </main>
+  );
+}

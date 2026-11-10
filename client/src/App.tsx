@@ -15,6 +15,7 @@ import { BestOfPage } from "@/pages/BestOfPage";
 import { IntelligencePage } from "@/pages/IntelligencePage";
 import { IntelligenceReportPage } from "@/pages/IntelligenceReportPage";
 import { ReviewDashboard } from "@/pages/ReviewDashboard";
+import UseEnginePage from "@/pages/UseEnginePage";
 import { ReviewsPage } from "@/pages/ReviewsPage";
 import { ContributorsPage } from "@/pages/ContributorsPage";
 import { ReimaginedPage } from "@/pages/ReimaginedPage";
@@ -49,6 +50,12 @@ function ProtectedListening() {
   const { isAdmin } = useAuth();
   if (!isAdmin) return <Redirect to="/login" />;
   return <ListeningPage />;
+}
+
+function ProtectedUse() {
+  const { isAdmin } = useAuth();
+  if (!isAdmin) return <Redirect to="/login" />;
+  return <UseEnginePage />;
 }
 
 function ProtectedOutreach() {
@@ -104,6 +111,7 @@ function Router() {
         <Route path="/get-reviewed" component={GetReviewedPage} />
         <Route path="/get-reviewed/submit" component={SubmitProjectPage} />
         <Route path="/submissions" component={SubmissionsAdminPage} />
+        <Route path="/use" component={ProtectedUse} />
         <Route path="/outreach" component={ProtectedOutreach} />
         <Route path="/listening" component={ProtectedListening} />
         <Route path="/survey/:id" component={SurveyPublicPage} />

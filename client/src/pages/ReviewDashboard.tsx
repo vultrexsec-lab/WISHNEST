@@ -3027,6 +3027,14 @@ export const ReviewDashboard = (): JSX.Element => {
                   SUBMISSIONS
                 </a>
               </Link>
+              <Link href="/use">
+                <a
+                  className="inline-flex items-center gap-2 rounded-full border border-sky-500/40 bg-sky-500/15 px-4 py-2 [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1px] text-sky-200 transition hover:border-sky-400/60 hover:bg-sky-500/25"
+                  data-testid="btn-open-use-engine"
+                >
+                  USE ENGINE
+                </a>
+              </Link>
               <button
                 type="button"
                 data-testid="btn-open-editorial-tools"

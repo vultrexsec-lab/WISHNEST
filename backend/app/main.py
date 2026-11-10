@@ -11,11 +11,12 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
-from app.routers import approve, articles, auth, image_proxy, newsletter, research, vision, reimaging, submissions, growth, entities, listening
+from app.routers import approve, articles, auth, image_proxy, newsletter, research, vision, reimaging, submissions, growth, entities, listening, use_engine
 from app.routers import scheduler as scheduler_router
 from app.models import automation  # noqa: F401 ensures settings table metadata is loaded
 from app.models import media_blob  # noqa: F401 ensures media_blobs table metadata is loaded
 from app.models import submission  # noqa: F401 ensures hospitality_submissions tables are loaded
+from app.models import use_engine  # noqa: F401 USE MVP P1 tables
 
 logging.basicConfig(
     level=logging.INFO,
@@ -425,7 +426,58 @@ def _sync_schema() -> None:
                     log.warning("Growth table create skipped: %s", te)
             conn.commit()
 
+        # USE MVP P1 tables
+        for use_sql in (
+            """
+                CREATE TABLE IF NOT EXISTS use_tenants (
+                    id UUID PRIMARY KEY,
+                    slug VARCHAR(64) NOT NULL UNIQUE,
+                    name VARCHAR(255) NOT NULL,
+                    product_summary TEXT,
+                    website VARCHAR(512),
+                    geography VARCHAR(255),
+                    knowledge JSONB,
+                    is_active BOOLEAN DEFAULT true,
+                    created_at TIMESTAMPTZ DEFAULT now(),
+                    updated_at TIMESTAMPTZ DEFAULT now()
+                );
+            """,
+            """
+                CREATE TABLE IF NOT EXISTS use_strategies (
+                    id UUID PRIMARY KEY,
+                    tenant_id UUID NOT NULL,
+                    status VARCHAR(32) NOT NULL DEFAULT 'draft',
+                    a01_output JSONB,
+                    a02_output JSONB,
+                    a00_output JSONB,
+                    ceo_notes TEXT,
+                    created_at TIMESTAMPTZ DEFAULT now(),
+                    updated_at TIMESTAMPTZ DEFAULT now()
+                );
+            """,
+            """
+                CREATE TABLE IF NOT EXISTS use_audit_logs (
+                    id UUID PRIMARY KEY,
+                    tenant_id UUID,
+                    strategy_id UUID,
+                    agent_id VARCHAR(16) NOT NULL,
+                    action VARCHAR(64) NOT NULL,
+                    status VARCHAR(32) NOT NULL DEFAULT 'COMPLETED',
+                    detail JSONB,
+                    created_at TIMESTAMPTZ DEFAULT now()
+                );
+            """,
+            "CREATE INDEX IF NOT EXISTS ix_use_strategies_tenant ON use_strategies (tenant_id);",
+            "CREATE INDEX IF NOT EXISTS ix_use_audit_tenant ON use_audit_logs (tenant_id);",
+        ):
+            try:
+                conn.execute(text(use_sql))
+            except Exception as ue:
+                log.warning("USE table create skipped: %s", ue)
+        conn.commit()
+
         log.info("Schema sync: media_blobs + hospitality_submissions + newsletter interests present.")
+
     except Exception as exc:
         # Log but don't crash — the articles table may not exist yet on a
         # completely fresh DB; create_tables.py in start.sh handles that case.
@@ -490,6 +542,7 @@ app.include_router(growth.router)
 app.include_router(entities.router)
 
 app.include_router(listening.router)
+app.include_router(use_engine.router)
 
 # SEO: public sitemap (also registered on articles router; kept here so deploy always exposes it)
 @app.get("/api/sitemap.xml")
