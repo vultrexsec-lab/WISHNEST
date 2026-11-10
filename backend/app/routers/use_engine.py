@@ -1,4 +1,6 @@
-"""USE MVP P1 API — tenants, strategy, rival, CEO, campaign manager, audit."""
+"""USE MVP P1 API — tenants, strategy, rival, CEO, campaign manager, audit.
+P1_DEPLOY_MARKER=7c23b30
+"""
 from __future__ import annotations
 
 import re
