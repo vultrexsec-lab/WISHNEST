@@ -11,12 +11,13 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
-from app.routers import approve, articles, auth, image_proxy, newsletter, research, vision, reimaging, submissions, growth, entities, listening, use_engine
+from app.routers import approve, articles, auth, image_proxy, newsletter, research, vision, reimaging, submissions, growth, entities, listening
+from app.routers import use_engine as use_engine_router
 from app.routers import scheduler as scheduler_router
 from app.models import automation  # noqa: F401 ensures settings table metadata is loaded
 from app.models import media_blob  # noqa: F401 ensures media_blobs table metadata is loaded
 from app.models import submission  # noqa: F401 ensures hospitality_submissions tables are loaded
-from app.models import use_engine  # noqa: F401 USE MVP P1 tables
+from app.models import use_engine as use_engine_models  # noqa: F401 USE MVP P1 tables
 
 logging.basicConfig(
     level=logging.INFO,
@@ -542,7 +543,7 @@ app.include_router(growth.router)
 app.include_router(entities.router)
 
 app.include_router(listening.router)
-app.include_router(use_engine.router)
+app.include_router(use_engine_router.router)
 
 # SEO: public sitemap (also registered on articles router; kept here so deploy always exposes it)
 @app.get("/api/sitemap.xml")

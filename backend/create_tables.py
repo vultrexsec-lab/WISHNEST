@@ -20,6 +20,7 @@ from app.models import newsletter  # noqa: F401
 from app.models import automation  # noqa: F401
 from app.models import media_blob  # noqa: F401
 from app.models import submission  # noqa: F401
+from app.models import use_engine  # noqa: F401
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("wishnest.create_tables")
