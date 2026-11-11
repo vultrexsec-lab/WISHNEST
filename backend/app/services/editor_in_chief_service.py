@@ -110,7 +110,7 @@ def _model() -> str:
     settings = get_settings()
     if settings.openai_api_key:
         return "gpt-4o-mini"
-    return (getattr(settings, "xai_model", None) or "grok-2-latest").strip() or "grok-2-latest"
+    return (getattr(settings, "xai_model", None) or "grok-4-latest").strip() or "grok-4-latest"
 
 
 def _parse_json(raw: str) -> dict[str, Any]:

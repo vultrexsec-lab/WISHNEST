@@ -28,7 +28,41 @@ def _grok() -> OpenAI:
 
 
 def _model() -> str:
-    return (get_settings().xai_model or "grok-2-latest").strip() or "grok-2-latest"
+    return (get_settings().xai_model or "grok-4.7").strip() or "grok-4.7"
+
+
+def _model_candidates() -> list[str]:
+    primary = _model()
+    # Fallback order if primary 404s on xAI
+    fallbacks = ["grok-4.7", "grok-4-latest", "grok-4", "grok-3", "grok-2-latest", "grok-2"]
+    out: list[str] = []
+    for m in [primary] + fallbacks:
+        if m and m not in out:
+            out.append(m)
+    return out
+
+
+def _chat_json(messages: list[dict], *, temperature: float = 0.4) -> str:
+    """Call xAI chat completions; retry on 404 model-not-found."""
+    client = _grok()
+    last_err: Exception | None = None
+    for model in _model_candidates():
+        try:
+            completion = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+            )
+            return completion.choices[0].message.content or ""
+        except Exception as exc:
+            last_err = exc
+            err_s = str(exc).lower()
+            # retry only model-missing style errors
+            if "404" in err_s or "not found" in err_s or "model" in err_s:
+                logger.warning("xAI model %s failed: %s — trying next", model, exc)
+                continue
+            raise
+    raise RuntimeError(f"xAI chat failed for all models: {last_err}") from last_err
 
 
 def audit(
@@ -94,15 +128,10 @@ Product summary: {tenant.product_summary or "n/a"}
 Approved knowledge JSON: {json.dumps(knowledge)[:3000]}
 """
     try:
-        completion = client.chat.completions.create(
-            model=_model(),
-            messages=[
+        raw = _chat_json([
                 {"role": "system", "content": "You are a senior performance marketing strategist. JSON only. No invented commercial facts."},
                 {"role": "user", "content": prompt},
-            ],
-            temperature=0.4,
-        )
-        raw = completion.choices[0].message.content or ""
+            ], temperature=0.4)
         data = _parse_json(raw)
         strategy.a01_output = data
         strategy.status = "draft"
@@ -147,15 +176,10 @@ Tenant: {tenant.name}
 A01 strategy JSON: {json.dumps(strategy.a01_output)[:6000]}
 """
     try:
-        completion = client.chat.completions.create(
-            model=_model(),
-            messages=[
+        raw = _chat_json([
                 {"role": "system", "content": "You are a competing performance agency. Be critical. JSON only."},
                 {"role": "user", "content": prompt},
-            ],
-            temperature=0.5,
-        )
-        raw = completion.choices[0].message.content or ""
+            ], temperature=0.5)
         data = _parse_json(raw)
         strategy.a02_output = data
         strategy.status = "rival_done"
@@ -234,18 +258,13 @@ A02: {json.dumps(strategy.a02_output or {})[:2000]}
 CEO notes: {strategy.ceo_notes or "n/a"}
 """
     try:
-        completion = client.chat.completions.create(
-            model=_model(),
-            messages=[
+        raw = _chat_json([
                 {
                     "role": "system",
                     "content": "Campaign orchestrator. Plans only — no unauthorised spend or messaging. JSON only.",
                 },
                 {"role": "user", "content": prompt},
-            ],
-            temperature=0.4,
-        )
-        raw = completion.choices[0].message.content or ""
+            ], temperature=0.4)
         data = _parse_json(raw)
         data["execution_status"] = "PLAN_ONLY"
         data["live_spend_allowed"] = False

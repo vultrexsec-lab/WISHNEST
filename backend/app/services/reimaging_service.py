@@ -62,7 +62,7 @@ def _grok_client() -> OpenAI:
 
 
 def _grok_model() -> str:
-    return (get_settings().xai_model or "grok-2-latest").strip() or "grok-2-latest"
+    return (get_settings().xai_model or "grok-4-latest").strip() or "grok-4-latest"
 
 
 def _download_image_as_b64(url: str, timeout: int = 15) -> str | None:
@@ -888,7 +888,7 @@ def rebuild_reimagined_article_body(article: "Article") -> bool:
             "before_text = 2-4 sentences on existing condition; after_text = redesign of same space."
         )
         resp = client.chat.completions.create(
-            model=os.environ.get("XAI_MODEL", "grok-2-latest"),
+            model=os.environ.get("XAI_MODEL", "grok-4-latest"),
             messages=[
                 {
                     "role": "system",
