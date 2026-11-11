@@ -317,20 +317,25 @@ def create_lead(
         raise HTTPException(404, "Tenant not found")
     if not (body.email or body.phone or body.name):
         raise HTTPException(400, "Provide at least name, email, or phone")
-    row = svc.create_lead(
-        db,
-        t,
-        name=body.name,
-        email=body.email,
-        phone=body.phone,
-        company=body.company,
-        role=body.role,
-        source=body.source or "manual",
-        email_consent=body.email_consent,
-        whatsapp_consent=body.whatsapp_consent,
-        phone_consent=body.phone_consent,
-        notes=body.notes,
-    )
+    try:
+        row = svc.create_lead(
+            db,
+            t,
+            name=body.name,
+            email=body.email,
+            phone=body.phone,
+            company=body.company,
+            role=body.role,
+            source=body.source or "manual",
+            email_consent=body.email_consent,
+            whatsapp_consent=body.whatsapp_consent,
+            phone_consent=body.phone_consent,
+            notes=body.notes,
+        )
+    except RuntimeError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as e:
+        raise HTTPException(500, f"Lead create failed: {e}") from e
     return _lead_out(row)
 
 

@@ -1,3 +1,4 @@
+import uuid
 """USE MVP P1 — Grok agents A01, A02, A00 + audit. No live ad spend."""
 from __future__ import annotations
 
@@ -350,6 +351,7 @@ def create_lead(
             return existing
 
     row = UseLead(
+        id=uuid.uuid4(),
         tenant_id=tenant.id,
         name=(name or "").strip() or None,
         email=email_n,
@@ -361,12 +363,18 @@ def create_lead(
         email_consent=bool(email_consent),
         whatsapp_consent=bool(whatsapp_consent),
         phone_consent=bool(phone_consent),
+        do_not_contact=False,
         notes=notes,
         meta={},
     )
-    db.add(row)
-    db.commit()
-    db.refresh(row)
+    try:
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+    except Exception as exc:
+        db.rollback()
+        logger.exception("create_lead insert failed: %s", exc)
+        raise RuntimeError(f"Lead save failed: {exc}") from exc
     audit(
         db,
         agent_id="SYSTEM",
