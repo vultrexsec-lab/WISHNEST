@@ -413,3 +413,65 @@ def draft_outreach_email(tenant: UseTenant, lead: UseLead) -> dict:
         "live_send": False,
         "note": "P2A does not auto-send. Copy or connect approved email in a later step.",
     }
+
+
+
+def send_outreach_email(db: Session, tenant: UseTenant, lead: UseLead) -> dict:
+    """P2B — send only when email_consent and not DNC. Uses Brevo/Resend/SMTP."""
+    from app.services.email_service import email_configured, send_email
+
+    draft = draft_outreach_email(tenant, lead)
+    if draft.get("status") != "draft_only":
+        return draft
+
+    if not email_configured():
+        return {
+            "status": "blocked",
+            "reason": "email_not_configured",
+            "note": "Set BREVO_API_KEY+BREVO_FROM_EMAIL or RESEND_API_KEY or Gmail SMTP on Render.",
+            "draft": draft,
+        }
+
+    subject = draft["subject"]
+    body = draft["body"]
+    html = "<pre style='font-family:Georgia,serif;white-space:pre-wrap;'>" + body.replace("<", "&lt;").replace(">", "&gt;") + "</pre>"
+    try:
+        msg_id = send_email(
+            to_email=lead.email,
+            subject=subject,
+            html_body=html,
+            text_body=body,
+        )
+    except Exception as exc:
+        logger.exception("outreach send failed")
+        audit(
+            db,
+            agent_id="SYSTEM",
+            action="lead_email_send_failed",
+            status="EXECUTION_FAILED",
+            tenant_id=tenant.id,
+            detail={"lead_id": str(lead.id), "error": str(exc)[:400]},
+        )
+        return {"status": "failed", "error": str(exc)[:400], "draft": draft}
+
+    meta = dict(lead.meta or {})
+    meta["last_email_sent_at"] = __import__("datetime").datetime.utcnow().isoformat() + "Z"
+    meta["last_email_subject"] = subject
+    lead.meta = meta
+    if lead.stage == "new":
+        lead.stage = "nurture"
+    db.commit()
+    audit(
+        db,
+        agent_id="SYSTEM",
+        action="lead_email_sent",
+        tenant_id=tenant.id,
+        detail={"lead_id": str(lead.id), "to": lead.email, "message_id": msg_id},
+    )
+    return {
+        "status": "sent",
+        "to": lead.email,
+        "subject": subject,
+        "message_id": msg_id,
+        "live_send": True,
+    }

@@ -434,3 +434,25 @@ def draft_lead_email(
         detail={"lead_id": str(row.id), "status": draft.get("status")},
     )
     return draft
+
+
+
+@router.post("/leads/{lead_id}/send-email")
+def send_lead_email(
+    lead_id: str,
+    db: Session = Depends(get_db),
+    _admin: dict = Depends(require_admin),
+):
+    """P2B — real send via configured email transport (consent required)."""
+    row = db.query(UseLead).filter(UseLead.id == uuid.UUID(lead_id)).first()
+    if not row:
+        raise HTTPException(404, "Lead not found")
+    t = db.query(UseTenant).filter(UseTenant.id == row.tenant_id).first()
+    if not t:
+        raise HTTPException(404, "Tenant not found")
+    result = svc.send_outreach_email(db, t, row)
+    if result.get("status") == "blocked":
+        raise HTTPException(400, result.get("reason") or "blocked")
+    if result.get("status") == "failed":
+        raise HTTPException(500, result.get("error") or "send failed")
+    return result

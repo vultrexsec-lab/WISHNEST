@@ -149,6 +149,24 @@ export default function UseEnginePage() {
     onError: (e: Error) => toast({ title: "Lead error", description: e.message, variant: "destructive" }),
   });
 
+  const sendEmailM = useMutation({
+    mutationFn: async (leadId: string) => {
+      const r = await apiRequest("POST", `/api/use/leads/${leadId}/send-email`);
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(typeof e.detail === "string" ? e.detail : e.detail ? JSON.stringify(e.detail) : "Send failed");
+      }
+      return r.json();
+    },
+    onSuccess: (data) => {
+      setDraftBox(JSON.stringify(data, null, 2));
+      qc.invalidateQueries({ queryKey: ["/api/use/tenants", selectedTenant, "leads"] });
+      qc.invalidateQueries({ queryKey: ["/api/use/audit"] });
+      toast({ title: data.status === "sent" ? "Email sent" : "Send result", description: data.to || data.reason });
+    },
+    onError: (e: Error) => toast({ title: "Send error", description: e.message, variant: "destructive" }),
+  });
+
   const draftEmailM = useMutation({
     mutationFn: async (leadId: string) => {
       const r = await apiRequest("POST", `/api/use/leads/${leadId}/draft-email`);
@@ -458,7 +476,7 @@ const auditQ = useQuery({
           <section className="mt-8 rounded-xl border border-white/10 bg-white/[0.03] p-4">
             <h2 className="text-sm font-semibold tracking-wide text-sky-300/90">4 · Leads (P2A)</h2>
             <p className="mt-1 text-xs text-white/45">
-              Manual leads only. Email draft requires email_consent. No auto-send in P2A.
+              Manual leads. DRAFT = text only. SEND EMAIL = real inbox (needs consent + email API on Render).
             </p>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               <input className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm" placeholder="Name" value={leadName} onChange={(e) => setLeadName(e.target.value)} />
@@ -486,13 +504,23 @@ const auditQ = useQuery({
                     {L.email_consent ? " · consent✓" : " · no email consent"}
                     {L.do_not_contact ? " · DNC" : ""}
                   </span>
-                  <button
-                    type="button"
-                    className="rounded-full border border-white/15 px-2 py-1 text-[10px] text-white/80"
-                    onClick={() => draftEmailM.mutate(L.id)}
-                  >
-                    DRAFT EMAIL
-                  </button>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      className="rounded-full border border-white/15 px-2 py-1 text-[10px] text-white/80"
+                      onClick={() => draftEmailM.mutate(L.id)}
+                    >
+                      DRAFT
+                    </button>
+                    <button
+                      type="button"
+                      disabled={sendEmailM.isPending || !L.email_consent || L.do_not_contact}
+                      className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[10px] text-emerald-100 disabled:opacity-40"
+                      onClick={() => sendEmailM.mutate(L.id)}
+                    >
+                      {sendEmailM.isPending ? "…" : "SEND EMAIL"}
+                    </button>
+                  </div>
                 </li>
               ))}
               {!leadsQ.data?.length && <li className="text-white/35">No leads yet for this tenant.</li>}
