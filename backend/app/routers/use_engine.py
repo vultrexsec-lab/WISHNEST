@@ -70,10 +70,10 @@ def use_status(_admin: dict = Depends(require_admin)):
     return {
         "module": "USE",
         "mvp": "1.1",
-        "phase": "P1",
+        "phase": "P2A",
         "agents": ["A00", "A01", "A02", "CEO"],
         "live_spend": False,
-        "note": "Campaign Manager produces plans only until ad accounts are connected in later phases.",
+        "note": "P2A: tenant-scoped leads + consent + email draft only. No live ad spend.",
     }
 
 
@@ -243,3 +243,147 @@ def list_audit(
         }
         for r in rows
     ]
+
+
+
+# ─── P2A Leads ───────────────────────────────────────────────────────────────
+
+class LeadIn(BaseModel):
+    name: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    company: str | None = None
+    role: str | None = None
+    source: str = "manual"
+    email_consent: bool = False
+    whatsapp_consent: bool = False
+    phone_consent: bool = False
+    notes: str | None = None
+
+
+class LeadStageIn(BaseModel):
+    stage: str = Field(..., min_length=2, max_length=64)
+    do_not_contact: bool | None = None
+    email_consent: bool | None = None
+    notes: str | None = None
+
+
+def _lead_out(r: UseLead) -> dict:
+    return {
+        "id": str(r.id),
+        "tenant_id": str(r.tenant_id),
+        "name": r.name,
+        "email": r.email,
+        "phone": r.phone,
+        "company": r.company,
+        "role": r.role,
+        "source": r.source,
+        "stage": r.stage,
+        "email_consent": bool(r.email_consent),
+        "whatsapp_consent": bool(r.whatsapp_consent),
+        "phone_consent": bool(r.phone_consent),
+        "do_not_contact": bool(r.do_not_contact),
+        "notes": r.notes,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+    }
+
+
+@router.get("/tenants/{tenant_id}/leads")
+def list_leads(
+    tenant_id: str,
+    db: Session = Depends(get_db),
+    _admin: dict = Depends(require_admin),
+):
+    tid = uuid.UUID(tenant_id)
+    rows = (
+        db.query(UseLead)
+        .filter(UseLead.tenant_id == tid)
+        .order_by(UseLead.created_at.desc())
+        .limit(200)
+        .all()
+    )
+    return [_lead_out(r) for r in rows]
+
+
+@router.post("/tenants/{tenant_id}/leads")
+def create_lead(
+    tenant_id: str,
+    body: LeadIn,
+    db: Session = Depends(get_db),
+    _admin: dict = Depends(require_admin),
+):
+    t = db.query(UseTenant).filter(UseTenant.id == uuid.UUID(tenant_id)).first()
+    if not t:
+        raise HTTPException(404, "Tenant not found")
+    if not (body.email or body.phone or body.name):
+        raise HTTPException(400, "Provide at least name, email, or phone")
+    row = svc.create_lead(
+        db,
+        t,
+        name=body.name,
+        email=body.email,
+        phone=body.phone,
+        company=body.company,
+        role=body.role,
+        source=body.source or "manual",
+        email_consent=body.email_consent,
+        whatsapp_consent=body.whatsapp_consent,
+        phone_consent=body.phone_consent,
+        notes=body.notes,
+    )
+    return _lead_out(row)
+
+
+@router.patch("/leads/{lead_id}")
+def update_lead(
+    lead_id: str,
+    body: LeadStageIn,
+    db: Session = Depends(get_db),
+    _admin: dict = Depends(require_admin),
+):
+    row = db.query(UseLead).filter(UseLead.id == uuid.UUID(lead_id)).first()
+    if not row:
+        raise HTTPException(404, "Lead not found")
+    stage = body.stage.strip().lower()
+    if stage not in ("new", "qualified", "nurture", "unfit", "won"):
+        raise HTTPException(400, "stage must be new|qualified|nurture|unfit|won")
+    row.stage = stage
+    if body.do_not_contact is not None:
+        row.do_not_contact = body.do_not_contact
+    if body.email_consent is not None:
+        row.email_consent = body.email_consent
+    if body.notes is not None:
+        row.notes = body.notes
+    db.commit()
+    db.refresh(row)
+    svc.audit(
+        db,
+        agent_id="SYSTEM",
+        action="lead_updated",
+        tenant_id=row.tenant_id,
+        detail={"lead_id": str(row.id), "stage": row.stage},
+    )
+    return _lead_out(row)
+
+
+@router.post("/leads/{lead_id}/draft-email")
+def draft_lead_email(
+    lead_id: str,
+    db: Session = Depends(get_db),
+    _admin: dict = Depends(require_admin),
+):
+    row = db.query(UseLead).filter(UseLead.id == uuid.UUID(lead_id)).first()
+    if not row:
+        raise HTTPException(404, "Lead not found")
+    t = db.query(UseTenant).filter(UseTenant.id == row.tenant_id).first()
+    if not t:
+        raise HTTPException(404, "Tenant not found")
+    draft = svc.draft_outreach_email(t, row)
+    svc.audit(
+        db,
+        agent_id="SYSTEM",
+        action="lead_email_drafted",
+        tenant_id=row.tenant_id,
+        detail={"lead_id": str(row.id), "status": draft.get("status")},
+    )
+    return draft

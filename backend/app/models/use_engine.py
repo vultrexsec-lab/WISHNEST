@@ -49,3 +49,27 @@ class UseAuditLog(Base):
     status = Column(String(32), nullable=False, default="COMPLETED")
     detail = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class UseLead(Base):
+    """P2A — tenant-scoped lead with explicit consent flags (no cold scrape import here)."""
+
+    __tablename__ = "use_leads"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    name = Column(String(255), nullable=True)
+    email = Column(String(255), nullable=True, index=True)
+    phone = Column(String(64), nullable=True)
+    company = Column(String(255), nullable=True)
+    role = Column(String(128), nullable=True)
+    source = Column(String(128), nullable=True)  # manual, inbound, import
+    stage = Column(String(64), nullable=False, default="new")  # new|qualified|nurture|unfit|won
+    email_consent = Column(Boolean, default=False)
+    whatsapp_consent = Column(Boolean, default=False)
+    phone_consent = Column(Boolean, default=False)
+    do_not_contact = Column(Boolean, default=False)
+    notes = Column(Text, nullable=True)
+    meta = Column(JSONB, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

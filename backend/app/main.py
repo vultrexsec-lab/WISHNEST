@@ -470,6 +470,29 @@ def _sync_schema() -> None:
             """,
             "CREATE INDEX IF NOT EXISTS ix_use_strategies_tenant ON use_strategies (tenant_id);",
             "CREATE INDEX IF NOT EXISTS ix_use_audit_tenant ON use_audit_logs (tenant_id);",
+            """
+                CREATE TABLE IF NOT EXISTS use_leads (
+                    id UUID PRIMARY KEY,
+                    tenant_id UUID NOT NULL,
+                    name VARCHAR(255),
+                    email VARCHAR(255),
+                    phone VARCHAR(64),
+                    company VARCHAR(255),
+                    role VARCHAR(128),
+                    source VARCHAR(128),
+                    stage VARCHAR(64) NOT NULL DEFAULT 'new',
+                    email_consent BOOLEAN DEFAULT false,
+                    whatsapp_consent BOOLEAN DEFAULT false,
+                    phone_consent BOOLEAN DEFAULT false,
+                    do_not_contact BOOLEAN DEFAULT false,
+                    notes TEXT,
+                    meta JSONB,
+                    created_at TIMESTAMPTZ DEFAULT now(),
+                    updated_at TIMESTAMPTZ DEFAULT now()
+                );
+            """,
+            "CREATE INDEX IF NOT EXISTS ix_use_leads_tenant ON use_leads (tenant_id);",
+            "CREATE INDEX IF NOT EXISTS ix_use_leads_email ON use_leads (email);",
         ):
             try:
                 conn.execute(text(use_sql))

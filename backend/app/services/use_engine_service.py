@@ -293,3 +293,115 @@ CEO notes: {strategy.ceo_notes or "n/a"}
             detail={"error": str(exc)[:500]},
         )
         raise
+
+
+# ─── P2A Leads ───────────────────────────────────────────────────────────────
+
+
+def create_lead(
+    db: Session,
+    tenant: UseTenant,
+    *,
+    name: str | None,
+    email: str | None,
+    phone: str | None = None,
+    company: str | None = None,
+    role: str | None = None,
+    source: str = "manual",
+    email_consent: bool = False,
+    whatsapp_consent: bool = False,
+    phone_consent: bool = False,
+    notes: str | None = None,
+) -> UseLead:
+    email_n = (email or "").strip().lower() or None
+    if email_n:
+        existing = (
+            db.query(UseLead)
+            .filter(UseLead.tenant_id == tenant.id, UseLead.email == email_n)
+            .first()
+        )
+        if existing:
+            # Update soft fields; never clear do_not_contact
+            if name:
+                existing.name = name
+            if phone:
+                existing.phone = phone
+            if company:
+                existing.company = company
+            if role:
+                existing.role = role
+            if notes:
+                existing.notes = notes
+            if email_consent:
+                existing.email_consent = True
+            if whatsapp_consent:
+                existing.whatsapp_consent = True
+            if phone_consent:
+                existing.phone_consent = True
+            db.commit()
+            db.refresh(existing)
+            audit(
+                db,
+                agent_id="SYSTEM",
+                action="lead_upserted",
+                tenant_id=tenant.id,
+                detail={"lead_id": str(existing.id), "email": email_n},
+            )
+            return existing
+
+    row = UseLead(
+        tenant_id=tenant.id,
+        name=(name or "").strip() or None,
+        email=email_n,
+        phone=(phone or "").strip() or None,
+        company=(company or "").strip() or None,
+        role=(role or "").strip() or None,
+        source=(source or "manual")[:128],
+        stage="new",
+        email_consent=bool(email_consent),
+        whatsapp_consent=bool(whatsapp_consent),
+        phone_consent=bool(phone_consent),
+        notes=notes,
+        meta={},
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    audit(
+        db,
+        agent_id="SYSTEM",
+        action="lead_created",
+        tenant_id=tenant.id,
+        detail={"lead_id": str(row.id), "email": email_n, "source": source},
+    )
+    return row
+
+
+def draft_outreach_email(tenant: UseTenant, lead: UseLead) -> dict:
+    """P2A: draft only — never auto-sends."""
+    if lead.do_not_contact:
+        return {"status": "blocked", "reason": "do_not_contact"}
+    if not lead.email_consent:
+        return {"status": "blocked", "reason": "email_consent_required"}
+    if not lead.email:
+        return {"status": "blocked", "reason": "email_missing"}
+    greeting = f"Dear {lead.name}," if lead.name else "Hello,"
+    body = (
+        f"{greeting}\n\n"
+        f"I'm reaching out from {tenant.name}"
+        + (f" ({tenant.website})" if tenant.website else "")
+        + ".\n\n"
+        "We work with teams who want a clearer path from interest to a scoped conversation — "
+        "without pressure tactics or unsolicited claims.\n\n"
+        "If a short introduction would be useful, simply reply to this email. "
+        "If not, you can ignore this message and we will not follow up from this draft alone.\n\n"
+        f"Warm regards,\n{tenant.name} team"
+    )
+    return {
+        "status": "draft_only",
+        "to": lead.email,
+        "subject": f"Introduction — {tenant.name}",
+        "body": body,
+        "live_send": False,
+        "note": "P2A does not auto-send. Copy or connect approved email in a later step.",
+    }

@@ -1,6 +1,6 @@
 /**
- * USE MVP P1 — CEO / admin panel for tenants, A01/A02/A00, audit.
- * No live ad spend in this phase.
+ * USE MVP P1 + P2A — tenants, agents, leads with consent, audit.
+ * No live ad spend; outreach drafts only.
  */
 import { useState } from "react";
 import { Link } from "wouter";
@@ -30,6 +30,18 @@ type Strategy = {
   ceo_notes?: string | null;
 };
 
+type Lead = {
+  id: string;
+  name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  company?: string | null;
+  stage: string;
+  email_consent: boolean;
+  whatsapp_consent: boolean;
+  do_not_contact: boolean;
+};
+
 type AuditRow = {
   id: string;
   agent_id: string;
@@ -49,6 +61,12 @@ export default function UseEnginePage() {
   const [selectedTenant, setSelectedTenant] = useState<string | null>(null);
   const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
   const [ceoNotes, setCeoNotes] = useState("");
+  const [leadName, setLeadName] = useState("");
+  const [leadEmail, setLeadEmail] = useState("");
+  const [leadPhone, setLeadPhone] = useState("");
+  const [leadCompany, setLeadCompany] = useState("");
+  const [leadEmailConsent, setLeadEmailConsent] = useState(false);
+  const [draftBox, setDraftBox] = useState<string>("");
 
   const statusQ = useQuery({
     queryKey: ["/api/use/status"],
@@ -78,6 +96,16 @@ export default function UseEnginePage() {
     },
   });
 
+  const leadsQ = useQuery({
+    queryKey: ["/api/use/tenants", selectedTenant, "leads"],
+    enabled: !!selectedTenant,
+    queryFn: async () => {
+      const r = await apiRequest("GET", `/api/use/tenants/${selectedTenant}/leads`);
+      if (!r.ok) throw new Error("Leads failed");
+      return (await r.json()) as Lead[];
+    },
+  });
+
   const strategyQ = useQuery({
     queryKey: ["/api/use/strategies", selectedStrategy],
     enabled: !!selectedStrategy,
@@ -88,7 +116,56 @@ export default function UseEnginePage() {
     },
   });
 
-  const auditQ = useQuery({
+  
+  const createLeadM = useMutation({
+    mutationFn: async () => {
+      if (!selectedTenant) throw new Error("Select tenant");
+      const r = await apiRequest("POST", `/api/use/tenants/${selectedTenant}/leads`, {
+        name: leadName || null,
+        email: leadEmail || null,
+        phone: leadPhone || null,
+        company: leadCompany || null,
+        source: "manual",
+        email_consent: leadEmailConsent,
+        whatsapp_consent: false,
+        phone_consent: false,
+      });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.detail || "Create lead failed");
+      }
+      return r.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/use/tenants", selectedTenant, "leads"] });
+      qc.invalidateQueries({ queryKey: ["/api/use/audit"] });
+      setLeadName("");
+      setLeadEmail("");
+      setLeadPhone("");
+      setLeadCompany("");
+      setLeadEmailConsent(false);
+      toast({ title: "Lead saved" });
+    },
+    onError: (e: Error) => toast({ title: "Lead error", description: e.message, variant: "destructive" }),
+  });
+
+  const draftEmailM = useMutation({
+    mutationFn: async (leadId: string) => {
+      const r = await apiRequest("POST", `/api/use/leads/${leadId}/draft-email`);
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.detail || "Draft failed");
+      }
+      return r.json();
+    },
+    onSuccess: (data) => {
+      setDraftBox(JSON.stringify(data, null, 2));
+      toast({ title: data.status === "draft_only" ? "Email draft ready" : "Draft blocked", description: data.reason || data.note });
+    },
+    onError: (e: Error) => toast({ title: "Draft error", description: e.message, variant: "destructive" }),
+  });
+
+const auditQ = useQuery({
     queryKey: ["/api/use/audit", selectedTenant],
     queryFn: async () => {
       const q = selectedTenant ? `?tenant_id=${selectedTenant}&limit=30` : "?limit=30";
@@ -377,8 +454,59 @@ export default function UseEnginePage() {
           </section>
         )}
 
+        {selectedTenant && (
+          <section className="mt-8 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <h2 className="text-sm font-semibold tracking-wide text-sky-300/90">4 · Leads (P2A)</h2>
+            <p className="mt-1 text-xs text-white/45">
+              Manual leads only. Email draft requires email_consent. No auto-send in P2A.
+            </p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <input className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm" placeholder="Name" value={leadName} onChange={(e) => setLeadName(e.target.value)} />
+              <input className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm" placeholder="Email" value={leadEmail} onChange={(e) => setLeadEmail(e.target.value)} />
+              <input className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm" placeholder="Phone" value={leadPhone} onChange={(e) => setLeadPhone(e.target.value)} />
+              <input className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm" placeholder="Company" value={leadCompany} onChange={(e) => setLeadCompany(e.target.value)} />
+            </div>
+            <label className="mt-2 flex items-center gap-2 text-xs text-white/60">
+              <input type="checkbox" checked={leadEmailConsent} onChange={(e) => setLeadEmailConsent(e.target.checked)} />
+              Email consent (required for draft outreach)
+            </label>
+            <button
+              type="button"
+              disabled={createLeadM.isPending}
+              onClick={() => createLeadM.mutate()}
+              className="mt-3 rounded-full border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-[11px] text-sky-100 disabled:opacity-40"
+            >
+              {createLeadM.isPending ? "Saving…" : "ADD LEAD"}
+            </button>
+            <ul className="mt-4 max-h-56 space-y-2 overflow-auto">
+              {(leadsQ.data || []).map((L) => (
+                <li key={L.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[11px] text-white/70">
+                  <span>
+                    {L.name || "—"} · {L.email || L.phone || "no contact"} · {L.stage}
+                    {L.email_consent ? " · consent✓" : " · no email consent"}
+                    {L.do_not_contact ? " · DNC" : ""}
+                  </span>
+                  <button
+                    type="button"
+                    className="rounded-full border border-white/15 px-2 py-1 text-[10px] text-white/80"
+                    onClick={() => draftEmailM.mutate(L.id)}
+                  >
+                    DRAFT EMAIL
+                  </button>
+                </li>
+              ))}
+              {!leadsQ.data?.length && <li className="text-white/35">No leads yet for this tenant.</li>}
+            </ul>
+            {draftBox && (
+              <pre className="mt-3 max-h-40 overflow-auto rounded-lg border border-sky-500/20 bg-black/40 p-3 text-[11px] text-sky-100/80">
+                {draftBox}
+              </pre>
+            )}
+          </section>
+        )}
+
         <section className="mt-8 mb-16">
-          <h2 className="text-sm font-semibold tracking-wide text-emerald-300/90">4 · Audit log</h2>
+          <h2 className="text-sm font-semibold tracking-wide text-emerald-300/90">5 · Audit log</h2>
           <ul className="mt-3 space-y-2">
             {(auditQ.data || []).map((a) => (
               <li
