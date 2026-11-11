@@ -103,10 +103,10 @@ def use_status(_admin: dict = Depends(require_admin)):
     return {
         "module": "USE",
         "mvp": "1.1",
-        "phase": "P2A",
+        "phase": "P3A",
         "agents": ["A00", "A01", "A02", "CEO"],
         "live_spend": False,
-        "note": "P2A: tenant-scoped leads + consent + email draft only. No live ad spend.",
+        "note": "P3A: leads + email send + WhatsApp draft/send (consent). No live ad spend.",
     }
 
 
@@ -493,3 +493,47 @@ def send_leads_email_bulk(
     blocked = sum(1 for x in results if x.get("status") == "blocked")
     failed = sum(1 for x in results if x.get("status") == "failed")
     return {"sent": sent, "blocked": blocked, "failed": failed, "results": results}
+
+
+
+@router.post("/leads/{lead_id}/draft-whatsapp")
+def draft_lead_whatsapp(
+    lead_id: str,
+    db: Session = Depends(get_db),
+    _admin: dict = Depends(require_admin),
+):
+    row = db.query(UseLead).filter(UseLead.id == uuid.UUID(lead_id)).first()
+    if not row:
+        raise HTTPException(404, "Lead not found")
+    t = db.query(UseTenant).filter(UseTenant.id == row.tenant_id).first()
+    if not t:
+        raise HTTPException(404, "Tenant not found")
+    draft = svc.draft_outreach_whatsapp(t, row)
+    svc.audit(
+        db,
+        agent_id="SYSTEM",
+        action="lead_whatsapp_drafted",
+        tenant_id=row.tenant_id,
+        detail={"lead_id": str(row.id), "status": draft.get("status")},
+    )
+    return draft
+
+
+@router.post("/leads/{lead_id}/send-whatsapp")
+def send_lead_whatsapp(
+    lead_id: str,
+    db: Session = Depends(get_db),
+    _admin: dict = Depends(require_admin),
+):
+    row = db.query(UseLead).filter(UseLead.id == uuid.UUID(lead_id)).first()
+    if not row:
+        raise HTTPException(404, "Lead not found")
+    t = db.query(UseTenant).filter(UseTenant.id == row.tenant_id).first()
+    if not t:
+        raise HTTPException(404, "Tenant not found")
+    result = svc.send_outreach_whatsapp(db, t, row)
+    if result.get("status") == "blocked":
+        raise HTTPException(400, result.get("reason") or "blocked")
+    if result.get("status") == "failed":
+        raise HTTPException(500, result.get("error") or "send failed")
+    return result

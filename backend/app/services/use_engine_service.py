@@ -475,3 +475,82 @@ def send_outreach_email(db: Session, tenant: UseTenant, lead: UseLead) -> dict:
         "message_id": msg_id,
         "live_send": True,
     }
+
+
+
+def draft_outreach_whatsapp(tenant: UseTenant, lead: UseLead) -> dict:
+    """P3A — WhatsApp draft only until send is called."""
+    if lead.do_not_contact:
+        return {"status": "blocked", "reason": "do_not_contact"}
+    if not lead.whatsapp_consent and not lead.phone_consent:
+        return {"status": "blocked", "reason": "whatsapp_or_phone_consent_required"}
+    phone = (lead.phone or "").strip()
+    if not phone:
+        return {"status": "blocked", "reason": "phone_missing"}
+    name = lead.name or "there"
+    body = (
+        f"Hello {name}, this is {tenant.name}"
+        + (f" ({tenant.website})" if tenant.website else "")
+        + ". "
+        "We'd like to share a short introduction — no pressure. "
+        "Reply YES if a brief conversation would help, or STOP to opt out."
+    )
+    return {
+        "status": "draft_only",
+        "to_phone": phone,
+        "body": body,
+        "live_send": False,
+        "note": "Draft only until SEND WHATSAPP is used with a configured WA transport.",
+    }
+
+
+def send_outreach_whatsapp(db: Session, tenant: UseTenant, lead: UseLead) -> dict:
+    """P3A — real WhatsApp send when consent + transport configured."""
+    from app.services.whatsapp_service import send_whatsapp_text, whatsapp_configured
+
+    draft = draft_outreach_whatsapp(tenant, lead)
+    if draft.get("status") != "draft_only":
+        return draft
+    if not whatsapp_configured():
+        return {
+            "status": "blocked",
+            "reason": "whatsapp_not_configured",
+            "note": "Set BAILEYS_URL, or Infobip, or Meta WhatsApp Cloud env on Render.",
+            "draft": draft,
+        }
+    phone = draft["to_phone"]
+    body = draft["body"]
+    try:
+        result = send_whatsapp_text(phone, body)
+    except Exception as exc:
+        logger.exception("whatsapp outreach failed")
+        audit(
+            db,
+            agent_id="SYSTEM",
+            action="lead_whatsapp_send_failed",
+            status="EXECUTION_FAILED",
+            tenant_id=tenant.id,
+            detail={"lead_id": str(lead.id), "error": str(exc)[:400]},
+        )
+        return {"status": "failed", "error": str(exc)[:400], "draft": draft}
+
+    meta = dict(lead.meta or {})
+    meta["last_whatsapp_sent_at"] = __import__("datetime").datetime.utcnow().isoformat() + "Z"
+    lead.meta = meta
+    if lead.stage == "new":
+        lead.stage = "nurture"
+    db.commit()
+    audit(
+        db,
+        agent_id="SYSTEM",
+        action="lead_whatsapp_sent",
+        tenant_id=tenant.id,
+        detail={"lead_id": str(lead.id), "phone": phone, "result": str(result)[:300]},
+    )
+    return {
+        "status": "sent",
+        "to_phone": phone,
+        "body": body,
+        "live_send": True,
+        "provider_result": result if isinstance(result, dict) else {"raw": str(result)[:300]},
+    }

@@ -66,6 +66,7 @@ export default function UseEnginePage() {
   const [leadPhone, setLeadPhone] = useState("");
   const [leadCompany, setLeadCompany] = useState("");
   const [leadEmailConsent, setLeadEmailConsent] = useState(false);
+  const [leadWaConsent, setLeadWaConsent] = useState(false);
   const [draftBox, setDraftBox] = useState<string>("");
   const [selectedLeads, setSelectedLeads] = useState<Record<string, boolean>>({});
 
@@ -128,8 +129,8 @@ export default function UseEnginePage() {
         company: leadCompany || null,
         source: "manual",
         email_consent: leadEmailConsent,
-        whatsapp_consent: false,
-        phone_consent: false,
+        whatsapp_consent: leadWaConsent,
+        phone_consent: leadWaConsent,
       });
       if (!r.ok) {
         const e = await r.json().catch(() => ({}));
@@ -145,6 +146,7 @@ export default function UseEnginePage() {
       setLeadPhone("");
       setLeadCompany("");
       setLeadEmailConsent(false);
+      setLeadWaConsent(false);
       toast({ title: "Lead saved" });
     },
     onError: (e: Error) => toast({ title: "Lead error", description: e.message, variant: "destructive" }),
@@ -204,6 +206,39 @@ export default function UseEnginePage() {
       toast({ title: data.status === "sent" ? "Email sent" : "Send result", description: data.to || data.reason });
     },
     onError: (e: Error) => toast({ title: "Send error", description: e.message, variant: "destructive" }),
+  });
+
+  const draftWaM = useMutation({
+    mutationFn: async (leadId: string) => {
+      const r = await apiRequest("POST", `/api/use/leads/${leadId}/draft-whatsapp`);
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(typeof e.detail === "string" ? e.detail : "WA draft failed");
+      }
+      return r.json();
+    },
+    onSuccess: (data) => {
+      setDraftBox(JSON.stringify(data, null, 2));
+      toast({ title: data.status === "draft_only" ? "WhatsApp draft" : "WA blocked", description: data.reason || data.to_phone });
+    },
+    onError: (e: Error) => toast({ title: "WA draft error", description: e.message, variant: "destructive" }),
+  });
+
+  const sendWaM = useMutation({
+    mutationFn: async (leadId: string) => {
+      const r = await apiRequest("POST", `/api/use/leads/${leadId}/send-whatsapp`);
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(typeof e.detail === "string" ? e.detail : "WA send failed");
+      }
+      return r.json();
+    },
+    onSuccess: (data) => {
+      setDraftBox(JSON.stringify(data, null, 2));
+      qc.invalidateQueries({ queryKey: ["/api/use/tenants", selectedTenant, "leads"] });
+      toast({ title: data.status === "sent" ? "WhatsApp sent" : "WA result", description: data.to_phone || data.reason });
+    },
+    onError: (e: Error) => toast({ title: "WA send error", description: e.message, variant: "destructive" }),
   });
 
   const draftEmailM = useMutation({
@@ -523,10 +558,16 @@ const auditQ = useQuery({
               <input className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm" placeholder="Phone" value={leadPhone} onChange={(e) => setLeadPhone(e.target.value)} />
               <input className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm" placeholder="Company" value={leadCompany} onChange={(e) => setLeadCompany(e.target.value)} />
             </div>
-            <label className="mt-2 flex items-center gap-2 text-xs text-white/60">
-              <input type="checkbox" checked={leadEmailConsent} onChange={(e) => setLeadEmailConsent(e.target.checked)} />
-              Email consent (required for draft outreach)
-            </label>
+            <div className="mt-2 flex flex-wrap gap-4 text-xs text-white/60">
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={leadEmailConsent} onChange={(e) => setLeadEmailConsent(e.target.checked)} />
+                Email consent
+              </label>
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={leadWaConsent} onChange={(e) => setLeadWaConsent(e.target.checked)} />
+                WhatsApp / phone consent
+              </label>
+            </div>
             <button
               type="button"
               disabled={createLeadM.isPending}
@@ -598,22 +639,11 @@ const auditQ = useQuery({
                   >
                     DNC
                   </button>
-                  <div className="flex gap-1">
-                    <button
-                      type="button"
-                      className="rounded-full border border-white/15 px-2 py-1 text-[10px] text-white/80"
-                      onClick={() => draftEmailM.mutate(L.id)}
-                    >
-                      DRAFT
-                    </button>
-                    <button
-                      type="button"
-                      disabled={sendEmailM.isPending || !L.email_consent || L.do_not_contact}
-                      className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[10px] text-emerald-100 disabled:opacity-40"
-                      onClick={() => sendEmailM.mutate(L.id)}
-                    >
-                      {sendEmailM.isPending ? "…" : "SEND"}
-                    </button>
+                  <div className="flex flex-wrap gap-1">
+                    <button type="button" className="rounded-full border border-white/15 px-2 py-1 text-[10px] text-white/80" onClick={() => draftEmailM.mutate(L.id)}>DRAFT EMAIL</button>
+                    <button type="button" disabled={sendEmailM.isPending || !L.email_consent || L.do_not_contact} className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[10px] text-emerald-100 disabled:opacity-40" onClick={() => sendEmailM.mutate(L.id)}>{sendEmailM.isPending ? "…" : "SEND EMAIL"}</button>
+                    <button type="button" className="rounded-full border border-sky-500/30 px-2 py-1 text-[10px] text-sky-100/90" onClick={() => draftWaM.mutate(L.id)}>DRAFT WA</button>
+                    <button type="button" disabled={sendWaM.isPending || !(L.whatsapp_consent || L.phone_consent) || L.do_not_contact || !L.phone} className="rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-1 text-[10px] text-sky-100 disabled:opacity-40" onClick={() => sendWaM.mutate(L.id)}>{sendWaM.isPending ? "…" : "SEND WA"}</button>
                   </div>
                 </li>
               ))}
