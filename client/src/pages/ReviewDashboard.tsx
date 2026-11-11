@@ -2982,59 +2982,15 @@ export const ReviewDashboard = (): JSX.Element => {
               Review Dashboard
             </h1>
             <div className="mt-5 flex shrink-0 items-center gap-2">
-              <Link href="/reimaging">
+              <Link href="/crm">
                 <a
-                  className="inline-flex items-center gap-2 rounded-full border border-emerald-500/40 bg-emerald-500/15 px-4 py-2 [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1px] text-emerald-300 shadow-[0_0_20px_rgba(16,185,129,0.15)] transition hover:border-emerald-400/60 hover:bg-emerald-500/25 hover:text-emerald-200"
-                  data-testid="btn-open-reimaging"
+                  className="inline-flex items-center gap-2 rounded-full border border-emerald-500/50 bg-emerald-500/20 px-4 py-2 [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1px] text-emerald-100 shadow-[0_0_24px_rgba(16,185,129,0.18)] transition hover:border-emerald-400/70 hover:bg-emerald-500/30"
+                  data-testid="btn-open-crm-portal"
                 >
-                  <Sparkles className="h-3.5 w-3.5" />
-                  REIMAGING™
+                  CRM · UNIVERSAL ENGINE
                 </a>
               </Link>
-              <Link href="/social">
-                <a
-                  className="inline-flex items-center gap-2 rounded-full border border-sky-500/40 bg-sky-500/15 px-4 py-2 [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1px] text-sky-300 shadow-[0_0_20px_rgba(56,189,248,0.12)] transition hover:border-sky-400/60 hover:bg-sky-500/25 hover:text-sky-200"
-                  data-testid="btn-open-social"
-                >
-                  <Share2 className="h-3.5 w-3.5" />
-                  SOCIAL™
-                </a>
-              </Link>
-              <Link href="/outreach">
-                <a
-                  className="inline-flex items-center gap-2 rounded-full border border-orange-500/40 bg-orange-500/15 px-4 py-2 [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1px] text-orange-200 shadow-[0_0_20px_rgba(249,115,22,0.12)] transition hover:border-orange-400/60 hover:bg-orange-500/25"
-                  data-testid="btn-open-outreach" data-nav="v2"
-                >
-                  <Megaphone className="h-3.5 w-3.5" />
-                  OUTREACH
-                </a>
-              </Link>
-              <Link href="/listening">
-                <a
-                  className="inline-flex items-center gap-2 rounded-full border border-emerald-500/40 bg-emerald-500/15 px-4 py-2 [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1px] text-emerald-200 shadow-[0_0_20px_rgba(16,185,129,0.12)] transition hover:border-emerald-400/60 hover:bg-emerald-500/25"
-                  data-testid="btn-open-listening"
-                >
-                  LISTENING
-                </a>
-              </Link>
-              
-              <Link href="/submissions">
-                <a
-                  className="inline-flex items-center gap-2 rounded-full border border-amber-500/40 bg-amber-500/15 px-4 py-2 [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1px] text-amber-300 shadow-[0_0_20px_rgba(245,158,11,0.12)] transition hover:border-amber-400/60 hover:bg-amber-500/25 hover:text-amber-200"
-                  data-testid="btn-open-submissions"
-                >
-                  <Inbox className="h-3.5 w-3.5" />
-                  SUBMISSIONS
-                </a>
-              </Link>
-              <Link href="/use">
-                <a
-                  className="inline-flex items-center gap-2 rounded-full border border-sky-500/40 bg-sky-500/15 px-4 py-2 [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1px] text-sky-200 transition hover:border-sky-400/60 hover:bg-sky-500/25"
-                  data-testid="btn-open-use-engine"
-                >
-                  USE ENGINE
-                </a>
-              </Link>
+
               <button
                 type="button"
                 data-testid="btn-open-editorial-tools"
