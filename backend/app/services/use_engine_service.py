@@ -11,7 +11,7 @@ from openai import OpenAI
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.models.use_engine import UseAuditLog, UseStrategy, UseTenant
+from app.models.use_engine import UseAuditLog, UseLead, UseStrategy, UseTenant
 
 logger = logging.getLogger("wishnest.use_engine")
 
