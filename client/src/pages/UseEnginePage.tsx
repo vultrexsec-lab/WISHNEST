@@ -352,7 +352,7 @@ const auditQ = useQuery({
 
   return (
     <main className="min-h-screen bg-[#0a0f0d] text-white">
-      <SiteNav />
+      {typeof window !== "undefined" && new URLSearchParams(window.location.search).get("crm") === "1" ? null : <SiteNav />}
       <div className="mx-auto max-w-[1100px] px-4 py-10 sm:px-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -673,7 +673,7 @@ const auditQ = useQuery({
           </ul>
         </section>
       </div>
-      <SiteFooter />
+      {typeof window !== "undefined" && new URLSearchParams(window.location.search).get("crm") === "1" ? null : <SiteFooter />}
     </main>
   );
 }

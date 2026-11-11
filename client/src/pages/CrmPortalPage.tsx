@@ -99,9 +99,25 @@ export default function CrmPortalPage() {
     if (!isAdmin) navigate("/login");
   }, [isAdmin, navigate]);
 
+  // Never render CRM shell inside another frame (stops nested sidebars)
+  useEffect(() => {
+    try {
+      if (window.self !== window.top) {
+        window.top!.location.href = "/crm";
+      }
+    } catch {
+      /* cross-origin — ignore */
+    }
+  }, []);
+
   const current = MODULES.find((m) => m.id === active) || MODULES[0];
-  // embed=1 lets child pages optionally hide public chrome later
-  const frameSrc = `${current.href}?crm=1`;
+  // Always load the real module page — never /crm (prevents infinite nested shells)
+  const frameSrc = (() => {
+    let href = current.href || "/dashboard";
+    if (href.startsWith("/crm")) href = "/dashboard";
+    const sep = href.includes("?") ? "&" : "?";
+    return `${href}${sep}crm=1`;
+  })();
 
   const handleLogout = () => {
     logout();

@@ -2915,12 +2915,18 @@ function ListField({
 // ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
+function useCrmEmbed(): boolean {
+  if (typeof window === "undefined") return false;
+  return new URLSearchParams(window.location.search).get("crm") === "1";
+}
+
 export const ReviewDashboard = (): JSX.Element => {
   const [activeTab, setActiveTab] = useState<DashboardTab>("all");
   const [showEditorialTools, setShowEditorialTools] = useState(false);
   const { logout } = useAuth();
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const isCrmEmbed = useCrmEmbed();
 
   const handleLogout = () => {
     logout();
@@ -2964,7 +2970,7 @@ export const ReviewDashboard = (): JSX.Element => {
 
   return (
     <main className="min-h-screen bg-[#0a0f0d] text-white">
-      <SiteNav />
+      {!isCrmEmbed && <SiteNav />}
 
       <section
         className="relative overflow-hidden border-b border-white/10 py-16"
@@ -2982,6 +2988,7 @@ export const ReviewDashboard = (): JSX.Element => {
               Review Dashboard
             </h1>
             <div className="mt-5 flex shrink-0 items-center gap-2">
+              {!isCrmEmbed && (
               <Link href="/crm">
                 <a
                   className="inline-flex items-center gap-2 rounded-full border border-emerald-500/50 bg-emerald-500/20 px-4 py-2 [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1px] text-emerald-100 shadow-[0_0_24px_rgba(16,185,129,0.18)] transition hover:border-emerald-400/70 hover:bg-emerald-500/30"
@@ -2990,6 +2997,7 @@ export const ReviewDashboard = (): JSX.Element => {
                   CRM · UNIVERSAL ENGINE
                 </a>
               </Link>
+              )}
 
               <button
                 type="button"
@@ -3004,12 +3012,14 @@ export const ReviewDashboard = (): JSX.Element => {
                 <Sparkles className="h-3.5 w-3.5" />
                 EDITORIAL
               </button>
+              {!isCrmEmbed && (
               <button
                 onClick={handleLogout}
                 className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 [font-family:'Inter',Helvetica] text-[10px] font-medium tracking-[1px] text-white/50 transition-colors hover:border-white/20 hover:text-white"
               >
                 SIGN OUT
               </button>
+              )}
             </div>
           </div>
           <p className="max-w-[600px] pt-3 [font-family:'Inter',Helvetica] text-[15px] leading-[24px] text-white/50">
