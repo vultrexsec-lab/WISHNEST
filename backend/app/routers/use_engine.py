@@ -456,3 +456,40 @@ def send_lead_email(
     if result.get("status") == "failed":
         raise HTTPException(500, result.get("error") or "send failed")
     return result
+
+
+
+class BulkSendIn(BaseModel):
+    lead_ids: list[str] = Field(default_factory=list)
+
+
+@router.post("/tenants/{tenant_id}/leads/send-email-bulk")
+def send_leads_email_bulk(
+    tenant_id: str,
+    body: BulkSendIn,
+    db: Session = Depends(get_db),
+    _admin: dict = Depends(require_admin),
+):
+    """P2C — send to selected leads only; skips no-consent / DNC."""
+    tid = uuid.UUID(tenant_id)
+    t = db.query(UseTenant).filter(UseTenant.id == tid).first()
+    if not t:
+        raise HTTPException(404, "Tenant not found")
+    ids = []
+    for x in body.lead_ids or []:
+        try:
+            ids.append(uuid.UUID(x))
+        except Exception:
+            continue
+    if not ids:
+        raise HTTPException(400, "Select at least one lead")
+    if len(ids) > 50:
+        raise HTTPException(400, "Max 50 leads per bulk send")
+    rows = db.query(UseLead).filter(UseLead.tenant_id == tid, UseLead.id.in_(ids)).all()
+    results = []
+    for row in rows:
+        results.append({"lead_id": str(row.id), "email": row.email, **svc.send_outreach_email(db, t, row)})
+    sent = sum(1 for x in results if x.get("status") == "sent")
+    blocked = sum(1 for x in results if x.get("status") == "blocked")
+    failed = sum(1 for x in results if x.get("status") == "failed")
+    return {"sent": sent, "blocked": blocked, "failed": failed, "results": results}

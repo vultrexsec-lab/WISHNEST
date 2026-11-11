@@ -67,6 +67,7 @@ export default function UseEnginePage() {
   const [leadCompany, setLeadCompany] = useState("");
   const [leadEmailConsent, setLeadEmailConsent] = useState(false);
   const [draftBox, setDraftBox] = useState<string>("");
+  const [selectedLeads, setSelectedLeads] = useState<Record<string, boolean>>({});
 
   const statusQ = useQuery({
     queryKey: ["/api/use/status"],
@@ -147,6 +148,44 @@ export default function UseEnginePage() {
       toast({ title: "Lead saved" });
     },
     onError: (e: Error) => toast({ title: "Lead error", description: e.message, variant: "destructive" }),
+  });
+
+  const stageLeadM = useMutation({
+    mutationFn: async ({ id, stage, do_not_contact }: { id: string; stage: string; do_not_contact?: boolean }) => {
+      const r = await apiRequest("PATCH", `/api/use/leads/${id}`, { stage, do_not_contact });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(typeof e.detail === "string" ? e.detail : "Stage update failed");
+      }
+      return r.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/use/tenants", selectedTenant, "leads"] });
+      toast({ title: "Lead updated" });
+    },
+    onError: (e: Error) => toast({ title: "Update error", description: e.message, variant: "destructive" }),
+  });
+
+  const bulkSendM = useMutation({
+    mutationFn: async () => {
+      if (!selectedTenant) throw new Error("Select tenant");
+      const lead_ids = Object.entries(selectedLeads).filter(([, v]) => v).map(([k]) => k);
+      if (!lead_ids.length) throw new Error("Select at least one lead");
+      const r = await apiRequest("POST", `/api/use/tenants/${selectedTenant}/leads/send-email-bulk`, { lead_ids });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(typeof e.detail === "string" ? e.detail : "Bulk send failed");
+      }
+      return r.json();
+    },
+    onSuccess: (data) => {
+      setDraftBox(JSON.stringify(data, null, 2));
+      setSelectedLeads({});
+      qc.invalidateQueries({ queryKey: ["/api/use/tenants", selectedTenant, "leads"] });
+      qc.invalidateQueries({ queryKey: ["/api/use/audit"] });
+      toast({ title: `Sent ${data.sent}`, description: `Blocked ${data.blocked}, failed ${data.failed}` });
+    },
+    onError: (e: Error) => toast({ title: "Bulk send error", description: e.message, variant: "destructive" }),
   });
 
   const sendEmailM = useMutation({
@@ -496,14 +535,69 @@ const auditQ = useQuery({
             >
               {createLeadM.isPending ? "Saving…" : "ADD LEAD"}
             </button>
-            <ul className="mt-4 max-h-56 space-y-2 overflow-auto">
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={bulkSendM.isPending}
+                onClick={() => bulkSendM.mutate()}
+                className="rounded-full border border-emerald-500/50 bg-emerald-500/15 px-3 py-1.5 text-[11px] text-emerald-100 disabled:opacity-40"
+              >
+                {bulkSendM.isPending ? "Sending…" : "SEND SELECTED"}
+              </button>
+              <button
+                type="button"
+                className="rounded-full border border-white/15 px-3 py-1.5 text-[11px] text-white/70"
+                onClick={() => {
+                  const next: Record<string, boolean> = {};
+                  (leadsQ.data || []).forEach((L) => {
+                    if (L.email_consent && !L.do_not_contact) next[L.id] = true;
+                  });
+                  setSelectedLeads(next);
+                }}
+              >
+                SELECT CONSENTED
+              </button>
+              <button
+                type="button"
+                className="rounded-full border border-white/15 px-3 py-1.5 text-[11px] text-white/50"
+                onClick={() => setSelectedLeads({})}
+              >
+                CLEAR SELECTION
+              </button>
+            </div>
+            <ul className="mt-4 max-h-72 space-y-2 overflow-auto">
               {(leadsQ.data || []).map((L) => (
                 <li key={L.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[11px] text-white/70">
-                  <span>
-                    {L.name || "—"} · {L.email || L.phone || "no contact"} · {L.stage}
-                    {L.email_consent ? " · consent✓" : " · no email consent"}
-                    {L.do_not_contact ? " · DNC" : ""}
-                  </span>
+                  <label className="flex items-center gap-2 min-w-0 flex-1">
+                    <input
+                      type="checkbox"
+                      checked={!!selectedLeads[L.id]}
+                      onChange={(e) => setSelectedLeads((s) => ({ ...s, [L.id]: e.target.checked }))}
+                    />
+                    <span className="truncate">
+                      {L.name || "—"} · {L.email || L.phone || "no contact"}
+                      {L.email_consent ? " · consent✓" : " · no consent"}
+                      {L.do_not_contact ? " · DNC" : ""}
+                    </span>
+                  </label>
+                  <select
+                    className="rounded border border-white/15 bg-black/40 px-1 py-0.5 text-[10px]"
+                    value={L.stage}
+                    onChange={(e) => stageLeadM.mutate({ id: L.id, stage: e.target.value })}
+                  >
+                    <option value="new">new</option>
+                    <option value="qualified">qualified</option>
+                    <option value="nurture">nurture</option>
+                    <option value="unfit">unfit</option>
+                    <option value="won">won</option>
+                  </select>
+                  <button
+                    type="button"
+                    className="rounded-full border border-red-500/30 px-2 py-1 text-[10px] text-red-200/90"
+                    onClick={() => stageLeadM.mutate({ id: L.id, stage: L.stage || "unfit", do_not_contact: true })}
+                  >
+                    DNC
+                  </button>
                   <div className="flex gap-1">
                     <button
                       type="button"
@@ -518,7 +612,7 @@ const auditQ = useQuery({
                       className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[10px] text-emerald-100 disabled:opacity-40"
                       onClick={() => sendEmailM.mutate(L.id)}
                     >
-                      {sendEmailM.isPending ? "…" : "SEND EMAIL"}
+                      {sendEmailM.isPending ? "…" : "SEND"}
                     </button>
                   </div>
                 </li>
