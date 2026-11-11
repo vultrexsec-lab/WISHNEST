@@ -346,12 +346,19 @@ def create_lead(
     db: Session = Depends(get_db),
     _admin: dict = Depends(require_admin),
 ):
-    t = db.query(UseTenant).filter(UseTenant.id == uuid.UUID(tenant_id)).first()
+    try:
+        tid = uuid.UUID(tenant_id)
+    except Exception:
+        raise HTTPException(400, "Invalid tenant_id")
+    try:
+        _ensure_leads_table(db)
+    except Exception as e:
+        raise HTTPException(500, f"Leads table ensure failed: {e}") from e
+    t = db.query(UseTenant).filter(UseTenant.id == tid).first()
     if not t:
         raise HTTPException(404, "Tenant not found")
     if not (body.email or body.phone or body.name):
         raise HTTPException(400, "Provide at least name, email, or phone")
-    _ensure_leads_table(db)
     try:
         row = svc.create_lead(
             db,
@@ -367,11 +374,11 @@ def create_lead(
             phone_consent=body.phone_consent,
             notes=body.notes,
         )
+        return _lead_out(row)
     except RuntimeError as e:
         raise HTTPException(400, str(e)) from e
     except Exception as e:
-        raise HTTPException(500, f"Lead create failed: {e}") from e
-    return _lead_out(row)
+        raise HTTPException(500, f"Lead create failed: {type(e).__name__}: {e}") from e
 
 
 @router.patch("/leads/{lead_id}")
