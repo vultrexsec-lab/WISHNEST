@@ -18,6 +18,39 @@ from app.services import use_engine_service as svc
 
 router = APIRouter(prefix="/api/use", tags=["use-engine"])
 
+def _ensure_leads_table(db: Session) -> None:
+    """Idempotent — Render may have skipped CREATE on prior boot."""
+    from sqlalchemy import text
+    try:
+        db.execute(text("""
+            CREATE TABLE IF NOT EXISTS use_leads (
+                id UUID PRIMARY KEY,
+                tenant_id UUID NOT NULL,
+                name VARCHAR(255),
+                email VARCHAR(255),
+                phone VARCHAR(64),
+                company VARCHAR(255),
+                role VARCHAR(128),
+                source VARCHAR(128),
+                stage VARCHAR(64) NOT NULL DEFAULT 'new',
+                email_consent BOOLEAN DEFAULT false,
+                whatsapp_consent BOOLEAN DEFAULT false,
+                phone_consent BOOLEAN DEFAULT false,
+                do_not_contact BOOLEAN DEFAULT false,
+                notes TEXT,
+                meta JSONB,
+                created_at TIMESTAMPTZ DEFAULT now(),
+                updated_at TIMESTAMPTZ DEFAULT now()
+            )
+        """))
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_use_leads_tenant ON use_leads (tenant_id)"))
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_use_leads_email ON use_leads (email)"))
+        db.commit()
+    except Exception:
+        db.rollback()
+
+
+
 
 def _slugify(name: str) -> str:
     s = re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")
@@ -295,6 +328,7 @@ def list_leads(
     _admin: dict = Depends(require_admin),
 ):
     tid = uuid.UUID(tenant_id)
+    _ensure_leads_table(db)
     rows = (
         db.query(UseLead)
         .filter(UseLead.tenant_id == tid)
@@ -317,6 +351,7 @@ def create_lead(
         raise HTTPException(404, "Tenant not found")
     if not (body.email or body.phone or body.name):
         raise HTTPException(400, "Provide at least name, email, or phone")
+    _ensure_leads_table(db)
     try:
         row = svc.create_lead(
             db,
