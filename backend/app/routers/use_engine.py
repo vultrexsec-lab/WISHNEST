@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import require_admin
-from app.models.use_engine import UseAuditLog, UseStrategy, UseTenant
+from app.models.use_engine import UseAuditLog, UseLead, UseStrategy, UseTenant
 from app.services import use_engine_service as svc
 
 router = APIRouter(prefix="/api/use", tags=["use-engine"])
