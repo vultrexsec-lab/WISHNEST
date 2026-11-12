@@ -25,6 +25,7 @@ import { LoginPage } from "@/pages/LoginPage";
 import { ReimagingPage } from "@/pages/ReimagingPage";
 import { SocialPage } from "@/pages/SocialPage";
 import { GetReviewedPage } from "@/pages/GetReviewedPage";
+import { InviteLandingPage } from "@/pages/InviteLandingPage";
 import { RequestCallPage } from "@/pages/RequestCallPage";
 import { SubmitProjectPage } from "@/pages/SubmitProjectPage";
 import { EditorialStandardsPage } from "@/pages/EditorialStandardsPage";
@@ -115,6 +116,7 @@ function Router() {
         <Route path="/methodology" component={MethodologyPage} />
         <Route path="/abcde">{() => <Redirect to="/methodology" />}</Route>
         <Route path="/commercial-disclosure" component={CommercialDisclosurePage} />
+        <Route path="/invite" component={InviteLandingPage} />
         <Route path="/get-reviewed" component={GetReviewedPage} />
         <Route path="/get-reviewed/submit" component={SubmitProjectPage} />
         <Route path="/submissions" component={SubmissionsAdminPage} />
