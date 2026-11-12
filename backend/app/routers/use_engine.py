@@ -537,3 +537,40 @@ def send_lead_whatsapp(
     if result.get("status") == "failed":
         raise HTTPException(500, result.get("error") or "send failed")
     return result
+
+
+
+@router.get("/ads/status")
+def ads_status(_admin: dict = Depends(require_admin)):
+    """P3 — which ad platforms have env credentials (no spend)."""
+    from app.services.use_ads_service import channel_status
+    return channel_status()
+
+
+@router.get("/strategies/{strategy_id}/ads-briefs")
+def ads_briefs(
+    strategy_id: str,
+    db: Session = Depends(get_db),
+    _admin: dict = Depends(require_admin),
+):
+    """P3 — channel setup briefs from approved A00 plan (plan-only)."""
+    from app.services.use_ads_service import build_channel_briefs
+
+    s = db.query(UseStrategy).filter(UseStrategy.id == uuid.UUID(strategy_id)).first()
+    if not s:
+        raise HTTPException(404, "Strategy not found")
+    trow = db.query(UseTenant).filter(UseTenant.id == s.tenant_id).first()
+    if not trow:
+        raise HTTPException(404, "Tenant not found")
+    if s.status != "approved" and not s.a00_output:
+        raise HTTPException(400, "Approve strategy and run A00 first for channel briefs")
+    briefs = build_channel_briefs(s.a00_output if isinstance(s.a00_output, dict) else {}, trow.name)
+    svc.audit(
+        db,
+        agent_id="SYSTEM",
+        action="ads_briefs_generated",
+        tenant_id=s.tenant_id,
+        strategy_id=s.id,
+        detail={"channels": list((briefs.get("briefs") or {}).keys())},
+    )
+    return briefs

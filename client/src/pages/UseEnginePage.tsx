@@ -257,7 +257,33 @@ export default function UseEnginePage() {
     onError: (e: Error) => toast({ title: "Draft error", description: e.message, variant: "destructive" }),
   });
 
-const auditQ = useQuery({
+const adsStatusQ = useQuery({
+    queryKey: ["/api/use/ads/status"],
+    queryFn: async () => {
+      const r = await apiRequest("GET", "/api/use/ads/status");
+      if (!r.ok) throw new Error("Ads status failed");
+      return r.json();
+    },
+  });
+
+  const adsBriefsM = useMutation({
+    mutationFn: async () => {
+      if (!selectedStrategy) throw new Error("Select an approved strategy");
+      const r = await apiRequest("GET", `/api/use/strategies/${selectedStrategy}/ads-briefs`);
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(typeof e.detail === "string" ? e.detail : "Briefs failed");
+      }
+      return r.json();
+    },
+    onSuccess: (data) => {
+      setDraftBox(JSON.stringify(data, null, 2));
+      toast({ title: "P3 channel briefs ready", description: "Plan-only — no live ad spend" });
+    },
+    onError: (e: Error) => toast({ title: "Ads briefs error", description: e.message, variant: "destructive" }),
+  });
+
+  const auditQ = useQuery({
     queryKey: ["/api/use/audit", selectedTenant],
     queryFn: async () => {
       const q = selectedTenant ? `?tenant_id=${selectedTenant}&limit=30` : "?limit=30";
@@ -657,20 +683,84 @@ const auditQ = useQuery({
           </section>
         )}
 
-        <section className="mt-8 mb-16">
-          <h2 className="text-sm font-semibold tracking-wide text-emerald-300/90">5 · Audit log</h2>
-          <ul className="mt-3 space-y-2">
-            {(auditQ.data || []).map((a) => (
-              <li
-                key={a.id}
-                className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-[11px] text-white/55"
-              >
-                <span className="text-emerald-300/80">{a.agent_id}</span> · {a.action} · {a.status}
-                {a.created_at ? ` · ${a.created_at}` : ""}
-              </li>
-            ))}
-            {!auditQ.data?.length && <li className="text-sm text-white/35">No audit entries yet.</li>}
-          </ul>
+        {selectedTenant && (
+          <section className="mt-8 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <h2 className="text-sm font-semibold tracking-wide text-amber-300/90">6 · Paid channels (P3)</h2>
+            <p className="mt-1 text-xs text-white/45">
+              Meta / Google / LinkedIn readiness. Live spend stays off until tokens are on Render and USE_ADS_LIVE_SPEND=true.
+            </p>
+            <ul className="mt-3 space-y-2">
+              {adsStatusQ.data?.channels &&
+                Object.entries(adsStatusQ.data.channels as Record<string, { label: string; configured: boolean; missing?: string[] }>).map(
+                  ([key, ch]) => (
+                    <li
+                      key={key}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-[11px]"
+                    >
+                      <span className="text-white/75">{ch.label}</span>
+                      <span className={ch.configured ? "text-emerald-300/90" : "text-amber-200/80"}>
+                        {ch.configured ? "Credentials set" : `Missing: ${(ch.missing || []).join(", ") || "keys"}`}
+                      </span>
+                    </li>
+                  ),
+                )}
+              {adsStatusQ.isError && (
+                <li className="text-xs text-red-300/80">Could not load ads status — redeploy backend if needed.</li>
+              )}
+            </ul>
+            <p className="mt-2 text-[10px] text-white/35">
+              Live spend flag: {String(adsStatusQ.data?.live_spend_allowed ?? false)}
+            </p>
+            <button
+              type="button"
+              disabled={!selectedStrategy || adsBriefsM.isPending}
+              onClick={() => adsBriefsM.mutate()}
+              className="mt-3 rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-[11px] text-amber-100 disabled:opacity-40"
+            >
+              {adsBriefsM.isPending ? "Building…" : "BUILD CHANNEL BRIEFS FROM A00"}
+            </button>
+            <div className="mt-3 rounded-lg border border-white/5 bg-black/20 p-3 text-[10px] leading-relaxed text-white/40">
+              <p className="font-semibold text-white/55">Render env (when ready to connect accounts)</p>
+              <p className="mt-1">Meta: META_ADS_ACCESS_TOKEN, META_AD_ACCOUNT_ID</p>
+              <p>Google: GOOGLE_ADS_DEVELOPER_TOKEN, GOOGLE_ADS_CUSTOMER_ID, GOOGLE_ADS_REFRESH_TOKEN</p>
+              <p>LinkedIn: LINKEDIN_ACCESS_TOKEN, LINKEDIN_AD_ACCOUNT_ID</p>
+              <p className="mt-1">Optional kill switch: USE_ADS_LIVE_SPEND=true (default off)</p>
+            </div>
+          </section>
+        )}
+
+        <section className="mt-8 mb-12">
+          <details className="rounded-xl border border-white/10 bg-white/[0.03] open:pb-2">
+            <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold tracking-wide text-emerald-300/90">
+              5 · Audit log
+              <span className="ml-2 text-[11px] font-normal text-white/40">
+                ({(auditQ.data || []).length} events · click to expand)
+              </span>
+            </summary>
+            <ul className="mx-3 mb-3 max-h-40 space-y-1.5 overflow-y-auto border-t border-white/5 pt-2">
+              {(auditQ.data || []).slice(0, 25).map((a) => (
+                <li
+                  key={a.id}
+                  className="rounded-md border border-white/5 bg-black/20 px-2.5 py-1.5 text-[10px] text-white/50"
+                  title={a.detail ? JSON.stringify(a.detail) : undefined}
+                >
+                  <span className="text-emerald-300/75">{a.agent_id}</span>
+                  {" · "}
+                  {a.action}
+                  {" · "}
+                  <span className={a.status?.includes("FAIL") ? "text-red-300/80" : "text-white/45"}>
+                    {a.status}
+                  </span>
+                  {a.created_at ? (
+                    <span className="text-white/30"> · {String(a.created_at).slice(0, 19)}</span>
+                  ) : null}
+                </li>
+              ))}
+              {!auditQ.data?.length && (
+                <li className="px-2 text-sm text-white/35">No audit entries yet.</li>
+              )}
+            </ul>
+          </details>
         </section>
       </div>
       {typeof window !== "undefined" && new URLSearchParams(window.location.search).get("crm") === "1" ? null : <SiteFooter />}
