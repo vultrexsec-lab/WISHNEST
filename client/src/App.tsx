@@ -31,6 +31,7 @@ import { SubmitProjectPage } from "@/pages/SubmitProjectPage";
 import { EditorialStandardsPage } from "@/pages/EditorialStandardsPage";
 import { MethodologyPage } from "@/pages/MethodologyPage";
 import { CommercialDisclosurePage } from "@/pages/CommercialDisclosurePage";
+import { PolicyPage } from "@/pages/PolicyPage";
 import { SubmissionsAdminPage } from "@/pages/SubmissionsAdminPage";
 import { OutreachPage } from "@/pages/OutreachPage";
 import { ListeningPage } from "@/pages/ListeningPage";
@@ -116,6 +117,8 @@ function Router() {
         <Route path="/methodology" component={MethodologyPage} />
         <Route path="/abcde">{() => <Redirect to="/methodology" />}</Route>
         <Route path="/commercial-disclosure" component={CommercialDisclosurePage} />
+        <Route path="/policy" component={PolicyPage} />
+        <Route path="/privacy" component={PolicyPage} />
         <Route path="/invite" component={InviteLandingPage} />
         <Route path="/get-reviewed" component={GetReviewedPage} />
         <Route path="/get-reviewed/submit" component={SubmitProjectPage} />

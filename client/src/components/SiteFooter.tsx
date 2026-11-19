@@ -90,11 +90,18 @@ export const SiteFooter = () => {
           <p className="[font-family:'Inter',Helvetica] text-[11px] text-white/30">
             © {new Date().getFullYear()} WishNest. All rights reserved. Independent editorial — no paid placements.
           </p>
-          <Link href="/">
-            <a className="[font-family:'Inter',Helvetica] text-[11px] text-white/30 transition hover:text-white/50">
-              Home
-            </a>
-          </Link>
+          <div className="flex flex-wrap items-center gap-4">
+            <Link href="/policy">
+              <a className="[font-family:'Inter',Helvetica] text-[11px] text-white/30 transition hover:text-white/50">
+                Policy
+              </a>
+            </Link>
+            <Link href="/">
+              <a className="[font-family:'Inter',Helvetica] text-[11px] text-white/30 transition hover:text-white/50">
+                Home
+              </a>
+            </Link>
+          </div>
         </div>
       </div>
     </footer>
