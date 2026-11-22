@@ -88,16 +88,36 @@ class SubmitResponse(BaseModel):
 
 
 def _to_out(row: HospitalitySubmission) -> SubmissionOut:
+    file_outs: list[FileOut] = []
+    try:
+        for f in list(getattr(row, "files", None) or []):
+            try:
+                file_outs.append(
+                    FileOut(
+                        id=str(f.id),
+                        original_name=getattr(f, "original_name", None) or "file",
+                        content_type=getattr(f, "content_type", None),
+                        size_bytes=getattr(f, "size_bytes", None),
+                        created_at=f.created_at.isoformat() if getattr(f, "created_at", None) else None,
+                    )
+                )
+            except Exception:
+                logger.exception("Skip corrupt submission file on %s", getattr(row, "id", "?"))
+    except Exception:
+        # Relationship / missing submission_files table must not break the list API
+        logger.exception("Could not load files for submission %s", getattr(row, "id", "?"))
+        file_outs = []
+
     return SubmissionOut(
         id=str(row.id),
-        reference=row.reference,
-        property_name=row.property_name,
-        project_stage=row.project_stage,
+        reference=row.reference or "",
+        property_name=row.property_name or "",
+        project_stage=row.project_stage or "existing",
         property_type=row.property_type,
         company_name=row.company_name,
-        contact_name=row.contact_name,
+        contact_name=row.contact_name or "",
         contact_role=row.contact_role,
-        email=row.email,
+        email=row.email or "",
         phone=row.phone,
         whatsapp=row.whatsapp,
         location=row.location,
@@ -106,23 +126,14 @@ def _to_out(row: HospitalitySubmission) -> SubmissionOut:
         unit_count=row.unit_count,
         project_details=row.project_details,
         review_focus=row.review_focus,
-        status=row.status,
+        status=row.status or "application_received",
         source=row.source,
-        utm_source=getattr(row, 'utm_source', None),
-        utm_medium=getattr(row, 'utm_medium', None),
-        utm_campaign=getattr(row, 'utm_campaign', None),
+        utm_source=getattr(row, "utm_source", None),
+        utm_medium=getattr(row, "utm_medium", None),
+        utm_campaign=getattr(row, "utm_campaign", None),
         admin_notes=row.admin_notes,
         created_at=row.created_at.isoformat() if row.created_at else None,
-        files=[
-            FileOut(
-                id=str(f.id),
-                original_name=f.original_name,
-                content_type=f.content_type,
-                size_bytes=f.size_bytes,
-                created_at=f.created_at.isoformat() if f.created_at else None,
-            )
-            for f in (row.files or [])
-        ],
+        files=file_outs,
     )
 
 
@@ -254,13 +265,40 @@ def list_submissions(
     db: Session = Depends(get_db),
     admin: str = Depends(require_admin),
 ):
-    rows = (
-        db.query(HospitalitySubmission)
-        .order_by(HospitalitySubmission.created_at.desc())
-        .limit(200)
-        .all()
-    )
-    return [_to_out(r) for r in rows]
+    try:
+        from sqlalchemy.orm import noload
+
+        rows = (
+            db.query(HospitalitySubmission)
+            .options(noload(HospitalitySubmission.files))
+            .order_by(HospitalitySubmission.created_at.desc())
+            .limit(200)
+            .all()
+        )
+    except Exception as e:
+        logger.exception("list_submissions query failed")
+        # Fallback without noload in case relationship metadata is broken
+        try:
+            rows = (
+                db.query(HospitalitySubmission)
+                .order_by(HospitalitySubmission.created_at.desc())
+                .limit(200)
+                .all()
+            )
+        except Exception as e2:
+            logger.exception("list_submissions fallback query failed")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Could not query submissions table: {e2!s}",
+            ) from e2
+
+    out: list[SubmissionOut] = []
+    for r in rows:
+        try:
+            out.append(_to_out(r))
+        except Exception:
+            logger.exception("Skip bad submission row %s", getattr(r, "id", "?"))
+    return out
 
 
 @router.get("/api/submissions/{submission_id}", response_model=SubmissionOut)
@@ -779,13 +817,31 @@ def submission_stats(
     db: Session = Depends(get_db),
     admin: str = Depends(require_admin),
 ):
-    rows = db.query(HospitalitySubmission).all()
+    try:
+        from sqlalchemy.orm import noload
+
+        rows = (
+            db.query(HospitalitySubmission)
+            .options(noload(HospitalitySubmission.files))
+            .all()
+        )
+    except Exception:
+        logger.exception("submission_stats query failed")
+        try:
+            rows = db.query(HospitalitySubmission).all()
+        except Exception as e:
+            raise HTTPException(500, f"Could not load submission stats: {e!s}") from e
+
     by_status: dict[str, int] = {}
     with_files = 0
     for r in rows:
-        by_status[r.status] = by_status.get(r.status, 0) + 1
-        if r.files:
-            with_files += 1
+        st = (r.status or "unknown").strip() or "unknown"
+        by_status[st] = by_status.get(st, 0) + 1
+        try:
+            if getattr(r, "files", None):
+                with_files += 1
+        except Exception:
+            pass
 
     def sum_statuses(*keys: str) -> int:
         return sum(by_status.get(k, 0) for k in keys)
