@@ -88,36 +88,18 @@ class SubmitResponse(BaseModel):
 
 
 def _to_out(row: HospitalitySubmission) -> SubmissionOut:
-    file_outs: list[FileOut] = []
-    try:
-        for f in list(getattr(row, "files", None) or []):
-            try:
-                file_outs.append(
-                    FileOut(
-                        id=str(f.id),
-                        original_name=getattr(f, "original_name", None) or "file",
-                        content_type=getattr(f, "content_type", None),
-                        size_bytes=getattr(f, "size_bytes", None),
-                        created_at=f.created_at.isoformat() if getattr(f, "created_at", None) else None,
-                    )
-                )
-            except Exception:
-                logger.exception("Skip corrupt submission file on %s", getattr(row, "id", "?"))
-    except Exception:
-        # Relationship / missing submission_files table must not break the list API
-        logger.exception("Could not load files for submission %s", getattr(row, "id", "?"))
-        file_outs = []
-
+    # List API: skip files relationship (can error if submission_files missing).
+    # Detail/download endpoints still load files when needed.
     return SubmissionOut(
         id=str(row.id),
-        reference=row.reference or "",
-        property_name=row.property_name or "",
-        project_stage=row.project_stage or "existing",
+        reference=(row.reference or ""),
+        property_name=(row.property_name or ""),
+        project_stage=(row.project_stage or "existing"),
         property_type=row.property_type,
         company_name=row.company_name,
-        contact_name=row.contact_name or "",
+        contact_name=(row.contact_name or ""),
         contact_role=row.contact_role,
-        email=row.email or "",
+        email=(row.email or ""),
         phone=row.phone,
         whatsapp=row.whatsapp,
         location=row.location,
@@ -126,15 +108,35 @@ def _to_out(row: HospitalitySubmission) -> SubmissionOut:
         unit_count=row.unit_count,
         project_details=row.project_details,
         review_focus=row.review_focus,
-        status=row.status or "application_received",
+        status=(row.status or "application_received"),
         source=row.source,
         utm_source=getattr(row, "utm_source", None),
         utm_medium=getattr(row, "utm_medium", None),
         utm_campaign=getattr(row, "utm_campaign", None),
         admin_notes=row.admin_notes,
         created_at=row.created_at.isoformat() if row.created_at else None,
-        files=file_outs,
+        files=[],
     )
+
+
+def _to_out_with_files(row: HospitalitySubmission) -> SubmissionOut:
+    base = _to_out(row)
+    file_outs: list[FileOut] = []
+    try:
+        for f in list(getattr(row, "files", None) or []):
+            file_outs.append(
+                FileOut(
+                    id=str(f.id),
+                    original_name=getattr(f, "original_name", None) or "file",
+                    content_type=getattr(f, "content_type", None),
+                    size_bytes=getattr(f, "size_bytes", None),
+                    created_at=f.created_at.isoformat() if getattr(f, "created_at", None) else None,
+                )
+            )
+    except Exception:
+        logger.exception("Could not load files for submission %s", getattr(row, "id", "?"))
+    base.files = file_outs
+    return base
 
 
 @router.post("/api/submissions", response_model=SubmitResponse)
@@ -265,32 +267,23 @@ def list_submissions(
     db: Session = Depends(get_db),
     admin: str = Depends(require_admin),
 ):
+    """Admin list — never fail the whole response on one bad row or missing files table."""
     try:
-        from sqlalchemy.orm import noload
-
         rows = (
             db.query(HospitalitySubmission)
-            .options(noload(HospitalitySubmission.files))
             .order_by(HospitalitySubmission.created_at.desc())
             .limit(200)
             .all()
         )
     except Exception as e:
         logger.exception("list_submissions query failed")
-        # Fallback without noload in case relationship metadata is broken
-        try:
-            rows = (
-                db.query(HospitalitySubmission)
-                .order_by(HospitalitySubmission.created_at.desc())
-                .limit(200)
-                .all()
-            )
-        except Exception as e2:
-            logger.exception("list_submissions fallback query failed")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Could not query submissions table: {e2!s}",
-            ) from e2
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Database error loading submissions. Check Render Postgres is running "
+                f"and DATABASE_URL is set. ({type(e).__name__}: {e})"
+            ),
+        ) from e
 
     out: list[SubmissionOut] = []
     for r in rows:
@@ -310,7 +303,7 @@ def get_submission(
     row = db.query(HospitalitySubmission).filter(HospitalitySubmission.id == submission_id).first()
     if not row:
         raise HTTPException(404, "Submission not found")
-    return _to_out(row)
+    return _to_out_with_files(row)
 
 
 @router.get("/api/submissions/{submission_id}/files/{file_id}")
@@ -818,19 +811,16 @@ def submission_stats(
     admin: str = Depends(require_admin),
 ):
     try:
-        from sqlalchemy.orm import noload
-
-        rows = (
-            db.query(HospitalitySubmission)
-            .options(noload(HospitalitySubmission.files))
-            .all()
-        )
-    except Exception:
+        rows = db.query(HospitalitySubmission).all()
+    except Exception as e:
         logger.exception("submission_stats query failed")
-        try:
-            rows = db.query(HospitalitySubmission).all()
-        except Exception as e:
-            raise HTTPException(500, f"Could not load submission stats: {e!s}") from e
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Database error loading submission stats. Check Render Postgres "
+                f"and DATABASE_URL. ({type(e).__name__}: {e})"
+            ),
+        ) from e
 
     by_status: dict[str, int] = {}
     with_files = 0
@@ -838,7 +828,7 @@ def submission_stats(
         st = (r.status or "unknown").strip() or "unknown"
         by_status[st] = by_status.get(st, 0) + 1
         try:
-            if getattr(r, "files", None):
+            if list(getattr(r, "files", None) or []):
                 with_files += 1
         except Exception:
             pass
