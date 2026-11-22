@@ -466,12 +466,16 @@ export function SubmissionsAdminPage(): JSX.Element {
           {error && (
             <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-[13px] text-red-200">
               <p className="font-medium">Could not load submissions</p>
-              <p className="mt-1 text-[12px] text-red-200/80">
-                {(error as Error)?.message?.includes("404")
-                  ? "Backend route missing — Manual Deploy on Render."
-                  : (error as Error)?.message?.includes("401")
-                    ? "Session expired — log in again."
-                    : "Redeploy backend if tables are new."}
+              <p className="mt-1 text-[12px] text-red-200/80 break-words">
+                {(error as Error)?.message?.includes("401")
+                  ? "Session expired — log in again."
+                  : (error as Error)?.message?.includes("404")
+                    ? "Backend route missing — Manual Deploy on Render."
+                    : (error as Error)?.message?.includes("503") ||
+                        (error as Error)?.message?.toLowerCase().includes("database")
+                      ? "Database unreachable. On Render: open Postgres (must be Available, not Suspended), confirm DATABASE_URL on the web service, then Manual Deploy."
+                      : (error as Error)?.message ||
+                        "Check Render backend logs and DATABASE_URL / Postgres status."}
               </p>
             </div>
           )}

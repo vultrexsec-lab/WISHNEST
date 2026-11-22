@@ -30,4 +30,4 @@ COPY backend/ ./backend/
 EXPOSE 8000
 
 # Use the venv's uvicorn directly, run from backend/ so `app.main` resolves
-CMD ["sh", "-c", "cd /app/backend && /app/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2"]
+CMD ["sh", "-c", "cd /app/backend && /app/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-10000} --workers 1"]
