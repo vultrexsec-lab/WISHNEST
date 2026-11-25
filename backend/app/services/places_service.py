@@ -923,7 +923,7 @@ def search_hospitality_for_crm(
     for t in base_terms + extra:
         if t.lower() not in [x.lower() for x in terms]:
             terms.append(t)
-    terms = terms[:6]
+    terms = terms[:3]
 
     queries = [f"{term} in {region}" for term in terms]
     # Also a broader catch-all
