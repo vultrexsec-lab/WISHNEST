@@ -927,7 +927,6 @@ def search_hospitality_for_crm(
 
     queries = [f"{term} in {region}" for term in terms]
     # Also a broader catch-all
-    queries.append(f"hospitality lodging accommodation in {region}")
 
     out: list[BusinessLead] = []
     seen: set[str] = set()
