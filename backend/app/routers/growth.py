@@ -415,7 +415,7 @@ def import_newsletter_subscribers(
 class PlacesSearchIn(BaseModel):
     region: str = Field(..., min_length=2, max_length=200)
     category: str = Field(default="hotels resorts", max_length=200)
-    limit: int = Field(default=50, ge=1, le=80)
+    limit: int = Field(default=100, ge=1, le=100)
 
 
 @router.post("/api/growth/places/search")
@@ -425,17 +425,18 @@ def places_search_for_crm(
     admin: str = Depends(require_admin),
 ):
     """
-    Google Maps listings for a region. Already-imported contacts (phone / place_id / company)
-    are filtered out so re-search only shows new places.
+    Google Maps listings for a region (up to 100/day batch).
+    Already-scraped or imported contacts (phone / place_id / company name)
+    are filtered out so the same hotel does not appear again on re-search.
     """
-    # Fetch extra then filter so area still fills up with new rows
-    want = max(1, min(int(body.limit or 50), 80))
+    want = max(1, min(int(body.limit or 100), 100))
     leads = search_hospitality_for_crm(
         region=body.region.strip(),
         category=(body.category or "hotels").strip(),
-        limit=min(want * 2, 80),
+        limit=min(want * 3, 120),
     )
 
+    # Dedupe against everything we have already shown/imported (any source)
     existing_phones = {
         (r[0] or "").strip()
         for r in db.query(GrowthContact.phone).filter(GrowthContact.phone.isnot(None)).all()
@@ -443,19 +444,16 @@ def places_search_for_crm(
     }
     existing_companies = {
         (r[0] or "").strip().lower()
-        for r in db.query(GrowthContact.company)
-        .filter(
-            GrowthContact.source == "google_places",
-            GrowthContact.company.isnot(None),
-        )
-        .all()
+        for r in db.query(GrowthContact.company).filter(GrowthContact.company.isnot(None)).all()
+        if r[0]
+    }
+    existing_names = {
+        (r[0] or "").strip().lower()
+        for r in db.query(GrowthContact.name).filter(GrowthContact.name.isnot(None)).all()
         if r[0]
     }
     existing_place_ids: set[str] = set()
-    for (notes,) in db.query(GrowthContact.notes).filter(
-        GrowthContact.source == "google_places",
-        GrowthContact.notes.isnot(None),
-    ).all():
+    for (notes,) in db.query(GrowthContact.notes).filter(GrowthContact.notes.isnot(None)).all():
         if not notes:
             continue
         if "place_id: " in notes:
@@ -474,35 +472,79 @@ def places_search_for_crm(
         if pid and pid in existing_place_ids:
             skipped_existing += 1
             continue
-        if name_key and name_key in existing_companies:
+        if name_key and (name_key in existing_companies or name_key in existing_names):
             skipped_existing += 1
             continue
         fresh.append(L)
         if len(fresh) >= want:
             break
 
+    # Mark these listings as seen so the next search in this region skips them
+    # (even if the user does not click Import).
+    marked = 0
+    for L in fresh:
+        pid = (getattr(L, "place_id", None) or "").strip()
+        name = (L.name or "").strip()
+        if not name and not pid:
+            continue
+        notes = f"place_id: {pid}" if pid else None
+        # Avoid double-insert in same request
+        if pid and pid in existing_place_ids:
+            continue
+        if name and name.lower() in existing_companies:
+            continue
+        row = GrowthContact(
+            name=name or None,
+            company=name or None,
+            phone=(L.phone or "").strip() or None,
+            email=(getattr(L, "email", None) or "").strip().lower() or None,
+            contact_type="scraped_listing",
+            source="google_places_seen",
+            city=(body.region or "").strip()[:128] or None,
+            destination=(body.region or "").strip()[:128] or None,
+            notes=notes,
+            email_permission=False,
+            whatsapp_permission=False,
+            phone_permission=False,
+        )
+        db.add(row)
+        marked += 1
+        if pid:
+            existing_place_ids.add(pid)
+        if name:
+            existing_companies.add(name.lower())
+            existing_names.add(name.lower())
+    if marked:
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            logger.exception("Could not mark places as seen")
+
     return {
         "region": body.region.strip(),
         "category": body.category,
         "count": len(fresh),
         "skipped_already_imported": skipped_existing,
+        "marked_seen": marked,
+        "daily_cap": 100,
         "note": (
             f"Area search for {body.region.strip()}. "
-            f"Hidden {skipped_existing} already in your contacts. "
-            "Import tries website emails; Maps itself rarely has email."
+            f"Showing up to {want} new listings; hidden {skipped_existing} already scraped/imported. "
+            "Re-search will not repeat these. Download Excel for name / email / phone."
         ),
         "results": [
             {
                 "name": L.name,
+                "owner_name": None,  # Maps rarely exposes owner; left blank for Excel
                 "address": L.address,
                 "phone": L.phone,
-                "website": L.website,
                 "email": getattr(L, "email", None),
                 "rating": L.rating,
                 "review_count": L.review_count,
-                "maps_url": L.maps_url,
                 "place_id": L.place_id,
                 "category": L.category,
+                # website intentionally omitted from client display / export
             }
             for L in fresh
         ],

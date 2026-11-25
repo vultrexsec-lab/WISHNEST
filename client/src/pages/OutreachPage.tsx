@@ -10,6 +10,7 @@ import {
   MapPin,
   Loader2,
   Megaphone,
+  Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { apiRequest } from "@/lib/queryClient";
@@ -30,12 +31,46 @@ type Contact = {
 
 type PlacesRow = {
   name: string;
+  owner_name?: string | null;
   address?: string | null;
   phone?: string | null;
   website?: string | null;
   email?: string | null;
   place_id?: string | null;
 };
+
+function csvCell(v: string | null | undefined): string {
+  const s = (v || "").replace(/"/g, '""');
+  return `"${s}"`;
+}
+
+/** Excel-friendly CSV (UTF-8 BOM). Columns: Hotel Name, Owner Name, Email, Phone — no website. */
+function downloadPlacesExcel(rows: PlacesRow[], region: string) {
+  const header = ["Hotel Name", "Owner Name", "Email", "Phone"];
+  const lines = [header.join(",")];
+  for (const r of rows) {
+    lines.push(
+      [
+        csvCell(r.name),
+        csvCell(r.owner_name || ""),
+        csvCell(r.email || ""),
+        csvCell(r.phone || ""),
+      ].join(","),
+    );
+  }
+  const blob = new Blob(["\ufeff" + lines.join("\n")], {
+    type: "text/csv;charset=utf-8;",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const safe = (region || "listings").replace(/[^\w\-]+/g, "_").slice(0, 40);
+  a.href = url;
+  a.download = `wishnest-scrape-${safe}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 type Tab = "intake" | "email" | "whatsapp" | "call" | "ready";
 
@@ -222,7 +257,9 @@ Hospitality | Architecture | Destinations
         {tab === "intake" && (
           <section className="mt-6 space-y-4">
             <p className="text-[12px] text-white/40">
-              Area-wise Maps search (e.g. Dehradun, India). Already-imported hotels are hidden on re-search. Import pulls website emails when public. ~50/day recommended.
+              Area-wise Maps search (e.g. Dehradun, India). Up to <strong className="text-white/60">100 new</strong> listings
+              per search. Already scraped hotels stay hidden on re-search. Table shows name, phone, email only — use the
+              download icon for Excel (Hotel Name, Owner Name, Email, Phone).
             </p>
             <div className="flex flex-wrap gap-2">
               <input
@@ -248,7 +285,7 @@ Hospitality | Architecture | Destinations
                     const res = await apiRequest("POST", "/api/growth/places/search", {
                       region: region.trim(),
                       category: category.trim() || "hotels resorts villas",
-                      limit: 50,
+                      limit: 100,
                     });
                     const data = await res.json();
                     const rows = data.results || [];
@@ -262,9 +299,10 @@ Hospitality | Architecture | Destinations
                     toast({
                       title: "Search done",
                       description: rows.length
-                        ? `${rows.length} new listings` + (skipped ? ` (${skipped} already imported, hidden)` : "")
+                        ? `${rows.length} new listings` +
+                          (skipped ? ` (${skipped} already scraped, hidden)` : "")
                         : skipped
-                          ? `No new listings — ${skipped} already in contacts`
+                          ? `No new listings — ${skipped} already scraped for this area`
                           : "No results — check SERPAPI_KEY / region",
                     });
                   } catch (e) {
@@ -297,7 +335,12 @@ Hospitality | Architecture | Destinations
                     const data = await res.json();
                     await qc.invalidateQueries({ queryKey: ["/api/growth/contacts"] });
                     await refetchContacts();
-                    toast({ title: "Imported", description: data.message || `${data.created} contacts, ${data.emails_found ?? 0} emails` });
+                    toast({
+                      title: "Imported",
+                      description:
+                        data.message ||
+                        `${data.created} contacts, ${data.emails_found ?? 0} emails`,
+                    });
                   } catch (e) {
                     toast({
                       title: "Import failed",
@@ -308,6 +351,24 @@ Hospitality | Architecture | Destinations
                 }}
               >
                 Import selected → contacts
+              </Button>
+              <Button
+                type="button"
+                disabled={!places.length}
+                variant="outline"
+                title="Download Excel (CSV): Hotel Name, Owner Name, Email, Phone"
+                className="h-9 w-9 rounded-full border-sky-500/40 bg-sky-500/10 p-0 text-sky-200 hover:bg-sky-500/20"
+                onClick={() => {
+                  const selected = places.filter((_, i) => selectedPlaces[i]);
+                  const rows = selected.length ? selected : places;
+                  downloadPlacesExcel(rows, region.trim() || "listings");
+                  toast({
+                    title: "Download started",
+                    description: `${rows.length} rows → Excel (Hotel, Owner, Email, Phone)`,
+                  });
+                }}
+              >
+                <Download className="h-4 w-4" />
               </Button>
               <Button
                 type="button"
@@ -330,7 +391,6 @@ Hospitality | Architecture | Destinations
                     });
                     return;
                   }
-                  // Also import to contacts for CRM continuity
                   try {
                     await apiRequest("POST", "/api/growth/places/import", {
                       region: region.trim(),
@@ -363,10 +423,9 @@ Hospitality | Architecture | Destinations
                   <thead className="sticky top-0 bg-[#121816] text-white/40">
                     <tr>
                       <th className="px-2 py-1">✓</th>
-                      <th className="px-2 py-1">NAME</th>
+                      <th className="px-2 py-1">HOTEL / NAME</th>
                       <th className="px-2 py-1">PHONE</th>
                       <th className="px-2 py-1">EMAIL</th>
-                      <th className="px-2 py-1">WEB</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -381,10 +440,11 @@ Hospitality | Architecture | Destinations
                             }
                           />
                         </td>
-                        <td className="max-w-[160px] truncate px-2 py-1">{r.name}</td>
+                        <td className="max-w-[220px] truncate px-2 py-1">{r.name}</td>
                         <td className="px-2 py-1 whitespace-nowrap">{r.phone || "—"}</td>
-                        <td className="max-w-[140px] truncate px-2 py-1 text-emerald-300/80">{r.email || "—"}</td>
-                        <td className="max-w-[120px] truncate px-2 py-1">{r.website || "—"}</td>
+                        <td className="max-w-[160px] truncate px-2 py-1 text-emerald-300/80">
+                          {r.email || "—"}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

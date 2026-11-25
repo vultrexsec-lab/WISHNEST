@@ -732,7 +732,7 @@ def search_hospitality_for_crm(
     if not region:
         return []
 
-    limit = max(1, min(int(limit or 60), 80))
+    limit = max(1, min(int(limit or 100), 120))
 
     # Split user category + hospitality variants for wider coverage
     bits = [b.strip() for b in category.replace(",", " ").split() if b.strip()]
