@@ -31,6 +31,7 @@ type Contact = {
 
 type PlacesRow = {
   name: string;
+  hotel_name?: string | null;
   owner_name?: string | null;
   address?: string | null;
   phone?: string | null;
@@ -49,10 +50,12 @@ function downloadPlacesExcel(rows: PlacesRow[], region: string) {
   const header = ["Hotel Name", "Owner Name", "Email", "Phone"];
   const lines = [header.join(",")];
   for (const r of rows) {
+    const hotel = r.hotel_name || r.name || "";
+    const owner = r.owner_name || "";
     lines.push(
       [
-        csvCell(r.name),
-        csvCell(r.owner_name || ""),
+        csvCell(hotel),
+        csvCell(owner),
         csvCell(r.email || ""),
         csvCell(r.phone || ""),
       ].join(","),
@@ -423,7 +426,7 @@ Hospitality | Architecture | Destinations
                   <thead className="sticky top-0 bg-[#121816] text-white/40">
                     <tr>
                       <th className="px-2 py-1">✓</th>
-                      <th className="px-2 py-1">HOTEL / NAME</th>
+                      <th className="px-2 py-1">NAME (owner if found)</th>
                       <th className="px-2 py-1">PHONE</th>
                       <th className="px-2 py-1">EMAIL</th>
                     </tr>
@@ -440,7 +443,14 @@ Hospitality | Architecture | Destinations
                             }
                           />
                         </td>
-                        <td className="max-w-[220px] truncate px-2 py-1">{r.name}</td>
+                        <td className="max-w-[220px] truncate px-2 py-1" title={r.hotel_name || r.name}>
+                          {r.name}
+                          {r.owner_name && r.hotel_name ? (
+                            <span className="block text-[9px] text-white/35 truncate">
+                              {r.hotel_name}
+                            </span>
+                          ) : null}
+                        </td>
                         <td className="px-2 py-1 whitespace-nowrap">{r.phone || "—"}</td>
                         <td className="max-w-[160px] truncate px-2 py-1 text-emerald-300/80">
                           {r.email || "—"}

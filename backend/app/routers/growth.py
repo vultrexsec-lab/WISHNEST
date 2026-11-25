@@ -535,8 +535,10 @@ def places_search_for_crm(
         ),
         "results": [
             {
-                "name": L.name,
-                "owner_name": None,  # Maps rarely exposes owner; left blank for Excel
+                # Prefer owner in primary name when found; keep hotel_name for Excel
+                "name": (getattr(L, "owner_name", None) or L.name),
+                "hotel_name": L.name,
+                "owner_name": getattr(L, "owner_name", None),
                 "address": L.address,
                 "phone": L.phone,
                 "email": getattr(L, "email", None),

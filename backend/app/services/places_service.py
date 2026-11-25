@@ -638,36 +638,114 @@ def fetch_premium_stays(location: str | None, limit: int = 8) -> list[PropertyLi
 
 
 
-def extract_email_from_website(url: str | None, timeout: float = 8.0) -> str | None:
-    """Best-effort public email from website homepage (mailto + regex)."""
+_EMAIL_SKIP = (
+    "example.", "sentry.", "wixpress", "domain.com", "email.com", "your@",
+    "noreply", "no-reply", "donotreply", "privacy@", "legal@", "support@godaddy",
+    "wordpress", "schema.org", "w3.org", "googleapis",
+)
+
+
+def _clean_email(em: str | None) -> str | None:
+    if not em:
+        return None
+    el = em.strip().lower().rstrip(".,;>")
+    if not el or "@" not in el:
+        return None
+    if any(s in el for s in _EMAIL_SKIP):
+        return None
+    if el.endswith((".png", ".jpg", ".gif", ".css", ".js", ".svg", ".webp")):
+        return None
+    return el
+
+
+def _clean_phone(raw) -> str | None:
+    if raw is None:
+        return None
+    if isinstance(raw, dict):
+        raw = raw.get("number") or raw.get("national") or raw.get("international") or raw.get("text")
+    s = str(raw).strip()
+    if not s:
+        return None
+    # Keep leading + and digits
+    digits = re.sub(r"[^\d+]", "", s)
+    if digits.count("+") > 1:
+        digits = digits.replace("+", "")
+        digits = "+" + digits
+    core = digits.lstrip("+")
+    if len(core) < 8:
+        return None
+    return digits
+
+
+def extract_email_from_website(url: str | None, timeout: float = 6.0) -> str | None:
+    """Best-effort public email from website homepage + common contact paths."""
+    if not url or not str(url).startswith("http"):
+        return None
+    paths = ["", "/contact", "/contact-us", "/about", "/about-us"]
+    base = str(url).rstrip("/")
+    headers = {"User-Agent": "WishNestBot/1.0 (+https://wishnest.info)"}
+    for path in paths:
+        try:
+            target = base if not path else (base + path)
+            resp = requests.get(target, timeout=timeout, headers=headers, allow_redirects=True)
+            if not resp.ok:
+                continue
+            html = resp.text[:250_000]
+            m = re.search(
+                r"mailto:([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})",
+                html,
+                re.I,
+            )
+            if m:
+                em = _clean_email(m.group(1))
+                if em:
+                    return em
+            found = re.findall(
+                r"\b([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})\b",
+                html,
+            )
+            for em in found:
+                el = _clean_email(em)
+                if el:
+                    return el
+        except Exception as exc:
+            logger.debug("email extract failed %s: %s", url, exc)
+    return None
+
+
+def extract_owner_from_website(url: str | None, timeout: float = 5.0) -> str | None:
+    """Best-effort owner / proprietor name from public website text."""
     if not url or not str(url).startswith("http"):
         return None
     try:
         resp = requests.get(
-            url,
+            str(url),
             timeout=timeout,
             headers={"User-Agent": "WishNestBot/1.0 (+https://wishnest.info)"},
             allow_redirects=True,
         )
         if not resp.ok:
             return None
-        html = resp.text[:200_000]
-        m = re.search(r"mailto:([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})", html, re.I)
-        if m:
-            em = m.group(1).lower()
-            if not any(x in em for x in ("example.com", "sentry.", "wixpress", "domain.com")):
-                return em
-        found = re.findall(r"\b([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})\b", html)
-        skip = ("example.", "sentry.", "wixpress", "domain.com", "email.com", "your@")
-        for em in found:
-            el = em.lower()
-            if any(s in el for s in skip):
-                continue
-            if el.endswith((".png", ".jpg", ".gif", ".css", ".js")):
-                continue
-            return el
+        # Strip tags roughly
+        text = re.sub(r"<script[\s\S]*?</script>", " ", resp.text[:200_000], flags=re.I)
+        text = re.sub(r"<style[\s\S]*?</style>", " ", text, flags=re.I)
+        text = re.sub(r"<[^>]+>", " ", text)
+        text = re.sub(r"\s+", " ", text)
+        patterns = [
+            r"(?:owner|proprietor|founded by|managed by|promoted by)\s*[:\-]?\s*"
+            r"(?:mr\.?|mrs\.?|ms\.?|dr\.?)?\s*([A-Z][a-zA-Z]{1,20}(?:\s+[A-Z][a-zA-Z]{1,20}){0,3})",
+            r"(?:स्वामी|मालिक)\s*[:\-]?\s*([A-Za-z][A-Za-z\s]{2,40})",
+        ]
+        for pat in patterns:
+            m = re.search(pat, text, re.I)
+            if m:
+                name = re.sub(r"\s+", " ", m.group(1)).strip(" .,-")
+                if 3 <= len(name) <= 60 and not any(
+                    x in name.lower() for x in ("hotel", "resort", "villa", "limited", "company", "private")
+                ):
+                    return name
     except Exception as exc:
-        logger.debug("email extract failed %s: %s", url, exc)
+        logger.debug("owner extract failed %s: %s", url, exc)
     return None
 
 
@@ -684,6 +762,7 @@ class BusinessLead:
     place_id: str | None = None
     category: str | None = None
     email: str | None = None
+    owner_name: str | None = None
 
 
 def _lead_from_maps_place(place: dict, fallback_category: str) -> BusinessLead | None:
@@ -692,24 +771,111 @@ def _lead_from_maps_place(place: dict, fallback_category: str) -> BusinessLead |
     name = (place.get("title") or place.get("name") or "").strip()
     if not name:
         return None
-    phone = place.get("phone") or place.get("phone_number")
-    if isinstance(phone, dict):
-        phone = phone.get("number") or phone.get("national")
-    website = place.get("website") or place.get("site")
-    cat = place.get("type") or place.get("category")
+    phone = (
+        place.get("phone")
+        or place.get("phone_number")
+        or place.get("international_phone")
+        or place.get("formatted_phone_number")
+    )
+    # SerpApi sometimes nests under gps_coordinates siblings or extensions
+    if not phone and isinstance(place.get("extensions"), list):
+        for ext in place["extensions"]:
+            if not isinstance(ext, str):
+                continue
+            m = re.search(r"(\+?\d[\d\s\-()]{8,}\d)", ext)
+            if m:
+                phone = m.group(1)
+                break
+    website = place.get("website") or place.get("site") or place.get("web_site")
+    cat = place.get("type") or place.get("category") or place.get("types")
     if isinstance(cat, list):
         cat = ", ".join(str(c) for c in cat[:3])
     return BusinessLead(
         name=name,
-        address=place.get("address"),
-        phone=str(phone).strip() if phone else None,
+        address=place.get("address") or place.get("formatted_address"),
+        phone=_clean_phone(phone),
         website=str(website).strip() if website else None,
         rating=_coerce_rating(place.get("rating")),
-        review_count=_coerce_review_count(place.get("reviews")),
-        maps_url=place.get("link"),
-        place_id=place.get("data_id") or place.get("place_id"),
+        review_count=_coerce_review_count(place.get("reviews") or place.get("user_ratings_total")),
+        maps_url=place.get("link") or place.get("place_id_search"),
+        place_id=place.get("data_id") or place.get("place_id") or place.get("data_cid"),
         category=str(cat) if cat else fallback_category,
+        email=_clean_email(place.get("email")),
     )
+
+
+def _serpapi_place_details(data_id: str | None, api_key: str) -> dict:
+    """Fetch full Maps place card (phone / website often only here)."""
+    if not data_id or not api_key:
+        return {}
+    try:
+        params = {
+            "engine": "google_maps",
+            "type": "place",
+            "data_id": data_id,
+            "api_key": api_key,
+        }
+        resp = requests.get(
+            "https://serpapi.com/search.json",
+            params=params,
+            timeout=12,
+        )
+        if not resp.ok:
+            return {}
+        data = resp.json() or {}
+        # place_results is the detailed card
+        pr = data.get("place_results") or data
+        return pr if isinstance(pr, dict) else {}
+    except Exception as exc:
+        logger.debug("place details failed %s: %s", data_id[:40] if data_id else "", exc)
+        return {}
+
+
+def enrich_leads_contact_fields(
+    leads: list[BusinessLead],
+    *,
+    max_detail_lookups: int = 40,
+    max_website_fetches: int = 30,
+) -> list[BusinessLead]:
+    """
+    Fill missing phone/website via SerpApi place details, then public email + owner
+    from the business website when available.
+    """
+    api_key = get_settings().serpapi_key or ""
+    detail_used = 0
+    web_used = 0
+    for lead in leads:
+        need_phone = not lead.phone
+        need_web = not lead.website
+        if (need_phone or need_web) and lead.place_id and detail_used < max_detail_lookups and api_key:
+            detail_used += 1
+            pr = _serpapi_place_details(lead.place_id, api_key)
+            if pr:
+                if need_phone:
+                    lead.phone = _clean_phone(
+                        pr.get("phone")
+                        or pr.get("phone_number")
+                        or pr.get("international_phone")
+                    ) or lead.phone
+                if need_web:
+                    w = pr.get("website") or pr.get("site")
+                    if w:
+                        lead.website = str(w).strip()
+                if not lead.email:
+                    lead.email = _clean_email(pr.get("email"))
+                if not lead.address and pr.get("address"):
+                    lead.address = pr.get("address")
+
+        if lead.website and web_used < max_website_fetches:
+            if not lead.email or not lead.owner_name:
+                web_used += 1
+            if not lead.email:
+                lead.email = extract_email_from_website(lead.website) or lead.email
+            if not lead.owner_name:
+                lead.owner_name = extract_owner_from_website(lead.website)
+
+        # Display name preference: owner when found, else hotel name (handled by API/UI)
+    return leads
 
 
 def search_hospitality_for_crm(
@@ -801,7 +967,13 @@ def search_hospitality_for_crm(
                 if len(out) == before:
                     # no new unique rows
                     break
+        # Second pass: place-details + website email/owner (phone often missing on list view)
+        enrich_leads_contact_fields(out[:limit])
         return out[:limit]
-    except Exception as exc:
-        logger.warning("CRM places search failed: %s", exc)
+    except Exception as exp:
+        logger.warning("CRM places search failed: %s", exp)
+        try:
+            enrich_leads_contact_fields(out[:limit])
+        except Exception:
+            pass
         return out[:limit]
