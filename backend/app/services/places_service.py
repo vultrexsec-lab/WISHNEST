@@ -681,7 +681,16 @@ def extract_email_from_website(url: str | None, timeout: float = 6.0) -> str | N
     """Best-effort public email from website homepage + common contact paths."""
     if not url or not str(url).startswith("http"):
         return None
-    paths = ["", "/contact", "/contact-us", "/about", "/about-us"]
+    paths = [
+        "",
+        "/contact",
+        "/contact-us",
+        "/contactus",
+        "/about",
+        "/about-us",
+        "/en/contact",
+        "/pages/contact",
+    ]
     base = str(url).rstrip("/")
     headers = {"User-Agent": "WishNestBot/1.0 (+https://wishnest.info)"}
     for path in paths:
@@ -704,10 +713,23 @@ def extract_email_from_website(url: str | None, timeout: float = 6.0) -> str | N
                 r"\b([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})\b",
                 html,
             )
+            scored: list[tuple[int, str]] = []
             for em in found:
                 el = _clean_email(em)
-                if el:
-                    return el
+                if not el:
+                    continue
+                score = 0
+                local = el.split("@", 1)[0]
+                if local in ("info", "contact", "booking", "reservations", "reservation", "sales", "enquiry", "inquiry", "hello", "stay"):
+                    score += 5
+                if any(x in local for x in ("book", "reserv", "info", "contact", "sales")):
+                    score += 2
+                if el.endswith((".png", ".jpg", ".gif", ".css", ".js")):
+                    continue
+                scored.append((score, el))
+            if scored:
+                scored.sort(key=lambda t: (-t[0], t[1]))
+                return scored[0][1]
         except Exception as exc:
             logger.debug("email extract failed %s: %s", url, exc)
     return None
@@ -863,27 +885,32 @@ def enrich_leads_contact_fields(
     leads: list[BusinessLead],
     *,
     max_detail_lookups: int = 30,
-    max_website_fetches: int = 10,
+    max_website_fetches: int = 20,
     fast: bool = True,
 ) -> list[BusinessLead]:
     """
-    Parallel place-details for missing phones (wall-clock ~8-15s), then light website email.
+    Parallel place-details for phone + website, then parallel website email scrape.
+    Designed to finish in ~15-25s under typical SerpApi/network conditions.
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     if not fast:
         max_detail_lookups = max(max_detail_lookups, 40)
-        max_website_fetches = max(max_website_fetches, 20)
+        max_website_fetches = max(max_website_fetches, 30)
 
     api_key = get_settings().serpapi_key or ""
-    # Parallel place details for leads missing phone
-    need = [L for L in leads if not L.phone and L.place_id][:max_detail_lookups]
+
+    # 1) Place details for missing phone OR missing website (need website for email)
+    need = [
+        L for L in leads
+        if L.place_id and (not L.phone or not L.website)
+    ][:max_detail_lookups]
     if need and api_key:
         def _one(lead: BusinessLead):
-            pr = _serpapi_place_details(lead.place_id, api_key, timeout=7.0)
+            pr = _serpapi_place_details(lead.place_id, api_key, timeout=6.5)
             return lead, pr
 
-        workers = min(8, len(need))
+        workers = min(10, max(1, len(need)))
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futs = [pool.submit(_one, L) for L in need]
             for fut in as_completed(futs):
@@ -893,27 +920,31 @@ def enrich_leads_contact_fields(
                 except Exception as exc:
                     logger.debug("parallel detail failed: %s", exc)
 
-    # Also fill website for leads that already had phone but no website (for email)
-    need_web = [L for L in leads if L.phone and not L.website and L.place_id][: max(0, max_detail_lookups // 2)]
-    if need_web and api_key and not fast:
-        def _one_web(lead: BusinessLead):
-            pr = _serpapi_place_details(lead.place_id, api_key, timeout=6.0)
-            return lead, pr
-        with ThreadPoolExecutor(max_workers=min(6, len(need_web))) as pool:
-            for fut in as_completed([pool.submit(_one_web, L) for L in need_web]):
+    # 2) Parallel public-email scrape from websites
+    need_email = [L for L in leads if L.website and not L.email][:max_website_fetches]
+    if need_email:
+        def _email_one(lead: BusinessLead):
+            em = extract_email_from_website(lead.website, timeout=3.5)
+            return lead, em
+
+        workers = min(8, max(1, len(need_email)))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futs = [pool.submit(_email_one, L) for L in need_email]
+            for fut in as_completed(futs):
                 try:
-                    lead, pr = fut.result()
-                    _apply_place_details_to_lead(lead, pr)
+                    lead, em = fut.result()
+                    if em and not lead.email:
+                        lead.email = em
+                except Exception as exc:
+                    logger.debug("email scrape failed: %s", exc)
+
+    if not fast:
+        for lead in leads:
+            if lead.website and not lead.owner_name:
+                try:
+                    lead.owner_name = extract_owner_from_website(lead.website, timeout=2.5)
                 except Exception:
                     pass
-
-    web_used = 0
-    for lead in leads:
-        if lead.website and web_used < max_website_fetches and not lead.email:
-            lead.email = extract_email_from_website(lead.website, timeout=3.0) or lead.email
-            web_used += 1
-        if lead.website and not lead.owner_name and not fast and web_used <= max_website_fetches:
-            lead.owner_name = extract_owner_from_website(lead.website, timeout=2.5)
 
     return leads
 
@@ -1011,7 +1042,7 @@ def search_hospitality_for_crm(
                     break
         # Fast enrich only — full website email pass is on Import (avoids 120s timeouts)
         try:
-            enrich_leads_contact_fields(out[:limit], max_detail_lookups=28, max_website_fetches=8, fast=True)
+            enrich_leads_contact_fields(out[:limit], max_detail_lookups=30, max_website_fetches=20, fast=True)
         except Exception as enr:
             logger.warning("CRM places fast enrich failed: %s", enr)
         out.sort(key=lambda L: (0 if (L.phone or "").strip() else 1, (L.name or "").lower()))
