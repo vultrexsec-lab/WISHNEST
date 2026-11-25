@@ -26,6 +26,7 @@ import { ReimagingPage } from "@/pages/ReimagingPage";
 import { SocialPage } from "@/pages/SocialPage";
 import { GetReviewedPage } from "@/pages/GetReviewedPage";
 import { InviteLandingPage } from "@/pages/InviteLandingPage";
+import { AdvisoryLandingPage } from "@/pages/AdvisoryLandingPage";
 import { RequestCallPage } from "@/pages/RequestCallPage";
 import { SubmitProjectPage } from "@/pages/SubmitProjectPage";
 import { EditorialStandardsPage } from "@/pages/EditorialStandardsPage";
@@ -120,6 +121,8 @@ function Router() {
         <Route path="/policy" component={PolicyPage} />
         <Route path="/privacy" component={PolicyPage} />
         <Route path="/invite" component={InviteLandingPage} />
+        <Route path="/advisory/:topic" component={AdvisoryLandingPage} />
+        <Route path="/advisory">{() => <Redirect to="/advisory/land" />}</Route>
         <Route path="/get-reviewed" component={GetReviewedPage} />
         <Route path="/get-reviewed/submit" component={SubmitProjectPage} />
         <Route path="/submissions" component={SubmissionsAdminPage} />
