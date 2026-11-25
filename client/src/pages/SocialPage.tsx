@@ -17,6 +17,7 @@ import {
   Share2,
   Sparkles,
 } from "lucide-react";
+import { SocialChannelsDesk } from "@/pages/SocialChannelsDesk";
 
 /** Public site origin for share links */
 const SITE_ORIGIN =
@@ -165,6 +166,7 @@ function PlatformBlock({
 export function SocialPage(): JSX.Element {
   const { isAdmin } = useAuth();
   const { toast } = useToast();
+  const [deskMode, setDeskMode] = useState<"channels" | "packs">("channels");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "published" | "approved" | "scheduled">("all");
 
@@ -327,11 +329,35 @@ export function SocialPage(): JSX.Element {
                 SOCIAL™
               </p>
               <h1 className="[font-family:'Playfair_Display',Helvetica] text-[20px] font-normal leading-tight text-white">
-                Share Studio
+                Social Desk
               </h1>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex rounded-full border border-white/10 p-0.5">
+              <button
+                type="button"
+                onClick={() => setDeskMode("channels")}
+                className={`rounded-full px-3 py-1 text-[11px] tracking-wide ${
+                  deskMode === "channels"
+                    ? "bg-sky-500/25 text-sky-200"
+                    : "text-white/45 hover:text-white/70"
+                }`}
+              >
+                Channels
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeskMode("packs")}
+                className={`rounded-full px-3 py-1 text-[11px] tracking-wide ${
+                  deskMode === "packs"
+                    ? "bg-sky-500/25 text-sky-200"
+                    : "text-white/45 hover:text-white/70"
+                }`}
+              >
+                Article packs
+              </button>
+            </div>
             <Link href="/reimaging">
               <a className="rounded-full border border-emerald-500/30 px-4 py-1.5 [font-family:'Inter',Helvetica] text-[11px] tracking-[0.8px] text-emerald-300/90 transition hover:border-emerald-400/50">
                 Reimaging →
@@ -346,6 +372,13 @@ export function SocialPage(): JSX.Element {
         </div>
       </header>
 
+      {deskMode === "channels" ? (
+        <div className="mx-auto max-w-6xl px-6 py-10">
+          <SocialChannelsDesk />
+        </div>
+      ) : null}
+
+      {deskMode === "packs" ? (
       <div className="mx-auto grid max-w-6xl gap-8 px-6 py-10 lg:grid-cols-[320px_1fr]">
         {/* Article list */}
         <aside className="space-y-4">
@@ -647,6 +680,7 @@ export function SocialPage(): JSX.Element {
           )}
         </section>
       </div>
+      ) : null}
     </main>
   );
 }

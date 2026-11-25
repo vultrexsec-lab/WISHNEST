@@ -50,7 +50,7 @@ const MODULES: {
     id: "social",
     label: "Social",
     href: "/social",
-    hint: "Share packs & captions",
+    hint: "X · IG · FB · LinkedIn desk",
     icon: Share2,
   },
   {

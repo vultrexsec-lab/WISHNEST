@@ -152,3 +152,97 @@ def queue_linkedin_posts(
         channels=["linkedin"],
         cta_url=cta_url,
     )
+
+
+def queue_compose_post(
+    *,
+    channel: str,
+    content: str,
+    url: str | None = None,
+    image_url: str | None = None,
+    article_id: str | None = None,
+    draft: bool = False,
+) -> dict[str, Any]:
+    """CRM Social desk: one compose → one channel (x/twitter, linkedin, facebook, instagram)."""
+    ch = (channel or "").strip().lower().replace(" ", "")
+    if ch in ("x", "twitter", "x.com"):
+        ch = "twitter"
+    if ch not in ("twitter", "linkedin", "facebook", "instagram"):
+        return {"status": "error", "detail": f"Unsupported channel: {channel}"}
+    body = (content or "").strip()
+    if not body:
+        return {"status": "error", "detail": "Empty post text"}
+    if url and url not in body:
+        body = f"{body}\n\n{url}"
+    payload = {
+        "type": "wishnest_crm_compose",
+        "source": "crm_social",
+        "channel": ch,
+        "channels": [ch],
+        "content": body,
+        "url": url,
+        "image_url": image_url,
+        "article_id": article_id,
+        "schedule": "now",
+        "draft": bool(draft),
+    }
+    result = _post_to_postiz(payload)
+    result["channel"] = ch
+    result["postiz_configured"] = postiz_configured()
+    return result
+
+
+def social_channel_status() -> dict[str, Any]:
+    """
+    Connection matrix for CRM Social UI.
+    Live publish needs POSTIZ_API_URL + POSTIZ_API_KEY with accounts linked in Postiz.
+    Optional native X keys can be noted for future direct publish.
+    """
+    postiz = postiz_configured()
+    x_native = bool(
+        os.environ.get("X_API_KEY")
+        and os.environ.get("X_API_SECRET")
+        and os.environ.get("X_ACCESS_TOKEN")
+        and os.environ.get("X_ACCESS_TOKEN_SECRET")
+    )
+    return {
+        "postiz_configured": postiz,
+        "channels": {
+            "twitter": {
+                "id": "twitter",
+                "label": "X / Twitter",
+                "connected": postiz or x_native,
+                "via": "postiz" if postiz else ("x_native" if x_native else None),
+                "publish_ready": postiz or x_native,
+                "hint": "Connect X in Postiz, or set X_API_KEY / X_API_SECRET / X_ACCESS_TOKEN / X_ACCESS_TOKEN_SECRET",
+            },
+            "instagram": {
+                "id": "instagram",
+                "label": "Instagram",
+                "connected": postiz,
+                "via": "postiz" if postiz else None,
+                "publish_ready": postiz,
+                "hint": "Instagram Business account linked in Postiz (Meta)",
+            },
+            "facebook": {
+                "id": "facebook",
+                "label": "Facebook",
+                "connected": postiz,
+                "via": "postiz" if postiz else None,
+                "publish_ready": postiz,
+                "hint": "Facebook Page linked in Postiz",
+            },
+            "linkedin": {
+                "id": "linkedin",
+                "label": "LinkedIn",
+                "connected": postiz,
+                "via": "postiz" if postiz else None,
+                "publish_ready": postiz,
+                "hint": "LinkedIn profile or company page linked in Postiz",
+            },
+        },
+        "note": (
+            "WishNest CRM composes here; Postiz (or native X keys) executes the publish. "
+            "Without POSTIZ_API_URL + POSTIZ_API_KEY, posts are stub-queued for testing."
+        ),
+    }
