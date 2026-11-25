@@ -804,7 +804,7 @@ def _lead_from_maps_place(place: dict, fallback_category: str) -> BusinessLead |
     )
 
 
-def _serpapi_place_details(data_id: str | None, api_key: str) -> dict:
+def _serpapi_place_details(data_id: str | None, api_key: str, timeout: float = 8.0) -> dict:
     """Fetch full Maps place card (phone / website often only here)."""
     if not data_id or not api_key:
         return {}
@@ -814,16 +814,17 @@ def _serpapi_place_details(data_id: str | None, api_key: str) -> dict:
             "type": "place",
             "data_id": data_id,
             "api_key": api_key,
+            "hl": "en",
+            "gl": "in",
         }
         resp = requests.get(
             "https://serpapi.com/search.json",
             params=params,
-            timeout=12,
+            timeout=timeout,
         )
         if not resp.ok:
             return {}
         data = resp.json() or {}
-        # place_results is the detailed card
         pr = data.get("place_results") or data
         return pr if isinstance(pr, dict) else {}
     except Exception as exc:
@@ -831,64 +832,80 @@ def _serpapi_place_details(data_id: str | None, api_key: str) -> dict:
         return {}
 
 
+def _apply_place_details_to_lead(lead: "BusinessLead", pr: dict) -> None:
+    if not pr:
+        return
+    if not lead.phone:
+        lead.phone = _clean_phone(
+            pr.get("phone")
+            or pr.get("phone_number")
+            or pr.get("international_phone")
+            or pr.get("formatted_phone_number")
+        )
+    w = pr.get("website") or pr.get("site")
+    if w and not lead.website:
+        lead.website = str(w).strip()
+    if not lead.email:
+        lead.email = _clean_email(pr.get("email"))
+    if not lead.address and pr.get("address"):
+        lead.address = pr.get("address")
+
+
 def enrich_leads_contact_fields(
     leads: list[BusinessLead],
     *,
-    max_detail_lookups: int = 12,
-    max_website_fetches: int = 6,
+    max_detail_lookups: int = 30,
+    max_website_fetches: int = 10,
     fast: bool = True,
 ) -> list[BusinessLead]:
     """
-    Fill missing phone/website via SerpApi place details, then public email + owner.
-
-    fast=True (search): few lookups so the HTTP request stays under proxy timeout.
-    fast=False (import): deeper pass for emails.
+    Parallel place-details for missing phones (wall-clock ~8-15s), then light website email.
     """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     if not fast:
-        max_detail_lookups = max(max_detail_lookups, 25)
+        max_detail_lookups = max(max_detail_lookups, 40)
         max_website_fetches = max(max_website_fetches, 20)
 
     api_key = get_settings().serpapi_key or ""
-    detail_used = 0
+    # Parallel place details for leads missing phone
+    need = [L for L in leads if not L.phone and L.place_id][:max_detail_lookups]
+    if need and api_key:
+        def _one(lead: BusinessLead):
+            pr = _serpapi_place_details(lead.place_id, api_key, timeout=7.0)
+            return lead, pr
+
+        workers = min(8, len(need))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futs = [pool.submit(_one, L) for L in need]
+            for fut in as_completed(futs):
+                try:
+                    lead, pr = fut.result()
+                    _apply_place_details_to_lead(lead, pr)
+                except Exception as exc:
+                    logger.debug("parallel detail failed: %s", exc)
+
+    # Also fill website for leads that already had phone but no website (for email)
+    need_web = [L for L in leads if L.phone and not L.website and L.place_id][: max(0, max_detail_lookups // 2)]
+    if need_web and api_key and not fast:
+        def _one_web(lead: BusinessLead):
+            pr = _serpapi_place_details(lead.place_id, api_key, timeout=6.0)
+            return lead, pr
+        with ThreadPoolExecutor(max_workers=min(6, len(need_web))) as pool:
+            for fut in as_completed([pool.submit(_one_web, L) for L in need_web]):
+                try:
+                    lead, pr = fut.result()
+                    _apply_place_details_to_lead(lead, pr)
+                except Exception:
+                    pass
+
     web_used = 0
     for lead in leads:
-        need_phone = not lead.phone
-        need_web = not lead.website
-        want_detail = need_phone or (not fast and (need_web or not lead.email))
-        if (
-            want_detail
-            and lead.place_id
-            and detail_used < max_detail_lookups
-            and api_key
-        ):
-            detail_used += 1
-            pr = _serpapi_place_details(lead.place_id, api_key)
-            if pr:
-                if need_phone:
-                    lead.phone = _clean_phone(
-                        pr.get("phone")
-                        or pr.get("phone_number")
-                        or pr.get("international_phone")
-                        or pr.get("formatted_phone_number")
-                    ) or lead.phone
-                w = pr.get("website") or pr.get("site")
-                if w and not lead.website:
-                    lead.website = str(w).strip()
-                if not lead.email:
-                    lead.email = _clean_email(pr.get("email"))
-                if not lead.address and pr.get("address"):
-                    lead.address = pr.get("address")
-
-        if lead.website and web_used < max_website_fetches:
-            did = False
-            if not lead.email:
-                lead.email = extract_email_from_website(lead.website, timeout=3.5) or lead.email
-                did = True
-            if not lead.owner_name and not fast:
-                lead.owner_name = extract_owner_from_website(lead.website, timeout=3.0)
-                did = True
-            if did:
-                web_used += 1
+        if lead.website and web_used < max_website_fetches and not lead.email:
+            lead.email = extract_email_from_website(lead.website, timeout=3.0) or lead.email
+            web_used += 1
+        if lead.website and not lead.owner_name and not fast and web_used <= max_website_fetches:
+            lead.owner_name = extract_owner_from_website(lead.website, timeout=2.5)
 
     return leads
 
@@ -917,13 +934,14 @@ def search_hospitality_for_crm(
 
     # Split user category + hospitality variants for wider coverage
     bits = [b.strip() for b in category.replace(",", " ").split() if b.strip()]
-    base_terms = bits[:4] if bits else ["hotels"]
-    extra = ["hotels", "resorts", "villas", "boutique hotels", "homestays"]
+    # Prefer hotels/resorts first — Maps list cards more often include phone than pure villa ads
+    preferred = ["hotels", "resorts", "hotel", "resort"]
     terms: list[str] = []
-    for t in base_terms + extra:
-        if t.lower() not in [x.lower() for x in terms]:
+    for t in preferred + bits:
+        tl = t.lower()
+        if tl not in [x.lower() for x in terms]:
             terms.append(t)
-    terms = terms[:3]
+    terms = terms[:4]
 
     queries = [f"{term} in {region}" for term in terms]
     # Also a broader catch-all
@@ -957,6 +975,8 @@ def search_hospitality_for_crm(
                     "q": q,
                     "type": "search",
                     "api_key": api_key,
+                    "hl": "en",
+                    "gl": "in",
                 }
                 if start:
                     params["start"] = start
@@ -983,7 +1003,7 @@ def search_hospitality_for_crm(
                     break
         # Fast enrich only — full website email pass is on Import (avoids 120s timeouts)
         try:
-            enrich_leads_contact_fields(out[:limit], max_detail_lookups=12, max_website_fetches=6, fast=True)
+            enrich_leads_contact_fields(out[:limit], max_detail_lookups=28, max_website_fetches=8, fast=True)
         except Exception as enr:
             logger.warning("CRM places fast enrich failed: %s", enr)
         return out[:limit]
