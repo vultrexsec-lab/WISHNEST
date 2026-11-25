@@ -41,27 +41,33 @@ type PlacesRow = {
 };
 
 function csvCell(v: string | null | undefined): string {
-  const s = (v || "").replace(/"/g, '""');
+  const s = String(v ?? "").replace(/\r?\n/g, " ").replace(/"/g, '""');
   return `"${s}"`;
+}
+
+/** Force Excel to keep phone as text (avoids scientific notation / garbage digits). */
+function csvPhone(v: string | null | undefined): string {
+  const s = String(v ?? "").trim().replace(/\s+/g, " ");
+  if (!s) return '""';
+  const inner = s.replace(/"/g, '""');
+  // Excel formula: displays exact phone string
+  return `"=""${inner}"""`;
 }
 
 /** Excel-friendly CSV (UTF-8 BOM). Columns: Hotel Name, Owner Name, Email, Phone — no website. */
 function downloadPlacesExcel(rows: PlacesRow[], region: string) {
   const header = ["Hotel Name", "Owner Name", "Email", "Phone"];
-  const lines = [header.join(",")];
+  const lines = ["sep=,", header.join(",")];
   for (const r of rows) {
-    const hotel = r.hotel_name || r.name || "";
-    const owner = r.owner_name || "";
+    const hotel = (r.hotel_name || r.name || "").trim();
+    const owner = (r.owner_name || "").trim();
+    const email = (r.email || "").trim();
+    const phone = (r.phone || "").trim();
     lines.push(
-      [
-        csvCell(hotel),
-        csvCell(owner),
-        csvCell(r.email || ""),
-        csvCell(r.phone || ""),
-      ].join(","),
+      [csvCell(hotel), csvCell(owner), csvCell(email), csvPhone(phone)].join(","),
     );
   }
-  const blob = new Blob(["\ufeff" + lines.join("\n")], {
+  const blob = new Blob(["\ufeff" + lines.join("\r\n")], {
     type: "text/csv;charset=utf-8;",
   });
   const url = URL.createObjectURL(blob);

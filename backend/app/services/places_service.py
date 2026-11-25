@@ -834,12 +834,15 @@ def _serpapi_place_details(data_id: str | None, api_key: str) -> dict:
 def enrich_leads_contact_fields(
     leads: list[BusinessLead],
     *,
-    max_detail_lookups: int = 40,
-    max_website_fetches: int = 30,
+    max_detail_lookups: int = 60,
+    max_website_fetches: int = 45,
 ) -> list[BusinessLead]:
     """
     Fill missing phone/website via SerpApi place details, then public email + owner
     from the business website when available.
+
+    Place details run whenever phone, website, or email is missing (list view often
+    has name only). Website scrape is the main source of public emails.
     """
     api_key = get_settings().serpapi_key or ""
     detail_used = 0
@@ -847,7 +850,13 @@ def enrich_leads_contact_fields(
     for lead in leads:
         need_phone = not lead.phone
         need_web = not lead.website
-        if (need_phone or need_web) and lead.place_id and detail_used < max_detail_lookups and api_key:
+        need_email = not lead.email
+        if (
+            (need_phone or need_web or need_email)
+            and lead.place_id
+            and detail_used < max_detail_lookups
+            and api_key
+        ):
             detail_used += 1
             pr = _serpapi_place_details(lead.place_id, api_key)
             if pr:
@@ -856,25 +865,27 @@ def enrich_leads_contact_fields(
                         pr.get("phone")
                         or pr.get("phone_number")
                         or pr.get("international_phone")
+                        or pr.get("formatted_phone_number")
                     ) or lead.phone
-                if need_web:
-                    w = pr.get("website") or pr.get("site")
-                    if w:
-                        lead.website = str(w).strip()
+                w = pr.get("website") or pr.get("site")
+                if w and not lead.website:
+                    lead.website = str(w).strip()
                 if not lead.email:
                     lead.email = _clean_email(pr.get("email"))
                 if not lead.address and pr.get("address"):
                     lead.address = pr.get("address")
 
         if lead.website and web_used < max_website_fetches:
-            if not lead.email or not lead.owner_name:
-                web_used += 1
+            did = False
             if not lead.email:
                 lead.email = extract_email_from_website(lead.website) or lead.email
+                did = True
             if not lead.owner_name:
                 lead.owner_name = extract_owner_from_website(lead.website)
+                did = True
+            if did:
+                web_used += 1
 
-        # Display name preference: owner when found, else hotel name (handled by API/UI)
     return leads
 
 
