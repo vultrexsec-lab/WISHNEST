@@ -318,8 +318,8 @@ export function AdvisoryLandingPage(): JSX.Element {
               <ChannelCard
                 icon={<Phone className="h-5 w-5" />}
                 title="Prefer speaking to a person?"
-                body="Request a callback at your convenience."
-                cta="Call me back"
+                body="Request a callback from our team at your convenience."
+                cta="Request human callback"
                 onClick={() => setCallbackOpen(true)}
               />
               <ChannelCard
@@ -378,7 +378,7 @@ export function AdvisoryLandingPage(): JSX.Element {
             className="flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-2.5 text-[12px] font-medium text-[#1e1e1e] hover:bg-[#2e4a3f]/10 sm:flex-none sm:px-4"
           >
             <Phone className="h-3.5 w-3.5 text-[#2e4a3f]" />
-            Speak to us
+            Request human callback
           </button>
         </div>
       </div>
@@ -887,7 +887,7 @@ function CallbackModal({ topic, onClose }: { topic: string; onClose: () => void 
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-md rounded-2xl bg-[#f8f7f4] p-6 shadow-xl">
         <div className="flex items-center justify-between">
-          <h3 className="font-serif text-xl text-[#1e1e1e]">Request a callback</h3>
+          <h3 className="font-serif text-xl text-[#1e1e1e]">Request human callback</h3>
           <button type="button" onClick={onClose} className="rounded-full p-1 hover:bg-black/5">
             <X className="h-5 w-5" />
           </button>
@@ -923,7 +923,7 @@ function CallbackModal({ topic, onClose }: { topic: string; onClose: () => void 
               disabled={busy}
               className="h-11 w-full rounded-full bg-[#2e4a3f] text-[13px] font-medium text-white hover:bg-[#243a32] disabled:opacity-60"
             >
-              {busy ? "Sending…" : "Request callback"}
+              {busy ? "Sending…" : "Request human callback"}
             </button>
           </form>
         )}
