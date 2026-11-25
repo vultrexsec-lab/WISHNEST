@@ -479,47 +479,12 @@ def places_search_for_crm(
         if len(fresh) >= want:
             break
 
-    # Mark these listings as seen so the next search in this region skips them
-    # (even if the user does not click Import).
+    # Phone-first so UI is useful even when some rows lack numbers
+    fresh.sort(key=lambda L: (0 if (L.phone or "").strip() else 1, (L.name or "").lower()))
+
+    # Do NOT auto-mark on search — only Import writes contacts.
+    # Auto-mark caused re-search to return only leftover villa ads with no phone.
     marked = 0
-    for L in fresh:
-        pid = (getattr(L, "place_id", None) or "").strip()
-        name = (L.name or "").strip()
-        if not name and not pid:
-            continue
-        notes = f"place_id: {pid}" if pid else None
-        # Avoid double-insert in same request
-        if pid and pid in existing_place_ids:
-            continue
-        if name and name.lower() in existing_companies:
-            continue
-        row = GrowthContact(
-            name=name or None,
-            company=name or None,
-            phone=(L.phone or "").strip() or None,
-            email=(getattr(L, "email", None) or "").strip().lower() or None,
-            contact_type="scraped_listing",
-            source="google_places_seen",
-            city=(body.region or "").strip()[:128] or None,
-            destination=(body.region or "").strip()[:128] or None,
-            notes=notes,
-            email_permission=False,
-            whatsapp_permission=False,
-            phone_permission=False,
-        )
-        db.add(row)
-        marked += 1
-        if pid:
-            existing_place_ids.add(pid)
-        if name:
-            existing_companies.add(name.lower())
-            existing_names.add(name.lower())
-    if marked:
-        try:
-            db.commit()
-        except Exception:
-            db.rollback()
-            logger.exception("Could not mark places as seen")
 
     return {
         "region": body.region.strip(),

@@ -776,13 +776,21 @@ def _lead_from_maps_place(place: dict, fallback_category: str) -> BusinessLead |
         or place.get("phone_number")
         or place.get("international_phone")
         or place.get("formatted_phone_number")
+        or place.get("phoneNumber")
     )
-    # SerpApi sometimes nests under gps_coordinates siblings or extensions
     if not phone and isinstance(place.get("extensions"), list):
         for ext in place["extensions"]:
             if not isinstance(ext, str):
                 continue
             m = re.search(r"(\+?\d[\d\s\-()]{8,}\d)", ext)
+            if m:
+                phone = m.group(1)
+                break
+    if not phone:
+        for k, v in place.items():
+            if not isinstance(v, str) or k in ("title", "name", "address", "description", "type", "hours"):
+                continue
+            m = re.search(r"(\+?91[\s\-]?\d{10}|\+?\d{10,13})", v)
             if m:
                 phone = m.group(1)
                 break
@@ -1006,6 +1014,7 @@ def search_hospitality_for_crm(
             enrich_leads_contact_fields(out[:limit], max_detail_lookups=28, max_website_fetches=8, fast=True)
         except Exception as enr:
             logger.warning("CRM places fast enrich failed: %s", enr)
+        out.sort(key=lambda L: (0 if (L.phone or "").strip() else 1, (L.name or "").lower()))
         return out[:limit]
     except Exception as exp:
         logger.warning("CRM places search failed: %s", exp)
