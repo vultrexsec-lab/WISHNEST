@@ -834,25 +834,29 @@ def _serpapi_place_details(data_id: str | None, api_key: str) -> dict:
 def enrich_leads_contact_fields(
     leads: list[BusinessLead],
     *,
-    max_detail_lookups: int = 60,
-    max_website_fetches: int = 45,
+    max_detail_lookups: int = 12,
+    max_website_fetches: int = 6,
+    fast: bool = True,
 ) -> list[BusinessLead]:
     """
-    Fill missing phone/website via SerpApi place details, then public email + owner
-    from the business website when available.
+    Fill missing phone/website via SerpApi place details, then public email + owner.
 
-    Place details run whenever phone, website, or email is missing (list view often
-    has name only). Website scrape is the main source of public emails.
+    fast=True (search): few lookups so the HTTP request stays under proxy timeout.
+    fast=False (import): deeper pass for emails.
     """
+    if not fast:
+        max_detail_lookups = max(max_detail_lookups, 25)
+        max_website_fetches = max(max_website_fetches, 20)
+
     api_key = get_settings().serpapi_key or ""
     detail_used = 0
     web_used = 0
     for lead in leads:
         need_phone = not lead.phone
         need_web = not lead.website
-        need_email = not lead.email
+        want_detail = need_phone or (not fast and (need_web or not lead.email))
         if (
-            (need_phone or need_web or need_email)
+            want_detail
             and lead.place_id
             and detail_used < max_detail_lookups
             and api_key
@@ -878,10 +882,10 @@ def enrich_leads_contact_fields(
         if lead.website and web_used < max_website_fetches:
             did = False
             if not lead.email:
-                lead.email = extract_email_from_website(lead.website) or lead.email
+                lead.email = extract_email_from_website(lead.website, timeout=3.5) or lead.email
                 did = True
-            if not lead.owner_name:
-                lead.owner_name = extract_owner_from_website(lead.website)
+            if not lead.owner_name and not fast:
+                lead.owner_name = extract_owner_from_website(lead.website, timeout=3.0)
                 did = True
             if did:
                 web_used += 1
@@ -945,8 +949,8 @@ def search_hospitality_for_crm(
         for q in queries:
             if len(out) >= limit:
                 break
-            # First page + a second page via start offset when SerpApi supports it
-            for start in (0, 20, 40):
+            # Two pages max — keeps search under client/proxy timeout
+            for start in (0, 20):
                 if len(out) >= limit:
                     break
                 params = {
@@ -978,13 +982,12 @@ def search_hospitality_for_crm(
                 if len(out) == before:
                     # no new unique rows
                     break
-        # Second pass: place-details + website email/owner (phone often missing on list view)
-        enrich_leads_contact_fields(out[:limit])
+        # Fast enrich only — full website email pass is on Import (avoids 120s timeouts)
+        try:
+            enrich_leads_contact_fields(out[:limit], max_detail_lookups=12, max_website_fetches=6, fast=True)
+        except Exception as enr:
+            logger.warning("CRM places fast enrich failed: %s", enr)
         return out[:limit]
     except Exception as exp:
         logger.warning("CRM places search failed: %s", exp)
-        try:
-            enrich_leads_contact_fields(out[:limit])
-        except Exception:
-            pass
         return out[:limit]
