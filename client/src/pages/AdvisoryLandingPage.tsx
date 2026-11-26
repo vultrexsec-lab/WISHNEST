@@ -38,7 +38,7 @@ function apiUrl(path: string) {
 
 const CALENDAR_URL =
   (import.meta.env.VITE_ADVISORY_CALENDAR_URL as string) ||
-  "https://calendly.com/";
+  "https://calendar.app.google/6vHqJSrN1biVHPFQ6";
 
 type ChatMsg = { role: "assistant" | "user"; text: string };
 
