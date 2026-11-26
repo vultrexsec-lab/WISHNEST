@@ -128,14 +128,48 @@ export function AdvisoryLandingPage(): JSX.Element {
         </div>
       </header>
 
+
+      {/* Topic switcher for all advisory campaigns */}
+      <nav
+        id="advisory-topic-nav"
+        className="border-b border-[#1e1e1a]/08 bg-white/80"
+        aria-label="ArrowX campaign pages"
+      >
+        <div className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-4 py-2.5 sm:px-6">
+          {[
+            { slug: "land", label: "Land potential" },
+            { slug: "hospitality", label: "Hospitality" },
+            { slug: "reimagined", label: "Reimagined™" },
+            { slug: "second-homes", label: "Second homes" },
+            { slug: "architecture", label: "Architecture" },
+          ].map((t) => {
+            const active = campaign.topic === t.slug;
+            return (
+              <Link key={t.slug} href={`/advisory/${t.slug}`}>
+                <a
+                  className={`whitespace-nowrap rounded-full px-3.5 py-1.5 text-[12px] font-medium transition ${
+                    active
+                      ? "bg-[#2e4a3f] text-white"
+                      : "text-[#1e1e1e90] hover:bg-[#1e1e1a08] hover:text-[#1e1e1e]"
+                  }`}
+                >
+                  {t.label}
+                </a>
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
+
       <main>
+
         {/* ── Hero ─────────────────────────────────────────────── */}
         <section className="mx-auto grid max-w-6xl gap-0 lg:grid-cols-2 lg:min-h-[70vh]">
           <div className="relative aspect-[4/3] overflow-hidden lg:aspect-auto lg:min-h-[70vh]">
             {campaign.heroVideo ? (
               <video
                 src={campaign.heroVideo}
-                className="h-full w-full object-cover"
+                className="h-full w-full object-contain bg-[#0a0f0d]"
                 autoPlay
                 muted
                 loop

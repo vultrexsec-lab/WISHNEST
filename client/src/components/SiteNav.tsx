@@ -24,6 +24,17 @@ const readLinks = [
 
 const workLinks = [
   { label: "Reimagined™", href: "/reimagined" },
+  {
+    label: "ArrowX",
+    href: "/advisory/land",
+    children: [
+      { label: "Land potential", href: "/advisory/land" },
+      { label: "Hospitality", href: "/advisory/hospitality" },
+      { label: "Reimagined™", href: "/advisory/reimagined" },
+      { label: "Second homes", href: "/advisory/second-homes" },
+      { label: "Architecture", href: "/advisory/architecture" },
+    ],
+  },
   { label: "Get Reviewed", href: "/get-reviewed" },
 ];
 
@@ -33,6 +44,7 @@ export const SiteNav = () => {
   const [searchOpen, setSearchOpen] = useState(false);
   const [newsletterOpen, setNewsletterOpen] = useState(false);
   const [intelOpen, setIntelOpen] = useState(false);
+  const [arrowxOpen, setArrowxOpen] = useState(false);
 
   const isActive = (href: string) =>
     location === href || (href !== "/" && location.startsWith(href + "/"));
@@ -125,11 +137,40 @@ export const SiteNav = () => {
             />
 
             <div className="flex items-center gap-x-5 xl:gap-x-6" role="group" aria-label="Work with us">
-              {workLinks.map((item) => (
-                <Link key={item.href} href={item.href}>
-                  <span className={`cursor-pointer ${linkClass(item.href)}`}>{item.label}</span>
-                </Link>
-              ))}
+              {workLinks.map((item) =>
+                item.children ? (
+                  <div
+                    key={item.label}
+                    className="relative"
+                    onMouseEnter={() => setArrowxOpen(true)}
+                    onMouseLeave={() => setArrowxOpen(false)}
+                  >
+                    <Link href={item.href}>
+                      <span className={`cursor-pointer inline-flex items-center gap-0.5 ${linkClass(item.href)}`}>
+                        {item.label}
+                        <ChevronDown className="h-3 w-3 opacity-60" />
+                      </span>
+                    </Link>
+                    {arrowxOpen && (
+                      <div className="absolute left-0 top-full z-50 min-w-[180px] pt-2">
+                        <div className="rounded-lg border border-[#1e1e1e14] bg-[#f8f7f4] py-2 shadow-lg">
+                          {item.children.map((c) => (
+                            <Link key={c.href} href={c.href}>
+                              <span className="block cursor-pointer px-4 py-2 text-[12px] text-[#1e1e1e] hover:bg-[#2e4a3f10]">
+                                {c.label}
+                              </span>
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <Link key={item.href} href={item.href}>
+                    <span className={`cursor-pointer ${linkClass(item.href)}`}>{item.label}</span>
+                  </Link>
+                ),
+              )}
             </div>
           </nav>
 
@@ -195,14 +236,26 @@ export const SiteNav = () => {
               WORK WITH US
             </p>
             {workLinks.map((item) => (
-              <Link key={item.href} href={item.href}>
-                <span
-                  onClick={() => setMobileOpen(false)}
-                  className="block cursor-pointer border-b border-[#1e1e1e0a] py-3.5 text-[13px] font-medium tracking-[1.1px] text-[#1e1e1e]"
-                >
-                  {item.label}
-                </span>
-              </Link>
+              <div key={item.label}>
+                <Link href={item.href}>
+                  <span
+                    onClick={() => setMobileOpen(false)}
+                    className="block cursor-pointer border-b border-[#1e1e1e0a] py-3.5 text-[13px] font-medium tracking-[1.1px] text-[#1e1e1e]"
+                  >
+                    {item.label}
+                  </span>
+                </Link>
+                {item.children?.map((c) => (
+                  <Link key={c.href} href={c.href}>
+                    <span
+                      onClick={() => setMobileOpen(false)}
+                      className="block cursor-pointer border-b border-[#1e1e1e0a] py-2.5 pl-4 text-[12px] text-[#6b6b6b]"
+                    >
+                      {c.label}
+                    </span>
+                  </Link>
+                ))}
+              </div>
             ))}
             <button
               type="button"

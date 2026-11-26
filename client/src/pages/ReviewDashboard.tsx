@@ -2998,6 +2998,16 @@ export const ReviewDashboard = (): JSX.Element => {
                 </a>
               </Link>
               )}
+              {!isCrmEmbed && (
+              <Link href="/advisory/land">
+                <a
+                  className="inline-flex items-center gap-2 rounded-full border border-amber-500/40 bg-amber-500/15 px-4 py-2 [font-family:'Inter',Helvetica] text-[10px] font-semibold tracking-[1px] text-amber-100 transition hover:border-amber-400/60 hover:bg-amber-500/25"
+                  data-testid="btn-open-arrowx-pages"
+                >
+                  ARROWX · LANDING PAGES
+                </a>
+              </Link>
+              )}
 
               <button
                 type="button"
