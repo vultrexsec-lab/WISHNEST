@@ -14,6 +14,10 @@ export type PresentationItem = {
   id: string;
   title: string;
   cover: string;
+  /** Optional real media — when set, opens protected full viewer instead of slide deck */
+  mediaType?: "pdf" | "video";
+  mediaSrc?: string;
+  subtitle?: string;
   slides: { title: string; body: string; image?: string }[];
 };
 
@@ -36,6 +40,7 @@ export type AdvisoryCampaign = {
   headline: string;
   support: string;
   heroImage: string;
+  heroVideo?: string;
   aiOpening: string;
   whatsappPrefill: string;
   presentations: PresentationItem[];
@@ -66,69 +71,143 @@ export const ADVISORY_CAMPAIGNS: Record<AdvisoryTopic, AdvisoryCampaign> = {
     metaTitle: "What could your land become? | WishNest × ArrowX",
     metaDescription:
       "Explore your land's development potential with WishNest and the architectural expertise of ArrowX.",
-    headline: "What could your land become?",
-    support: "Explore its potential with WishNest and the architectural expertise of ArrowX.",
-    heroImage: img.land,
+    headline: "Your land could be worth ₹100+ Crore.",
+    support: "Not because of where it is. Because of what it can become. Luxury villa communities · Boutique resorts · Wellness retreats.",
+    heroImage: "/advisory/images/bridge-house-render.png",
+    heroVideo: "/advisory/videos/land-potential.mp4",
     aiOpening:
-      "Hello, I'm WishNest's AI project assistant. Tell me a little about your land and what you have in mind. You don't need to prepare anything in advance.",
+      "You've been exploring how land can become a high-value hospitality destination. I'm here to continue that conversation — no forms, just clarity on what is possible with your site.",
     whatsappPrefill:
-      "Hello WishNest, I would like to discuss the development potential of my land.",
+      "Hi ArrowX, I was looking at the land potential work on WishNest. I'd like to explore what is possible with my land.",
     presentations: [
       {
-        id: "land-potential",
-        title: "Understanding your land's potential",
-        cover: img.land2,
+        id: "land-potential-film",
+        title: "Your land could be worth ₹100+ Crore",
+        subtitle: "How premium land + ₹5 Cr becomes a ₹100 Cr+ destination",
+        cover: "/advisory/images/bridge-house-render.png",
+        mediaType: "video",
+        mediaSrc: "/advisory/videos/land-potential.mp4",
         slides: [
           {
-            title: "Site as opportunity",
-            body: "Every parcel carries constraints and possibilities — topography, access, climate, and context shape what it can become.",
-            image: img.land2,
-          },
-          {
-            title: "From vision to framework",
-            body: "A clear development brief aligns landowners, designers, and partners before commitments are made.",
-            image: img.land3,
-          },
-          {
-            title: "Next conversations",
-            body: "We help you frame options — retreat, hospitality, residential, or mixed — without forcing a single path.",
+            title: "Land as a hospitality asset",
+            body: "Not because of where it is — because of what it can become. Luxury villa communities, boutique resorts, wellness retreats.",
+            image: "/advisory/images/bridge-house-render.png",
           },
         ],
       },
       {
-        id: "land-destination",
-        title: "From land to destination",
-        cover: img.land3,
+        id: "your-house-hills",
+        title: "Your House + The Hills",
+        subtitle: "Hill homes that work with nature",
+        cover: "/advisory/images/bridge-house-diagram.png",
+        mediaType: "pdf",
+        mediaSrc: "/advisory/pdfs/your-house-the-hills.pdf",
         slides: [
           {
-            title: "Place-led development",
-            body: "Destinations grow from landscape character, not imported templates.",
-            image: img.land3,
-          },
-          {
-            title: "Phasing and feasibility",
-            body: "Thoughtful sequencing protects capital while testing demand and design quality.",
+            title: "Work with the mountain",
+            body: "Hill homes sit on slopes, water paths, and stone foundations. Renovation must respect nature.",
           },
         ],
       },
       {
-        id: "land-masterplan",
-        title: "Development possibilities & master planning",
-        cover: img.arch,
+        id: "tons-river",
+        title: "Tons River Private Retreat",
+        subtitle: "Purkul – Dehradun · Architectural Concept",
+        cover: "/advisory/images/bridge-house-render.png",
+        mediaType: "pdf",
+        mediaSrc: "/advisory/pdfs/tons-river-private-retreat.pdf",
         slides: [
           {
-            title: "Master planning lens",
-            body: "Circulation, open space, and building footprints set the long-term value of the site.",
-            image: img.arch,
-          },
-          {
-            title: "Architecture as continuity",
-            body: "ArrowX integrates architecture with planning so early decisions support later detail.",
+            title: "Private retreat on the Tons",
+            body: "Architectural concept presentation prepared by ArrowX.",
           },
         ],
+      },
+      {
+        id: "tehri-pine",
+        title: "Lake-Facing Terraced Villa Community",
+        subtitle: "Tehri Lake · Signature Hillside Development",
+        cover: "/advisory/images/bridge-house-render.png",
+        mediaType: "pdf",
+        mediaSrc: "/advisory/pdfs/tehri-lake-pine-cone.pdf",
+        slides: [
+          {
+            title: "Lake-facing terraces",
+            body: "A signature hillside development concept for Tehri Lake.",
+          },
+        ],
+      },
+      {
+        id: "satva",
+        title: "SATVA — Himalayan Village Rehabilitation",
+        subtitle: "Regenerative Tourism + Wellness Cluster",
+        cover: "/advisory/images/bridge-house-render.png",
+        mediaType: "pdf",
+        mediaSrc: "/advisory/pdfs/satva.pdf",
+        slides: [
+          {
+            title: "Stability through balance",
+            body: "Sustainable Architecture for Transformative Village Acceleration.",
+          },
+        ],
+      },
+      {
+        id: "modular-village",
+        title: "Modular Village Vision",
+        subtitle: "Future-ready hillside living",
+        cover: "/advisory/images/bridge-house-render.png",
+        mediaType: "video",
+        mediaSrc: "/advisory/videos/modular-village.mp4",
+        slides: [
+          {
+            title: "Regenerative modular living",
+            body: "Solar-powered modular homes, greenhouses, and infrastructure for hillside communities.",
+          },
+        ],
+      },
+      {
+        id: "forest-valley",
+        title: "Forest Valley Wellness Villas",
+        subtitle: "Wellness-led hillside community",
+        cover: "/advisory/images/bridge-house-render.png",
+        mediaType: "pdf",
+        mediaSrc: "/advisory/pdfs/forest-valley-wellness.pdf",
+        slides: [{ title: "Forest Valley", body: "Wellness villas integrated into forest terrain." }],
+      },
+      {
+        id: "breaking-cover",
+        title: "Breaking Cover — Ancestral Home",
+        subtitle: "Reimagining an ancestral home in Uttarakhand",
+        cover: "/advisory/images/bridge-house-diagram.png",
+        mediaType: "pdf",
+        mediaSrc: "/advisory/pdfs/breaking-cover.pdf",
+        slides: [{ title: "Breaking Cover", body: "Sensitive renovation of a heritage hill dwelling." }],
+      },
+      {
+        id: "majkhali",
+        title: "Majkhali 2-Acre Community",
+        subtitle: "Compact premium community concept",
+        cover: "/advisory/images/bridge-house-render.png",
+        mediaType: "pdf",
+        mediaSrc: "/advisory/pdfs/majkhali-community.pdf",
+        slides: [{ title: "Majkhali", body: "Two-acre community planning study." }],
       },
     ],
     projects: [
+      {
+        id: "bridge-house",
+        name: "Bridge House",
+        location: "Mountain stream crossing",
+        category: "Extreme terrain architecture",
+        status: "concept",
+        image: "/advisory/images/bridge-house-render.png",
+        images: [
+          "/advisory/images/bridge-house-render.png",
+          "/advisory/images/bridge-house-diagram.png",
+        ],
+        description:
+          "A precision-engineered residence that spans a live water course. Raised contour roads, wire-net debris barriers and extreme-flow design allow the house to coexist with seasonal torrents.",
+      },
       {
         id: "p-ridge",
         name: "Ridge Retreat Studies",

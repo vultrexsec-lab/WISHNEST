@@ -25,6 +25,11 @@ import {
   PresentationItem,
   ProjectItem,
 } from "@/lib/advisoryCampaigns";
+import {
+  ProtectedPdfViewer,
+  ProtectedVideoPlayer,
+  ProtectedImageSetViewer,
+} from "@/components/ProtectedMedia";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 function apiUrl(path: string) {
@@ -75,6 +80,7 @@ export function AdvisoryLandingPage(): JSX.Element {
   const [aiOpen, setAiOpen] = useState(false);
   const [aiContext, setAiContext] = useState<string | null>(null);
   const [deck, setDeck] = useState<PresentationItem | null>(null);
+  const [mediaPresentation, setMediaPresentation] = useState<PresentationItem | null>(null);
   const [slideIdx, setSlideIdx] = useState(0);
   const [project, setProject] = useState<ProjectItem | null>(null);
   const [callbackOpen, setCallbackOpen] = useState(false);
@@ -126,12 +132,26 @@ export function AdvisoryLandingPage(): JSX.Element {
         {/* ── Hero ─────────────────────────────────────────────── */}
         <section className="mx-auto grid max-w-6xl gap-0 lg:grid-cols-2 lg:min-h-[70vh]">
           <div className="relative aspect-[4/3] overflow-hidden lg:aspect-auto lg:min-h-[70vh]">
-            <img
-              src={campaign.heroImage}
-              alt=""
-              className="h-full w-full object-cover"
-              fetchPriority="high"
-            />
+            {campaign.heroVideo ? (
+              <video
+                src={campaign.heroVideo}
+                className="h-full w-full object-cover"
+                autoPlay
+                muted
+                loop
+                playsInline
+                controlsList="nodownload"
+                poster={campaign.heroImage}
+                onContextMenu={(e) => e.preventDefault()}
+              />
+            ) : (
+              <img
+                src={campaign.heroImage}
+                alt=""
+                className="h-full w-full object-cover"
+                fetchPriority="high"
+              />
+            )}
             <div className="absolute inset-0 bg-gradient-to-t from-black/25 to-transparent lg:bg-gradient-to-r lg:from-transparent lg:to-black/10" />
           </div>
           <div className="flex flex-col justify-center px-5 py-10 sm:px-10 lg:px-14">
@@ -179,8 +199,12 @@ export function AdvisoryLandingPage(): JSX.Element {
                   key={p.id}
                   type="button"
                   onClick={() => {
-                    setDeck(p);
-                    setSlideIdx(0);
+                    if (p.mediaType === "pdf" || p.mediaType === "video") {
+                      setMediaPresentation(p);
+                    } else {
+                      setDeck(p);
+                      setSlideIdx(0);
+                    }
                   }}
                   className="group overflow-hidden rounded-2xl border border-[#1e1e1a]/10 bg-[#f8f7f4] text-left shadow-sm transition hover:border-[#2e4a3f]/25"
                 >
@@ -195,7 +219,12 @@ export function AdvisoryLandingPage(): JSX.Element {
                   <div className="p-5">
                     <h3 className="font-serif text-lg leading-snug text-[#1e1e1e]">{p.title}</h3>
                     <span className="mt-3 inline-flex items-center gap-1.5 text-[12px] font-medium text-[#2e4a3f]">
-                      View presentation <ArrowRight className="h-3.5 w-3.5" />
+                      {p.mediaType === "video"
+                        ? "Watch film"
+                        : p.mediaType === "pdf"
+                          ? "View full presentation"
+                          : "View presentation"}{" "}
+                      <ArrowRight className="h-3.5 w-3.5" />
                     </span>
                   </div>
                 </button>
@@ -385,6 +414,20 @@ export function AdvisoryLandingPage(): JSX.Element {
       <div className="h-16 sm:h-8" />
 
       {/* Overlays */}
+      {mediaPresentation?.mediaType === "pdf" && mediaPresentation.mediaSrc && (
+        <ProtectedPdfViewer
+          src={mediaPresentation.mediaSrc}
+          title={mediaPresentation.title}
+          onClose={() => setMediaPresentation(null)}
+        />
+      )}
+      {mediaPresentation?.mediaType === "video" && mediaPresentation.mediaSrc && (
+        <ProtectedVideoPlayer
+          src={mediaPresentation.mediaSrc}
+          title={mediaPresentation.title}
+          onClose={() => setMediaPresentation(null)}
+        />
+      )}
       {deck && (
         <PresentationViewer
           deck={deck}
