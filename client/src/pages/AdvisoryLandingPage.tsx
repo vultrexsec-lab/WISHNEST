@@ -115,9 +115,33 @@ export function AdvisoryLandingPage(): JSX.Element {
               ArrowX
             </span>
           </div>
-          <p className="hidden text-[11px] tracking-wide text-[#6b6b6b] md:block">
-            Intelligence by WishNest · Architecture by ArrowX
-          </p>
+          <nav
+            className="hidden items-center gap-0.5 md:flex"
+            aria-label="ArrowX campaign pages"
+          >
+            {[
+              { slug: "land", label: "Land potential" },
+              { slug: "hospitality", label: "Hospitality" },
+              { slug: "reimagined", label: "Reimagined™" },
+              { slug: "second-homes", label: "Second homes" },
+              { slug: "architecture", label: "Architecture" },
+            ].map((t) => {
+              const active = campaign.topic === t.slug;
+              return (
+                <Link key={t.slug} href={`/advisory/${t.slug}`}>
+                  <a
+                    className={`whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-medium transition xl:px-3 ${
+                      active
+                        ? "bg-[#2e4a3f] text-white"
+                        : "text-[#1e1e1e80] hover:bg-[#1e1e1a0a] hover:text-[#1e1e1e]"
+                    }`}
+                  >
+                    {t.label}
+                  </a>
+                </Link>
+              );
+            })}
+          </nav>
           <button
             type="button"
             onClick={() => openAi()}
@@ -128,37 +152,31 @@ export function AdvisoryLandingPage(): JSX.Element {
         </div>
       </header>
 
-
-      {/* Topic switcher for all advisory campaigns */}
+      {/* Mobile topic switcher */}
       <nav
-        id="advisory-topic-nav"
-        className="border-b border-[#1e1e1a]/08 bg-white/80"
+        className="flex gap-1 overflow-x-auto border-b border-[#1e1e1a]/08 bg-white/70 px-3 py-2 md:hidden"
         aria-label="ArrowX campaign pages"
       >
-        <div className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-4 py-2.5 sm:px-6">
-          {[
-            { slug: "land", label: "Land potential" },
-            { slug: "hospitality", label: "Hospitality" },
-            { slug: "reimagined", label: "Reimagined™" },
-            { slug: "second-homes", label: "Second homes" },
-            { slug: "architecture", label: "Architecture" },
-          ].map((t) => {
-            const active = campaign.topic === t.slug;
-            return (
-              <Link key={t.slug} href={`/advisory/${t.slug}`}>
-                <a
-                  className={`whitespace-nowrap rounded-full px-3.5 py-1.5 text-[12px] font-medium transition ${
-                    active
-                      ? "bg-[#2e4a3f] text-white"
-                      : "text-[#1e1e1e90] hover:bg-[#1e1e1a08] hover:text-[#1e1e1e]"
-                  }`}
-                >
-                  {t.label}
-                </a>
-              </Link>
-            );
-          })}
-        </div>
+        {[
+          { slug: "land", label: "Land" },
+          { slug: "hospitality", label: "Hospitality" },
+          { slug: "reimagined", label: "Reimagined" },
+          { slug: "second-homes", label: "Second homes" },
+          { slug: "architecture", label: "Architecture" },
+        ].map((t) => {
+          const active = campaign.topic === t.slug;
+          return (
+            <Link key={t.slug} href={`/advisory/${t.slug}`}>
+              <a
+                className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-medium ${
+                  active ? "bg-[#2e4a3f] text-white" : "text-[#1e1e1e80]"
+                }`}
+              >
+                {t.label}
+              </a>
+            </Link>
+          );
+        })}
       </nav>
 
       <main>
