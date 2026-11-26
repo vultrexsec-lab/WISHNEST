@@ -2,7 +2,7 @@
  * CRM Social channels desk — Adora-style per-channel publish UI.
  * X · Instagram · Facebook · LinkedIn
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Eye,
@@ -92,6 +92,7 @@ export function SocialChannelsDesk(): JSX.Element {
   const [text, setText] = useState("");
   const [link, setLink] = useState("https://wishnest.info");
   const [mediaUrl, setMediaUrl] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [igType, setIgType] = useState<IgType>("post");
   const [schedule, setSchedule] = useState("");
   const [busy, setBusy] = useState(false);
@@ -122,6 +123,32 @@ export function SocialChannelsDesk(): JSX.Element {
     if (!u) return null;
     return u;
   }, [mediaUrl]);
+
+
+  const onPickMedia = async (file: File | null) => {
+    if (!file) return;
+    if (file.size > 12 * 1024 * 1024) {
+      toast({ title: "File too large", description: "Max 12 MB for upload preview.", variant: "destructive" });
+      return;
+    }
+    // Prefer object URL for preview; for publish we need a public URL — use data URL only for small images
+    if (file.size <= 1.5 * 1024 * 1024 && file.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const data = String(reader.result || "");
+        setMediaUrl(data);
+        toast({ title: "Image attached", description: file.name });
+      };
+      reader.readAsDataURL(file);
+      return;
+    }
+    const obj = URL.createObjectURL(file);
+    setMediaUrl(obj);
+    toast({
+      title: "Preview attached",
+      description: "For live publish, host the file and paste a public Media URL (Postiz needs a URL).",
+    });
+  };
 
   const publish = async (draft: boolean) => {
     if (!text.trim() && channel !== "instagram") {
@@ -346,22 +373,43 @@ export function SocialChannelsDesk(): JSX.Element {
             </div>
           )}
 
-          {(channel === "instagram" || channel === "facebook" || channel === "linkedin") && (
+          {(channel === "instagram" || channel === "facebook" || channel === "linkedin" || channel === "twitter") && (
             <div className="mb-3">
               <label className="mb-1.5 block text-[10px] font-semibold tracking-[1px] text-white/40">
                 MEDIA URL {channel === "instagram" ? "(required for Post / Reel)" : "(optional)"}
               </label>
               <div className="flex gap-2">
                 <input
-                  value={mediaUrl}
+                  value={mediaUrl.startsWith("data:") || mediaUrl.startsWith("blob:") ? "" : mediaUrl}
                   onChange={(e) => setMediaUrl(e.target.value)}
-                  placeholder="https://…/image.jpg or video"
+                  placeholder="https://…/image.jpg or video — or upload →"
                   className="h-10 flex-1 rounded-xl border border-white/10 bg-black/35 px-3 text-[13px] text-white/85 placeholder:text-white/25 focus:border-sky-500/40 focus:outline-none"
                 />
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/40">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*,video/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] || null;
+                    void onPickMedia(f);
+                    e.target.value = "";
+                  }}
+                />
+                <button
+                  type="button"
+                  title="Upload image or video"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/15 bg-white/5 text-white/70 transition hover:bg-white/10 hover:text-white"
+                >
                   <ImageIcon className="h-4 w-4" />
-                </div>
+                </button>
               </div>
+              {(mediaUrl.startsWith("data:") || mediaUrl.startsWith("blob:")) && (
+                <p className="mt-1 text-[10px] text-emerald-400/80">
+                  Local file attached for preview. Live Postiz publish works best with a public https Media URL.
+                </p>
+              )}
             </div>
           )}
 

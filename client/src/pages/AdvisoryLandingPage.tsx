@@ -90,7 +90,7 @@ export function AdvisoryLandingPage(): JSX.Element {
     setAiOpen(true);
   };
 
-  const phoneDigits = businessWhatsAppNumber() || "919199440961";
+  const phoneDigits = businessWhatsAppNumber() || "917906022051";
   const waChat = waMeUrl(phoneDigits, campaign.whatsappPrefill);
   const waVoice = waMeUrl(
     phoneDigits,
@@ -944,18 +944,28 @@ function AiAssistantPanel({
   );
 }
 
-function CallbackModal({ topic, onClose }: { topic: string; onClose: () => void }) {
+function CallbackModal({
+  topic,
+  onClose,
+}: {
+  topic: string;
+  onClose: () => void;
+}) {
+  const [tab, setTab] = useState<"form" | "quick">("form");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [when, setWhen] = useState("");
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [err, setErr] = useState("");
 
-  const submit = async (e: FormEvent) => {
+  const ADORA_FORM =
+    "https://adora7x.com/dashboard/gl/27cae125-e435-40c2-b499-4560db45c0ba";
+
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErr(null);
     setBusy(true);
+    setErr("");
     try {
       const res = await fetch(apiUrl("/api/public/request-call"), {
         method: "POST",
@@ -979,49 +989,90 @@ function CallbackModal({ topic, onClose }: { topic: string; onClose: () => void 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-md rounded-2xl bg-[#f8f7f4] p-6 shadow-xl">
-        <div className="flex items-center justify-between">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4">
+      <div className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-[#f8f7f4] shadow-xl">
+        <div className="flex items-center justify-between border-b border-[#1e1e1a]/10 px-4 py-3 sm:px-6">
           <h3 className="font-serif text-xl text-[#1e1e1e]">Request human callback</h3>
           <button type="button" onClick={onClose} className="rounded-full p-1 hover:bg-black/5">
             <X className="h-5 w-5" />
           </button>
         </div>
-        {done ? (
-          <p className="mt-4 text-[14px] text-[#2e4a3f]">
-            Request recorded. Our team will call you — no need to wait on this page.
-          </p>
-        ) : (
-          <form onSubmit={submit} className="mt-4 space-y-3">
-            <input
-              placeholder="Name (optional)"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full rounded-xl border border-[#1e1e1a]/15 px-3 py-2.5 text-[14px] outline-none focus:border-[#2e4a3f]"
-            />
-            <input
-              required
-              placeholder="Phone"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              className="w-full rounded-xl border border-[#1e1e1a]/15 px-3 py-2.5 text-[14px] outline-none focus:border-[#2e4a3f]"
-            />
-            <input
-              placeholder="Preferred time (optional)"
-              value={when}
-              onChange={(e) => setWhen(e.target.value)}
-              className="w-full rounded-xl border border-[#1e1e1a]/15 px-3 py-2.5 text-[14px] outline-none focus:border-[#2e4a3f]"
-            />
-            {err && <p className="text-[12px] text-red-600">{err}</p>}
-            <button
-              type="submit"
-              disabled={busy}
-              className="h-11 w-full rounded-full bg-[#2e4a3f] text-[13px] font-medium text-white hover:bg-[#243a32] disabled:opacity-60"
-            >
-              {busy ? "Sending…" : "Request human callback"}
-            </button>
-          </form>
-        )}
+        <div className="flex gap-2 border-b border-[#1e1e1a]/10 px-4 py-2 sm:px-6">
+          <button
+            type="button"
+            onClick={() => setTab("form")}
+            className={`rounded-full px-3 py-1 text-[12px] ${
+              tab === "form" ? "bg-[#2e4a3f] text-white" : "text-[#6b6b6b] hover:bg-black/5"
+            }`}
+          >
+            Full form
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("quick")}
+            className={`rounded-full px-3 py-1 text-[12px] ${
+              tab === "quick" ? "bg-[#2e4a3f] text-white" : "text-[#6b6b6b] hover:bg-black/5"
+            }`}
+          >
+            Quick phone
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+          {tab === "form" ? (
+            <div className="space-y-3">
+              <p className="text-[13px] text-[#6b6b6b]">
+                Fill the form below on this page — no new tab. After submit, our AI / team can call you.
+              </p>
+              <div className="overflow-hidden rounded-xl border border-[#1e1e1a]/10 bg-white">
+                <iframe
+                  title="Callback request form"
+                  src={ADORA_FORM}
+                  className="h-[min(70vh,520px)] w-full border-0"
+                  allow="microphone; camera"
+                  referrerPolicy="no-referrer-when-downgrade"
+                />
+              </div>
+              <p className="text-[11px] text-[#9a9a9a]">
+                If the form does not load inside this panel, use the Quick phone tab — we still
+                capture your number for a callback.
+              </p>
+            </div>
+          ) : done ? (
+            <p className="text-[14px] text-[#2e4a3f]">
+              Request recorded. Our team will call you — no need to wait on this page.
+            </p>
+          ) : (
+            <form onSubmit={submit} className="space-y-3">
+              <input
+                placeholder="Name (optional)"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full rounded-xl border border-[#1e1e1a]/15 px-3 py-2.5 text-[14px] outline-none focus:border-[#2e4a3f]"
+              />
+              <input
+                required
+                placeholder="Phone"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                className="w-full rounded-xl border border-[#1e1e1a]/15 px-3 py-2.5 text-[14px] outline-none focus:border-[#2e4a3f]"
+              />
+              <input
+                placeholder="Preferred time (optional)"
+                value={when}
+                onChange={(e) => setWhen(e.target.value)}
+                className="w-full rounded-xl border border-[#1e1e1a]/15 px-3 py-2.5 text-[14px] outline-none focus:border-[#2e4a3f]"
+              />
+              {err && <p className="text-[12px] text-red-600">{err}</p>}
+              <button
+                type="submit"
+                disabled={busy}
+                className="h-11 w-full rounded-full bg-[#2e4a3f] text-[13px] font-medium text-white hover:bg-[#243a32] disabled:opacity-60"
+              >
+                {busy ? "Sending…" : "Request human callback"}
+              </button>
+            </form>
+          )}
+        </div>
       </div>
     </div>
   );
