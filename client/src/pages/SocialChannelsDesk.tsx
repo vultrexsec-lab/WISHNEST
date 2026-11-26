@@ -146,7 +146,7 @@ export function SocialChannelsDesk(): JSX.Element {
     setMediaUrl(obj);
     toast({
       title: "Preview attached",
-      description: "For live publish, host the file and paste a public Media URL (Postiz needs a URL).",
+      description: "For live publish, use a public https image/video URL.",
     });
   };
 
@@ -199,7 +199,7 @@ export function SocialChannelsDesk(): JSX.Element {
         setLastResult(JSON.stringify(data, null, 2));
       } else {
         const via = data.postiz_configured
-          ? "queued to Postiz"
+          ? "queued"
           : "stub queued — set POSTIZ_API_URL + POSTIZ_API_KEY for live";
         toast({
           title: draft ? "Saved as draft" : "Post submitted",
@@ -247,25 +247,16 @@ export function SocialChannelsDesk(): JSX.Element {
             Compose and publish to X, Instagram, Facebook and LinkedIn from WishNest CRM.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-white/50">
-            {status?.postiz_configured ? (
-              <span className="text-emerald-300">Postiz connected</span>
-            ) : (
-              <span className="text-amber-200/90">Stub mode (add Postiz keys for live)</span>
-            )}
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-8 border-white/15 bg-transparent text-[11px] text-white/60"
-            onClick={() => void refetch()}
-          >
-            <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-            Resync
-          </Button>
-        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 border-white/15 bg-transparent text-[11px] text-white/60"
+          onClick={() => void refetch()}
+        >
+          <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+          Resync
+        </Button>
       </div>
 
       <div className="flex flex-wrap gap-2 border-b border-white/10 pb-4">
@@ -316,15 +307,7 @@ export function SocialChannelsDesk(): JSX.Element {
             </p>
           </div>
         </div>
-        <span
-          className={`rounded-full px-2.5 py-1 text-[10px] font-semibold tracking-wide ${
-            meta?.publish_ready
-              ? "bg-emerald-500/15 text-emerald-300"
-              : "bg-white/5 text-white/40"
-          }`}
-        >
-          {isLoading ? "…" : meta?.publish_ready ? "ACTIVE" : "SETUP NEEDED"}
-        </span>
+
       </div>
 
       {channel === "twitter" && (
@@ -407,7 +390,7 @@ export function SocialChannelsDesk(): JSX.Element {
               </div>
               {(mediaUrl.startsWith("data:") || mediaUrl.startsWith("blob:")) && (
                 <p className="mt-1 text-[10px] text-emerald-400/80">
-                  Local file attached for preview. Live Postiz publish works best with a public https Media URL.
+                  Local file attached for preview. For live publish, paste a public https Media URL.
                 </p>
               )}
             </div>
@@ -508,29 +491,6 @@ export function SocialChannelsDesk(): JSX.Element {
             )}
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <p className="mb-2 text-[10px] font-semibold tracking-[1.4px] text-white/40">
-              CHANNEL INSIGHTS
-            </p>
-            <p className="text-[12px] leading-relaxed text-white/45">
-              Publish from WishNest when Postiz or platform APIs are connected.
-            </p>
-            <div className="mt-3 space-y-2 border-t border-white/10 pt-3 text-[12px]">
-              <div className="flex justify-between">
-                <span className="text-white/40">Channel status</span>
-                <span className={meta?.publish_ready ? "text-emerald-400" : "text-white/35"}>
-                  {meta?.publish_ready ? "Active" : "Setup needed"}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-white/40">Via</span>
-                <span className="text-white/55">{meta?.via || "—"}</span>
-              </div>
-            </div>
-            {meta?.hint && (
-              <p className="mt-3 text-[11px] leading-relaxed text-white/30">{meta.hint}</p>
-            )}
-          </div>
         </div>
       </div>
 
