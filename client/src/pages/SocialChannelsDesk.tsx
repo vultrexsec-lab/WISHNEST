@@ -1,14 +1,19 @@
 /**
- * CRM Social channels desk — Adora-style compose for X, Instagram, Facebook, LinkedIn.
- * Publish goes through backend → Postiz (or stub when not configured).
+ * CRM Social channels desk — Adora-style per-channel publish UI.
+ * X · Instagram · Facebook · LinkedIn
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
+  Eye,
   Facebook,
+  Heart,
+  Image as ImageIcon,
   Instagram,
   Linkedin,
   Loader2,
+  RefreshCw,
+  Repeat2,
   Send,
   Share2,
 } from "lucide-react";
@@ -17,6 +22,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
 type ChannelId = "twitter" | "instagram" | "facebook" | "linkedin";
+type IgType = "post" | "reel" | "story";
 
 type ChannelMeta = {
   id: ChannelId;
@@ -35,18 +41,6 @@ type StatusResp = {
 
 const CHANNEL_ORDER: ChannelId[] = ["twitter", "instagram", "facebook", "linkedin"];
 
-function ChannelIcon({ id }: { id: ChannelId }) {
-  if (id === "instagram") return <Instagram className="h-4 w-4" />;
-  if (id === "facebook") return <Facebook className="h-4 w-4" />;
-  if (id === "linkedin") return <Linkedin className="h-4 w-4" />;
-  // X / Twitter
-  return (
-    <span className="flex h-4 w-4 items-center justify-center text-[13px] font-bold leading-none">
-      𝕏
-    </span>
-  );
-}
-
 const LIMITS: Record<ChannelId, number> = {
   twitter: 280,
   instagram: 2200,
@@ -54,13 +48,57 @@ const LIMITS: Record<ChannelId, number> = {
   linkedin: 3000,
 };
 
+function ChannelIcon({ id, className = "h-4 w-4" }: { id: ChannelId; className?: string }) {
+  if (id === "instagram") return <Instagram className={className} />;
+  if (id === "facebook") return <Facebook className={className} />;
+  if (id === "linkedin") return <Linkedin className={className} />;
+  return (
+    <span className={`inline-flex items-center justify-center font-bold leading-none ${className}`}>
+      𝕏
+    </span>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  badge,
+  icon,
+}: {
+  label: string;
+  value: string | number;
+  badge: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+      <div className="mb-3 flex items-start justify-between gap-2">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/60">
+          {icon}
+        </div>
+        <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[9px] font-semibold tracking-[1px] text-white/40">
+          {badge}
+        </span>
+      </div>
+      <p className="text-[22px] font-semibold tabular-nums text-white">{value}</p>
+      <p className="mt-1 text-[10px] font-medium tracking-[1.2px] text-white/40">{label}</p>
+    </div>
+  );
+}
+
 export function SocialChannelsDesk(): JSX.Element {
   const { toast } = useToast();
   const [channel, setChannel] = useState<ChannelId>("twitter");
   const [text, setText] = useState("");
   const [link, setLink] = useState("https://wishnest.info");
+  const [mediaUrl, setMediaUrl] = useState("");
+  const [igType, setIgType] = useState<IgType>("post");
+  const [schedule, setSchedule] = useState("");
   const [busy, setBusy] = useState(false);
   const [lastResult, setLastResult] = useState<string | null>(null);
+  const [recent, setRecent] = useState<
+    { id: string; channel: ChannelId; text: string; at: string; status: string }[]
+  >([]);
 
   const { data: status, isLoading, refetch } = useQuery<StatusResp>({
     queryKey: ["/api/social/status"],
@@ -79,15 +117,29 @@ export function SocialChannelsDesk(): JSX.Element {
     setLastResult(null);
   }, [channel]);
 
+  const previewSrc = useMemo(() => {
+    const u = mediaUrl.trim();
+    if (!u) return null;
+    return u;
+  }, [mediaUrl]);
+
   const publish = async (draft: boolean) => {
-    if (!text.trim()) {
+    if (!text.trim() && channel !== "instagram") {
       toast({ title: "Write a post first", variant: "destructive" });
+      return;
+    }
+    if (channel === "instagram" && !mediaUrl.trim() && igType !== "story") {
+      toast({
+        title: "Media required",
+        description: "Instagram Post / Reel needs an image or video URL.",
+        variant: "destructive",
+      });
       return;
     }
     if (over) {
       toast({
         title: "Too long",
-        description: `${channel} limit is ${limit} characters`,
+        description: `${meta?.label || channel} limit is ${limit} characters`,
         variant: "destructive",
       });
       return;
@@ -95,10 +147,18 @@ export function SocialChannelsDesk(): JSX.Element {
     setBusy(true);
     setLastResult(null);
     try {
+      let content = text.trim();
+      if (channel === "instagram") {
+        content = `[${igType.toUpperCase()}] ${content}`.trim();
+      }
+      if (schedule.trim()) {
+        content = `${content}\n\n(schedule: ${schedule.trim()})`;
+      }
       const res = await apiRequest("POST", "/api/social/publish", {
         channel,
-        content: text.trim(),
+        content: content || `(${igType} media)`,
         url: link.trim() || null,
+        image_url: mediaUrl.trim() || null,
         draft,
       });
       const data = await res.json();
@@ -113,13 +173,28 @@ export function SocialChannelsDesk(): JSX.Element {
       } else {
         const via = data.postiz_configured
           ? "queued to Postiz"
-          : "stub queued (set POSTIZ_API_URL + POSTIZ_API_KEY for live)";
+          : "stub queued — set POSTIZ_API_URL + POSTIZ_API_KEY for live";
         toast({
           title: draft ? "Saved as draft" : "Post submitted",
           description: `${meta?.label || channel}: ${via}`,
         });
         setLastResult(JSON.stringify(data, null, 2));
-        if (!draft && st !== "error") setText("");
+        setRecent((prev) =>
+          [
+            {
+              id: `${Date.now()}`,
+              channel,
+              text: (text || mediaUrl).slice(0, 120),
+              at: new Date().toISOString(),
+              status: draft ? "draft" : st,
+            },
+            ...prev,
+          ].slice(0, 12),
+        );
+        if (!draft && st !== "error") {
+          setText("");
+          if (channel === "instagram") setMediaUrl("");
+        }
       }
       void refetch();
     } catch (e) {
@@ -134,31 +209,39 @@ export function SocialChannelsDesk(): JSX.Element {
   };
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-[10px] font-semibold tracking-[1.6px] text-sky-400/90">
-            CHANNELS
-          </p>
-          <h2 className="text-[18px] font-medium text-white">
-            Publish from WishNest CRM
+          <p className="text-[10px] font-semibold tracking-[1.8px] text-sky-400/90">SOCIAL</p>
+          <h2 className="mt-0.5 text-[22px] font-medium tracking-tight text-white">
+            Content publishing
           </h2>
           <p className="mt-1 max-w-xl text-[12px] text-white/40">
-            X, Instagram, Facebook, LinkedIn — compose here, send via Postiz when configured.
-            Same idea as Adora social desk.
+            Compose and publish to X, Instagram, Facebook and LinkedIn from WishNest CRM.
           </p>
         </div>
-        <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-white/50">
-          {status?.postiz_configured ? (
-            <span className="text-emerald-300">Postiz connected</span>
-          ) : (
-            <span className="text-amber-200/90">Postiz not configured (stub mode)</span>
-          )}
+        <div className="flex items-center gap-2">
+          <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-white/50">
+            {status?.postiz_configured ? (
+              <span className="text-emerald-300">Postiz connected</span>
+            ) : (
+              <span className="text-amber-200/90">Stub mode (add Postiz keys for live)</span>
+            )}
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 border-white/15 bg-transparent text-[11px] text-white/60"
+            onClick={() => void refetch()}
+          >
+            <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+            Resync
+          </Button>
         </div>
       </div>
 
-      {/* Channel pills */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2 border-b border-white/10 pb-4">
         {CHANNEL_ORDER.map((id) => {
           const c = status?.channels?.[id];
           const on = channel === id;
@@ -167,17 +250,17 @@ export function SocialChannelsDesk(): JSX.Element {
               key={id}
               type="button"
               onClick={() => setChannel(id)}
-              className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-[12px] transition ${
+              className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-[12px] transition ${
                 on
-                  ? "border-sky-400/50 bg-sky-500/15 text-sky-100"
-                  : "border-white/10 bg-white/[0.03] text-white/55 hover:text-white/80"
+                  ? "border-sky-400/45 bg-sky-500/15 text-sky-100"
+                  : "border-white/10 bg-white/[0.02] text-white/50 hover:text-white/80"
               }`}
             >
               <ChannelIcon id={id} />
-              {c?.label || id}
+              <span>{c?.label || id}</span>
               <span
                 className={`h-1.5 w-1.5 rounded-full ${
-                  c?.publish_ready ? "bg-emerald-400" : "bg-white/25"
+                  c?.publish_ready ? "bg-emerald-400" : "bg-white/20"
                 }`}
               />
             </button>
@@ -185,125 +268,252 @@ export function SocialChannelsDesk(): JSX.Element {
         })}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
-        {/* Compose */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white">
+            <ChannelIcon id={channel} className="h-5 w-5" />
+          </div>
+          <div>
+            <h3 className="text-[18px] font-medium text-white">
+              {channel === "twitter" && "X.com / Twitter"}
+              {channel === "instagram" && "Instagram publishing"}
+              {channel === "facebook" && "Facebook Page"}
+              {channel === "linkedin" && "LinkedIn"}
+            </h3>
+            <p className="text-[12px] text-white/40">
+              {channel === "twitter" && "Manage and publish content directly to your X timeline."}
+              {channel === "instagram" &&
+                "Schedule Posts, Reels and Stories to auto-publish to Instagram."}
+              {channel === "facebook" && "Publish to your connected Facebook Page."}
+              {channel === "linkedin" && "Share professional updates to LinkedIn."}
+            </p>
+          </div>
+        </div>
+        <span
+          className={`rounded-full px-2.5 py-1 text-[10px] font-semibold tracking-wide ${
+            meta?.publish_ready
+              ? "bg-emerald-500/15 text-emerald-300"
+              : "bg-white/5 text-white/40"
+          }`}
+        >
+          {isLoading ? "…" : meta?.publish_ready ? "ACTIVE" : "SETUP NEEDED"}
+        </span>
+      </div>
+
+      {channel === "twitter" && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard
+            label="TWEETS PUBLISHED"
+            value={recent.filter((r) => r.channel === "twitter").length}
+            badge="PUBLISHED"
+            icon={<Send className="h-4 w-4" />}
+          />
+          <StatCard label="TOTAL LIKES" value="—" badge="ENGAGEMENT" icon={<Heart className="h-4 w-4" />} />
+          <StatCard label="TOTAL RETWEETS" value="—" badge="REACH" icon={<Repeat2 className="h-4 w-4" />} />
+          <StatCard label="IMPRESSIONS" value="—" badge="VISIBILITY" icon={<Eye className="h-4 w-4" />} />
+        </div>
+      )}
+
+      <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
         <div className="rounded-2xl border border-white/10 bg-[#0a0e0c] p-5">
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 text-white/80">
-              <ChannelIcon id={channel} />
-              <span className="text-[13px] font-medium">
-                Compose · {meta?.label || channel}
-              </span>
-            </div>
-            <span
-              className={`text-[11px] tabular-nums ${
-                over ? "text-red-400" : "text-white/35"
-              }`}
-            >
+          <div className="mb-4 flex items-center justify-between">
+            <p className="flex items-center gap-2 text-[11px] font-semibold tracking-[1.4px] text-white/50">
+              <Send className="h-3.5 w-3.5" />
+              {channel === "twitter" ? "COMPOSE TWEET" : "CREATE POST"}
+            </p>
+            <span className={`text-[11px] tabular-nums ${over ? "text-red-400" : "text-white/35"}`}>
               {text.length}/{limit}
             </span>
           </div>
+
+          {channel === "instagram" && (
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <span className="text-[11px] text-white/40">Type</span>
+              {(["post", "reel", "story"] as IgType[]).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setIgType(t)}
+                  className={`rounded-full px-3 py-1 text-[11px] capitalize tracking-wide ${
+                    igType === t
+                      ? "bg-white text-black"
+                      : "border border-white/15 bg-transparent text-white/55 hover:text-white"
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {(channel === "instagram" || channel === "facebook" || channel === "linkedin") && (
+            <div className="mb-3">
+              <label className="mb-1.5 block text-[10px] font-semibold tracking-[1px] text-white/40">
+                MEDIA URL {channel === "instagram" ? "(required for Post / Reel)" : "(optional)"}
+              </label>
+              <div className="flex gap-2">
+                <input
+                  value={mediaUrl}
+                  onChange={(e) => setMediaUrl(e.target.value)}
+                  placeholder="https://…/image.jpg or video"
+                  className="h-10 flex-1 rounded-xl border border-white/10 bg-black/35 px-3 text-[13px] text-white/85 placeholder:text-white/25 focus:border-sky-500/40 focus:outline-none"
+                />
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/40">
+                  <ImageIcon className="h-4 w-4" />
+                </div>
+              </div>
+            </div>
+          )}
+
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder={
               channel === "twitter"
                 ? "What's happening today?"
-                : "Write your post…"
+                : channel === "instagram"
+                  ? "Write a caption…"
+                  : "Write your post…"
             }
-            rows={6}
+            rows={channel === "twitter" ? 5 : 6}
             className="w-full resize-y rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-[14px] leading-relaxed text-white/90 placeholder:text-white/25 focus:border-sky-500/40 focus:outline-none"
           />
-          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-            <input
-              value={link}
-              onChange={(e) => setLink(e.target.value)}
-              placeholder="https://wishnest.info/article/…"
-              className="h-9 flex-1 rounded-lg border border-white/10 bg-black/30 px-3 text-[12px] text-white/80 placeholder:text-white/25"
-            />
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                disabled={busy}
-                onClick={() => void publish(true)}
-                className="h-9 border-white/15 bg-transparent text-[11px] text-white/70"
-              >
-                Draft
-              </Button>
-              <Button
-                type="button"
-                disabled={busy || over || !text.trim()}
-                onClick={() => void publish(false)}
-                className="h-9 gap-1.5 bg-sky-600 text-[11px] text-white hover:bg-sky-500"
-              >
-                {busy ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Send className="h-3.5 w-3.5" />
-                )}
-                Publish
-              </Button>
+
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-[10px] font-semibold tracking-[1px] text-white/40">
+                LINK (optional)
+              </label>
+              <input
+                value={link}
+                onChange={(e) => setLink(e.target.value)}
+                placeholder="https://wishnest.info/article/…"
+                className="h-9 w-full rounded-lg border border-white/10 bg-black/30 px-3 text-[12px] text-white/80 placeholder:text-white/25"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[10px] font-semibold tracking-[1px] text-white/40">
+                SCHEDULE (blank = now)
+              </label>
+              <input
+                value={schedule}
+                onChange={(e) => setSchedule(e.target.value)}
+                placeholder="2026-11-26 18:00"
+                className="h-9 w-full rounded-lg border border-white/10 bg-black/30 px-3 text-[12px] text-white/80 placeholder:text-white/25"
+              />
             </div>
           </div>
+
+          <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={() => void publish(true)}
+              className="h-10 border-white/15 bg-transparent px-4 text-[12px] text-white/70"
+            >
+              Save draft
+            </Button>
+            <Button
+              type="button"
+              disabled={busy || over}
+              onClick={() => void publish(false)}
+              className="h-10 gap-2 bg-white px-5 text-[12px] font-medium text-black hover:bg-white/90"
+            >
+              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+              {channel === "twitter" ? "Publish tweet" : "Publish now"}
+            </Button>
+          </div>
+
           {lastResult && (
-            <pre className="mt-3 max-h-32 overflow-auto rounded-lg border border-white/10 bg-black/40 p-3 text-[10px] text-white/45">
+            <pre className="mt-3 max-h-28 overflow-auto rounded-lg border border-white/10 bg-black/40 p-3 text-[10px] text-white/40">
               {lastResult}
             </pre>
           )}
         </div>
 
-        {/* Insights / status */}
         <div className="space-y-3">
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <p className="mb-2 text-[10px] font-semibold tracking-[1.2px] text-white/40">
-              CHANNEL STATUS
-            </p>
-            {isLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin text-white/40" />
+            <p className="mb-3 text-[10px] font-semibold tracking-[1.4px] text-white/40">PREVIEW</p>
+            {previewSrc ? (
+              <div className="overflow-hidden rounded-xl border border-white/10 bg-black/40">
+                <img
+                  src={previewSrc}
+                  alt="Media preview"
+                  className="max-h-56 w-full object-cover"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = "none";
+                  }}
+                />
+                <p className="whitespace-pre-wrap border-t border-white/10 p-3 text-[12px] text-white/60">
+                  {text || "—"}
+                </p>
+              </div>
             ) : (
-              <ul className="space-y-2">
-                {CHANNEL_ORDER.map((id) => {
-                  const c = status?.channels?.[id];
-                  return (
-                    <li
-                      key={id}
-                      className="flex items-center justify-between gap-2 text-[12px]"
-                    >
-                      <span className="flex items-center gap-2 text-white/70">
-                        <ChannelIcon id={id} />
-                        {c?.label || id}
-                      </span>
-                      <span
-                        className={
-                          c?.publish_ready
-                            ? "text-emerald-400"
-                            : "text-white/30"
-                        }
-                      >
-                        {c?.publish_ready ? "Ready" : "Setup needed"}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
+              <div className="flex min-h-[180px] flex-col items-center justify-center rounded-xl border border-dashed border-white/15 bg-black/20 text-white/30">
+                <ImageIcon className="mb-2 h-8 w-8 opacity-40" />
+                <span className="text-[12px]">No media</span>
+                <p className="mt-1 max-w-[200px] text-center text-[10px] text-white/25">
+                  {text ? text.slice(0, 80) : "Caption and image preview appear here"}
+                </p>
+              </div>
             )}
           </div>
+
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <p className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold tracking-[1.2px] text-white/40">
-              <Share2 className="h-3 w-3" /> SETUP
+            <p className="mb-2 text-[10px] font-semibold tracking-[1.4px] text-white/40">
+              CHANNEL INSIGHTS
             </p>
-            <p className="text-[11px] leading-relaxed text-white/45">
-              {meta?.hint ||
-                "Connect accounts in Postiz, then set POSTIZ_API_URL and POSTIZ_API_KEY on the backend."}
+            <p className="text-[12px] leading-relaxed text-white/45">
+              Publish from WishNest when Postiz or platform APIs are connected.
             </p>
-            {status?.note && (
-              <p className="mt-2 text-[11px] leading-relaxed text-white/35">
-                {status.note}
-              </p>
+            <div className="mt-3 space-y-2 border-t border-white/10 pt-3 text-[12px]">
+              <div className="flex justify-between">
+                <span className="text-white/40">Channel status</span>
+                <span className={meta?.publish_ready ? "text-emerald-400" : "text-white/35"}>
+                  {meta?.publish_ready ? "Active" : "Setup needed"}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-white/40">Via</span>
+                <span className="text-white/55">{meta?.via || "—"}</span>
+              </div>
+            </div>
+            {meta?.hint && (
+              <p className="mt-3 text-[11px] leading-relaxed text-white/30">{meta.hint}</p>
             )}
           </div>
         </div>
+      </div>
+
+      <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+        <p className="mb-1 text-[10px] font-semibold tracking-[1.4px] text-white/40">
+          RECENT ACTIVITY
+        </p>
+        <p className="mb-4 text-[12px] text-white/35">
+          Posts submitted from this desk in the current session.
+        </p>
+        {recent.filter((r) => r.channel === channel).length === 0 ? (
+          <p className="py-8 text-center text-[13px] text-white/30">
+            No recent posts found. Try publishing one above.
+          </p>
+        ) : (
+          <ul className="divide-y divide-white/5">
+            {recent
+              .filter((r) => r.channel === channel)
+              .map((r) => (
+                <li key={r.id} className="flex items-start justify-between gap-3 py-3">
+                  <div>
+                    <p className="text-[13px] text-white/80">{r.text || "—"}</p>
+                    <p className="mt-0.5 text-[11px] text-white/35">
+                      {new Date(r.at).toLocaleString()} · {r.status}
+                    </p>
+                  </div>
+                  <Share2 className="h-3.5 w-3.5 shrink-0 text-white/25" />
+                </li>
+              ))}
+          </ul>
+        )}
       </div>
     </div>
   );
