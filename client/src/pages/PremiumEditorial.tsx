@@ -20,6 +20,7 @@ const navItems = [
   { label: "INTELLIGENCE", href: "/intelligence" },
   { label: "CONTRIBUTORS", href: "/contributors" },
   { label: "REIMAGINED™", href: "/reimagined" },
+  { label: "ARROWX", href: "/advisory/land" },
   { label: "GET REVIEWED", href: "/get-reviewed" },
 ];
 

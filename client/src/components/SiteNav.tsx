@@ -50,7 +50,7 @@ export const SiteNav = () => {
     location === href || (href !== "/" && location.startsWith(href + "/"));
 
   const linkClass = (href: string) =>
-    `whitespace-nowrap [font-family:'Inter',Helvetica] text-[11px] font-medium leading-none tracking-[1.1px] transition-opacity hover:opacity-70 ${
+    `whitespace-nowrap [font-family:'Inter',Helvetica] text-[10px] font-medium leading-none tracking-[1px] transition-opacity hover:opacity-70 xl:text-[11px] xl:tracking-[1.1px] ${
       isActive(href) ? "text-[#2e4a3f]" : "text-[#1e1e1e]"
     }`;
 
@@ -66,26 +66,24 @@ export const SiteNav = () => {
       <NewsletterModal open={newsletterOpen} onClose={() => setNewsletterOpen(false)} />
 
       <header className="sticky top-0 z-50 border-b border-[#1e1e1e14] bg-[#f8f7f4]/95 backdrop-blur">
-        <div className="mx-auto flex h-[72px] w-full max-w-[1166px] items-center justify-between gap-3 px-4 sm:px-8">
+        <div className="mx-auto flex h-[64px] w-full max-w-[1280px] items-center justify-between gap-2 px-4 sm:px-6 lg:px-8">
           <Link href="/">
-            <div className="flex min-w-0 shrink-0 cursor-pointer flex-col justify-center">
-              <div className="[font-family:'Playfair_Display',Helvetica] text-[22px] font-bold leading-none tracking-[3px] text-[#1e1e1e] sm:text-[24px] sm:tracking-[3.5px]">
+            <div className="flex min-w-0 shrink-0 cursor-pointer flex-col justify-center pr-2">
+              <div className="[font-family:'Playfair_Display',Helvetica] text-[20px] font-bold leading-none tracking-[2.5px] text-[#1e1e1e] sm:text-[22px] sm:tracking-[3px]">
                 WishNest
               </div>
-              <div className="hidden pt-1 [font-family:'Inter',Helvetica] text-[8px] font-normal leading-[1.35] tracking-[1.4px] text-[#6b6b6b] sm:block sm:text-[9px] sm:tracking-[1.5px]">
-                HOSPITALITY · ARCHITECTURE
-                <br />
-                SECOND HOME INTELLIGENCE
+              <div className="hidden pt-0.5 [font-family:'Inter',Helvetica] text-[7px] font-normal leading-[1.3] tracking-[1.2px] text-[#6b6b6b] xl:block">
+                HOSPITALITY · ARCHITECTURE · SECOND HOME
               </div>
             </div>
           </Link>
 
           {/* Desktop: single clean row — divider separates Read vs Work */}
           <nav
-            className="hidden min-w-0 flex-1 items-center justify-center gap-x-5 lg:flex xl:gap-x-6"
+            className="hidden min-w-0 flex-1 items-center justify-center gap-x-3 lg:flex xl:gap-x-4"
             aria-label="Primary"
           >
-            <div className="flex items-center gap-x-5 xl:gap-x-6" role="group" aria-label="Read">
+            <div className="flex items-center gap-x-3 xl:gap-x-4" role="group" aria-label="Read">
               {readLinks.map((item) =>
                 item.children ? (
                   <div
@@ -136,7 +134,7 @@ export const SiteNav = () => {
               aria-hidden
             />
 
-            <div className="flex items-center gap-x-5 xl:gap-x-6" role="group" aria-label="Work with us">
+            <div className="flex items-center gap-x-3 xl:gap-x-4" role="group" aria-label="Work with us">
               {workLinks.map((item) =>
                 item.children ? (
                   <div
