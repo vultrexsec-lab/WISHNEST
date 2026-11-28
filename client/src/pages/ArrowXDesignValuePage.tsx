@@ -9,7 +9,7 @@ import { Link } from "wouter";
 const WA_DIGITS =
   (typeof import.meta !== "undefined" &&
     (import.meta.env.VITE_WHATSAPP_BUSINESS_NUMBER as string)?.replace(/\D/g, "")) ||
-  "917906022051";
+  "9199440961";
 
 const ALLOWED_UTM = ["utm_source", "utm_medium", "utm_campaign", "utm_content"] as const;
 
