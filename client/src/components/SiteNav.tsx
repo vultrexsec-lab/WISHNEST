@@ -33,6 +33,7 @@ const workLinks = [
       { label: "Reimagined™", href: "/advisory/reimagined" },
       { label: "Second homes", href: "/advisory/second-homes" },
       { label: "Architecture", href: "/advisory/architecture" },
+      { label: "Design value", href: "/advisory/design-value" },
     ],
   },
   { label: "Get Reviewed", href: "/get-reviewed" },

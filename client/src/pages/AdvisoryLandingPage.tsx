@@ -125,6 +125,7 @@ export function AdvisoryLandingPage(): JSX.Element {
               { slug: "reimagined", label: "Reimagined™" },
               { slug: "second-homes", label: "Second homes" },
               { slug: "architecture", label: "Architecture" },
+              { slug: "design-value", label: "Design value" },
             ].map((t) => {
               const active = campaign.topic === t.slug;
               return (
@@ -163,6 +164,7 @@ export function AdvisoryLandingPage(): JSX.Element {
           { slug: "reimagined", label: "Reimagined" },
           { slug: "second-homes", label: "Second homes" },
           { slug: "architecture", label: "Architecture" },
+          { slug: "design-value", label: "Design value" },
         ].map((t) => {
           const active = campaign.topic === t.slug;
           return (

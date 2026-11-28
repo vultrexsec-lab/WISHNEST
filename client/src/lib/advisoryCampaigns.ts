@@ -8,7 +8,8 @@ export type AdvisoryTopic =
   | "hospitality"
   | "reimagined"
   | "second-homes"
-  | "architecture";
+  | "architecture"
+  | "design-value";
 
 export type PresentationItem = {
   id: string;
@@ -492,6 +493,127 @@ export const ADVISORY_CAMPAIGNS: Record<AdvisoryTopic, AdvisoryCampaign> = {
       },
     ],
   },
+  "design-value": {
+    topic: "design-value",
+    path: "/advisory/design-value",
+    metaTitle: "Architecture that creates value | Arrow X × WishNest",
+    metaDescription:
+      "Architectural consultancy for homes, second homes, resorts and land development across Uttarakhand, Himachal Pradesh and Maharashtra.",
+    headline: "Can your architect save you more than their fee?",
+    support:
+      "Intelligent architecture for homes, second homes, resorts and developments. We explore ways to reduce avoidable construction costs while creating distinctive, lasting value.",
+    heroImage: img.arch,
+    aiOpening:
+      "Hello. Tell me about the home, second home, resort or land you're exploring — I'll help you clarify next steps with Arrow X. No pressure, just a clear conversation.",
+    whatsappPrefill:
+      "Hi Arrow X, I would like to discuss professional architectural or development consultancy.",
+    presentations: [
+      {
+        id: "dv-homes",
+        title: "Private homes & residences",
+        subtitle: "Bespoke homes · villas · lifestyle",
+        cover: img.arch2,
+        slides: [
+          {
+            title: "Private homes",
+            body: "Bespoke homes, bungalows and villas designed around your lifestyle, site and budget.",
+          },
+        ],
+      },
+      {
+        id: "dv-second",
+        title: "Second homes & farmhouses",
+        subtitle: "Site assessment to design",
+        cover: img.second,
+        slides: [
+          {
+            title: "Second homes",
+            body: "Considering buying a second home? Explore creating your own — from site assessment to architectural design.",
+          },
+        ],
+      },
+      {
+        id: "dv-hospitality",
+        title: "Hotels & resorts",
+        subtitle: "Guest experience · operating model",
+        cover: img.hospitality,
+        slides: [
+          {
+            title: "Hospitality",
+            body: "Hospitality architecture, guest experience, master planning and operating-model considerations.",
+          },
+        ],
+      },
+      {
+        id: "dv-hill",
+        title: "Hill architecture",
+        subtitle: "Terrain-responsive design",
+        cover: img.land2,
+        slides: [
+          {
+            title: "Design with the terrain",
+            body: "Excavation, retaining structures, foundations, access, drainage, logistics, views and landscape — considered together from the earliest stages. Slope stability and seismic safety are non-negotiable.",
+          },
+        ],
+      },
+      {
+        id: "dv-land",
+        title: "Land & master planning",
+        subtitle: "Development alternatives",
+        cover: img.land,
+        slides: [
+          {
+            title: "Land potential",
+            body: "Explore development alternatives, site potential and architectural strategies — boutique resort, retreat, or second-home destination.",
+          },
+        ],
+      },
+      {
+        id: "dv-review",
+        title: "Renovation & design review",
+        subtitle: "Before you commit to build",
+        cover: img.arch3,
+        slides: [
+          {
+            title: "Review",
+            body: "Rethink existing properties or review a proposed design before committing to construction.",
+          },
+        ],
+      },
+    ],
+    projects: [
+      {
+        id: "dv1",
+        name: "Hill contour residence",
+        location: "Uttarakhand",
+        category: "Hill architecture",
+        status: "concept",
+        image: img.land2,
+        description:
+          "Conceptual study: stepped massing that follows the slope rather than forcing a level platform — reducing avoidable cut-and-fill where site conditions allow.",
+      },
+      {
+        id: "dv2",
+        name: "Boutique hospitality cluster",
+        location: "Himachal Pradesh",
+        category: "Hotels & resorts",
+        status: "concept",
+        image: img.hospitality2,
+        description:
+          "Exploratory hospitality massing focused on guest sequence, landscape retention and buildable envelopes — illustrative concept only.",
+      },
+      {
+        id: "dv3",
+        name: "Second-home site logic",
+        location: "Maharashtra",
+        category: "Second homes",
+        status: "concept",
+        image: img.second2,
+        description:
+          "Early site and access thinking for intermittent occupation — illustrative until a specific brief and survey are agreed.",
+      },
+    ],
+  },
 };
 
 export function getCampaign(topic: string | undefined): AdvisoryCampaign {
@@ -505,4 +627,5 @@ export const ADVISORY_TOPICS: AdvisoryTopic[] = [
   "reimagined",
   "second-homes",
   "architecture",
+  "design-value",
 ];
